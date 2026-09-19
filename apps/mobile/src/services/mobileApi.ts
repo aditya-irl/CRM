@@ -1,0 +1,173 @@
+import { IAgentQueueItem, IUser, ApiResponse, ICustomer } from '@crm/shared';
+
+const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '/api/v1';
+
+export class MobileApi {
+  public static getToken(): string | null {
+    return localStorage.getItem('agent_access_token');
+  }
+
+  public static setAuth(user: IUser, token: string) {
+    localStorage.setItem('agent_access_token', token);
+    localStorage.setItem('agent_user', JSON.stringify(user));
+  }
+
+  public static getUser(): IUser | null {
+    const raw = localStorage.getItem('agent_user');
+    return raw ? JSON.parse(raw) : null;
+  }
+
+  public static logout() {
+    localStorage.removeItem('agent_access_token');
+    localStorage.removeItem('agent_user');
+  }
+
+  private static async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    const token = this.getToken();
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(options.headers as Record<string, string>),
+    };
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const res = await fetch(`${API_BASE}${endpoint}`, {
+      ...options,
+      headers,
+    });
+
+    if (res.status === 401) {
+      this.logout();
+      window.dispatchEvent(new Event('agent_auth_expired'));
+      throw new Error('Session expired. Please log in again.');
+    }
+
+    const json: ApiResponse<T> = await res.json();
+
+    if (!res.ok || !json.success) {
+      throw new Error(json.error?.message || 'Network request failed');
+    }
+
+    return json.data as T;
+  }
+
+  public static async login(email: string, pass: string) {
+    const res = await this.request<{ user: IUser; tokens: { accessToken: string } }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password: pass }),
+    });
+    this.setAuth(res.user, res.tokens.accessToken);
+    return res.user;
+  }
+
+  /**
+   * Fetch agent queue with automatic offline local storage fallback.
+   */
+  public static async getQueue(status?: string, route?: string, search?: string): Promise<{ items: IAgentQueueItem[]; fromCache: boolean }> {
+    const params = new URLSearchParams();
+    if (status) params.append('status', status);
+    if (route) params.append('route', route);
+    if (search) params.append('search', search);
+
+    try {
+      const res = await this.request<any>(`/emi/queue?${params.toString()}`);
+      const items: IAgentQueueItem[] = Array.isArray(res) ? res : res?.items || [];
+      // Update local offline cache
+      localStorage.setItem('offline_cached_queue', JSON.stringify(items));
+      localStorage.setItem('offline_cached_at', new Date().toISOString());
+      return { items, fromCache: false };
+    } catch (err) {
+      console.warn('Network unavailable, loading offline local cache...');
+      const cached = localStorage.getItem('offline_cached_queue');
+      if (cached) {
+        return { items: JSON.parse(cached), fromCache: true };
+      }
+      throw err;
+    }
+  }
+
+  public static async getStats() {
+    try {
+      return await this.request<{
+        todayTarget: number;
+        todayCollected: number;
+        todayPending: number;
+        collectionEfficiency: number;
+        dueTodayCount: number;
+        overdueCount: number;
+      }>('/emi/stats');
+    } catch {
+      return { todayTarget: 0, todayCollected: 0, todayPending: 0, collectionEfficiency: 0, dueTodayCount: 0, overdueCount: 0 };
+    }
+  }
+
+  public static async getCustomers(search?: string, route?: string): Promise<ICustomer[]> {
+    const params = new URLSearchParams();
+    if (search) params.append('search', search);
+    if (route) params.append('route', route);
+    try {
+      const res = await this.request<any>(`/customers?${params.toString()}`);
+      const customers = Array.isArray(res) ? res : res?.customers || [];
+      localStorage.setItem('offline_cached_customers', JSON.stringify(customers));
+      return customers;
+    } catch (err) {
+      const cached = localStorage.getItem('offline_cached_customers');
+      if (cached) return JSON.parse(cached);
+      throw err;
+    }
+  }
+
+  public static async getCustomerDetail(id: string) {
+    return this.request<{ customer: ICustomer; loans: any[]; kycDocuments: any[]; callLogs: any[] }>(`/customers/${id}`);
+  }
+
+  public static async getPayments(search?: string) {
+    const params = new URLSearchParams();
+    if (search) params.append('search', search);
+    const res = await this.request<any>(`/payments?${params.toString()}`);
+    return Array.isArray(res) ? res : res?.payments || [];
+  }
+
+  public static async logCall(data: any) {
+    return this.request<any>('/call-logs', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  public static async updateCustomer(id: string, data: any) {
+    return this.request<ICustomer>(`/customers/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  public static async initKYCUpload(data: { customerId: string; docType: string; fileName: string; mimeType: string; fileSizeBytes: number }) {
+    return this.request<{ uploadUrl: string; storageKey: string; fileMimeType: string; fileSizeBytes: number }>('/kyc/presigned-upload', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  public static async confirmKYC(data: { customerId: string; docType: string; docNumber?: string | null; storageKey: string; fileMimeType: string; fileSizeBytes: number }) {
+    return this.request<any>('/kyc/confirm', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  public static async deleteKYCDocument(docId: string) {
+    return this.request<{ success: boolean; message: string }>(`/kyc/${docId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  public static async recordPayment(data: any) {
+    return this.request<any>('/payments', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+}

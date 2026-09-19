@@ -1,0 +1,21 @@
+{
+  "name": "crm-platform",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run build --workspaces --if-present",
+    "db:migrate": "npm run db:migrate --workspace=@crm/api",
+    "db:seed": "npm run seed --workspace=@crm/api"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  }
+}

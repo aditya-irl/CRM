@@ -1,0 +1,109 @@
+export enum UserRole {
+  SUPER_ADMIN = 'SUPER_ADMIN',
+  ADMIN = 'ADMIN',
+  BRANCH_MANAGER = 'BRANCH_MANAGER',
+  COLLECTION_AGENT = 'COLLECTION_AGENT',
+}
+
+export enum UserStatus {
+  ACTIVE = 'ACTIVE',
+  INACTIVE = 'INACTIVE',
+  SUSPENDED = 'SUSPENDED',
+}
+
+export enum KYCType {
+  AADHAAR = 'AADHAAR',
+  PAN = 'PAN',
+  VOTER_ID = 'VOTER_ID',
+  DRIVING_LICENSE = 'DRIVING_LICENSE',
+  LOAN_AGREEMENT = 'LOAN_AGREEMENT',
+  PHOTO = 'PHOTO',
+  OTHER = 'OTHER',
+}
+
+export enum KYCStatus {
+  PENDING = 'PENDING',
+  VERIFIED = 'VERIFIED',
+  REJECTED = 'REJECTED',
+}
+
+export enum InterestMethod {
+  FLAT_RATE = 'FLAT_RATE',
+  REDUCING_BALANCE = 'REDUCING_BALANCE',
+}
+
+export enum RepaymentFrequency {
+  DAILY = 'DAILY',
+  WEEKLY = 'WEEKLY',
+  BI_WEEKLY = 'BI_WEEKLY',
+  MONTHLY = 'MONTHLY',
+}
+
+export enum LoanStatus {
+  DRAFT = 'DRAFT',
+  PENDING_APPROVAL = 'PENDING_APPROVAL',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED',
+  ACTIVE = 'ACTIVE',
+  CLOSED = 'CLOSED',
+  DEFAULTED = 'DEFAULTED',
+  RESTRUCTURED = 'RESTRUCTURED',
+  CANCELLED = 'CANCELLED',
+}
+
+export enum EMIStatus {
+  UPCOMING = 'UPCOMING',
+  DUE_TODAY = 'DUE_TODAY',
+  PARTIALLY_PAID = 'PARTIALLY_PAID',
+  PAID = 'PAID',
+  OVERDUE = 'OVERDUE',
+}
+
+export enum PaymentMode {
+  CASH = 'CASH',
+  UPI = 'UPI',
+  BANK_TRANSFER = 'BANK_TRANSFER',
+  CHEQUE = 'CHEQUE',
+}
+
+export enum PaymentStatus {
+  SUCCESS = 'SUCCESS',
+  PENDING_VERIFICATION = 'PENDING_VERIFICATION',
+  REVERSED = 'REVERSED',
+  REJECTED = 'REJECTED',
+}
+
+export enum CallOutcome {
+  PROMISED_TO_PAY = 'PROMISED_TO_PAY',
+  UNREACHABLE = 'UNREACHABLE',
+  RINGING = 'RINGING',
+  SWITCHED_OFF = 'SWITCHED_OFF',
+  WRONG_NUMBER = 'WRONG_NUMBER',
+  PAID = 'PAID',
+  REFUSED_TO_PAY = 'REFUSED_TO_PAY',
+  DISPUTE = 'DISPUTE',
+  OTHER = 'OTHER',
+}
+
+export enum NotificationChannel {
+  WHATSAPP = 'WHATSAPP',
+  SMS = 'SMS',
+  PUSH = 'PUSH',
+  IN_APP = 'IN_APP',
+}
+
+export enum NotificationType {
+  REMINDER_T_MINUS_7 = 'REMINDER_T_MINUS_7',
+  REMINDER_T_MINUS_3 = 'REMINDER_T_MINUS_3',
+  REMINDER_T_MINUS_1 = 'REMINDER_T_MINUS_1',
+  DUE_TODAY = 'DUE_TODAY',
+  OVERDUE = 'OVERDUE',
+  PAYMENT_RECEIPT = 'PAYMENT_RECEIPT',
+}
+
+export enum NotificationStatus {
+  PENDING = 'PENDING',
+  SENT = 'SENT',
+  FAILED = 'FAILED',
+  READ = 'READ',
+}

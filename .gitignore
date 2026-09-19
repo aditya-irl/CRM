@@ -1,0 +1,37 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Build outputs
+dist
+build
+.turbo
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Databases & local storage
+data/*.db*
+apps/data/*.db*
+*.db
+*.db-shm
+*.db-wal
+data/storage_vault/*
+apps/data/storage_vault/*
+!data/.gitkeep
+!apps/data/.gitkeep
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# OS Metadata
+.DS_Store
+Thumbs.db
