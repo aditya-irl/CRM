@@ -4,7 +4,7 @@
   "private": true,
   "main": "./dist/server.js",
   "scripts": {
-    "build": "tsc && mkdir -p dist/database && cp src/database/schema.sql dist/database/ && cp -r src/database/migrations dist/database/ 2>/dev/null || true",
+    "build": "npm run build --workspace=@crm/shared && tsc && mkdir -p dist/database && cp src/database/schema.sql dist/database/ && (cp -r src/database/migrations dist/database/ 2>/dev/null || true)",
     "dev": "ts-node src/server.ts",
     "start": "node dist/server.js",
     "worker:start": "ts-node src/worker.ts",
