@@ -32,6 +32,7 @@ export const DEFAULT_JOB_OPTIONS = {
 };
 
 const queues: Map<string, Queue> = new Map();
+const activeWorkers: Set<Worker> = new Set();
 
 /**
  * Get or create a BullMQ Queue
@@ -52,7 +53,7 @@ export function getQueue(queueName: string): Queue {
 }
 
 /**
- * Register a BullMQ Worker with structured error logging
+ * Register a BullMQ Worker with structured error logging and lifecycle tracking
  */
 export function createWorker<T = any, R = any>(
   queueName: string,
@@ -67,6 +68,9 @@ export function createWorker<T = any, R = any>(
     ...opts,
   });
 
+  // Track worker lifecycle
+  activeWorkers.add(worker);
+
   worker.on('completed', (job) => {
     console.log(`[BullMQ Worker] Job ${job.id} (${job.name}) completed on queue "${queueName}"`);
   });
@@ -75,10 +79,41 @@ export function createWorker<T = any, R = any>(
     console.error(`[BullMQ Worker] Job ${job?.id} (${job?.name}) FAILED on queue "${queueName}":`, err.message);
   });
 
+  worker.on('closed', () => {
+    activeWorkers.delete(worker);
+  });
+
   return worker;
 }
 
-export async function closeAllQueues() {
+/**
+ * Get the count of currently registered active workers
+ */
+export function getActiveWorkersCount(): number {
+  return activeWorkers.size;
+}
+
+/**
+ * Close all active BullMQ Worker instances gracefully.
+ * Idempotent and safe to invoke multiple times.
+ */
+export async function closeAllWorkers(): Promise<void> {
+  const workersToClose = Array.from(activeWorkers);
+  activeWorkers.clear();
+  for (const worker of workersToClose) {
+    try {
+      await worker.close();
+    } catch {
+      // Handled gracefully during shutdown
+    }
+  }
+}
+
+/**
+ * Close all BullMQ Queue instances gracefully.
+ * Idempotent and safe to invoke multiple times.
+ */
+export async function closeAllQueues(): Promise<void> {
   for (const [name, q] of queues.entries()) {
     try {
       await q.close();

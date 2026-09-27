@@ -2,8 +2,14 @@ import { acquireDistributedLock, releaseDistributedLock } from '../core/redis';
 import { EMIStateEngineJob } from './emi-state-engine.job';
 import { ReminderDispatcherJob } from './reminder-dispatcher.job';
 import { NotificationWorker } from '../modules/notifications/notification.worker';
+import { Worker } from 'bullmq';
+import { closeAllWorkers } from '../core/queue';
 
 export class BackgroundScheduler {
+  private static workersStarted = false;
+  private static notifWorker: Worker | null = null;
+  private static maintenanceTimer: NodeJS.Timeout | null = null;
+
   /**
    * Execute daily EMI maintenance cycle protected by Redis distributed lock.
    * Safe to trigger across multiple instances simultaneously.
@@ -35,10 +41,64 @@ export class BackgroundScheduler {
 
   /**
    * Start all background BullMQ workers.
+   * Idempotent: guards against duplicate worker creation.
    */
   public static startWorkers() {
+    if (this.workersStarted) {
+      console.log('[BackgroundScheduler] Workers already running. Skipping duplicate startup.');
+      return { notifWorker: this.notifWorker };
+    }
+
     console.log('[BackgroundScheduler] Starting BullMQ workers...');
-    const notifWorker = NotificationWorker.startWorker();
-    return { notifWorker };
+    this.notifWorker = NotificationWorker.startWorker();
+    this.workersStarted = true;
+    return { notifWorker: this.notifWorker };
+  }
+
+  /**
+   * Start periodic daily maintenance scheduler.
+   */
+  public static startMaintenanceScheduler(intervalMs = 3600000): void {
+    if (this.maintenanceTimer) {
+      return;
+    }
+    this.maintenanceTimer = setInterval(async () => {
+      try {
+        await BackgroundScheduler.executeDailyMaintenance();
+      } catch (err: any) {
+        console.error('[BackgroundScheduler] Error executing scheduled maintenance:', err.message);
+      }
+    }, intervalMs);
+    this.maintenanceTimer.unref();
+  }
+
+  /**
+   * Stop all background workers and maintenance schedulers gracefully.
+   */
+  public static async stopWorkers(): Promise<void> {
+    if (this.maintenanceTimer) {
+      clearInterval(this.maintenanceTimer);
+      this.maintenanceTimer = null;
+    }
+
+    if (this.notifWorker) {
+      try {
+        await this.notifWorker.close();
+      } catch {
+        // Handled gracefully during shutdown
+      }
+      this.notifWorker = null;
+    }
+
+    await closeAllWorkers();
+    this.workersStarted = false;
+    console.log('[BackgroundScheduler] Background workers stopped cleanly.');
+  }
+
+  /**
+   * Check if workers are currently active.
+   */
+  public static areWorkersRunning(): boolean {
+    return this.workersStarted;
   }
 }
