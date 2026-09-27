@@ -4,9 +4,11 @@
   "private": true,
   "main": "./dist/server.js",
   "scripts": {
-    "build": "npm run build --workspace=@crm/shared && tsc && mkdir -p dist/database && cp src/database/schema.sql dist/database/ && (cp -r src/database/migrations dist/database/ 2>/dev/null || true)",
+    "build": "npm run build --workspace=@crm/shared && tsc && mkdir -p dist/database && cp src/database/schema.sql dist/database/ && (cp -r src/database/migrations dist/database/ 2>/dev/null || true) && node -e \"const fs=require('fs');const target=require.resolve('@crm/shared');if(!fs.existsSync(target)){console.error('FATAL: Cannot resolve @crm/shared runtime dist at '+target);process.exit(1);}console.log('✓ Verified @crm/shared runtime resolution at:', target);\"",
+    "prestart": "node -e \"const fs=require('fs');try{const t=require.resolve('@crm/shared');if(fs.existsSync(t))process.exit(0);}catch{}console.log('Prestart: compiling @crm/shared...');require('child_process').execSync('npm run build --workspace=@crm/shared',{stdio:'inherit'});\"",
     "dev": "ts-node src/server.ts",
     "start": "node dist/server.js",
+    "preworker": "npm run prestart",
     "worker:start": "ts-node src/worker.ts",
     "worker": "node dist/worker.js",
     "test": "jest --runInBand --forceExit",

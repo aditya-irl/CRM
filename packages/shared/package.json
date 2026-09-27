@@ -8,11 +8,11 @@
       "types": "./src/index.ts",
       "import": "./src/index.ts",
       "require": "./dist/index.js",
-      "default": "./src/index.ts"
+      "default": "./dist/index.js"
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node -e \"const fs=require('fs'),p=require('path');const d=p.join(__dirname,'dist');if(!fs.existsSync(p.join(d,'index.js'))){console.error('FATAL: packages/shared/dist/index.js missing');process.exit(1);}[p.resolve(__dirname,'../../node_modules/@crm/shared'),p.resolve(__dirname,'../../apps/api/node_modules/@crm/shared')].forEach(nm=>{if(fs.existsSync(nm)&&!fs.lstatSync(nm).isSymbolicLink()){fs.cpSync(d,p.join(nm,'dist'),{recursive:true});console.log('Synced dist to',nm);}});\"",
     "dev": "tsc --watch",
     "test": "jest"
   },
