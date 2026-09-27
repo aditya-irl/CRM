@@ -7,21 +7,25 @@
     "build": "tsc && mkdir -p dist/database && cp src/database/schema.sql dist/database/ && cp -r src/database/migrations dist/database/ 2>/dev/null || true",
     "dev": "ts-node src/server.ts",
     "start": "node dist/server.js",
-    "test": "jest --runInBand",
+    "worker:start": "ts-node src/worker.ts",
+    "worker": "node dist/worker.js",
+    "test": "jest --runInBand --forceExit",
     "seed": "ts-node src/database/seed.ts",
-    "db:migrate": "ts-node src/database/migrate.ts"
+    "db:migrate": "ts-node src/database/migrate.ts",
+    "db:migrate:prod": "node dist/database/migrate.js",
+    "db:migrate:test": "ts-node src/database/migrate.ts --test"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1136.0",
     "@aws-sdk/s3-request-presigner": "^3.1136.0",
     "@crm/shared": "*",
     "bcryptjs": "^2.4.3",
-    "better-sqlite3": "^9.4.3",
     "bullmq": "^6.3.8",
     "cors": "^2.8.5",
     "decimal.js": "^10.4.3",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "express-rate-limit": "^8.7.0",
     "helmet": "^7.1.0",
     "ioredis": "^6.0.0",
     "jsonwebtoken": "^9.0.2",
@@ -29,6 +33,9 @@
     "pg": "^8.23.0",
     "uuid": "^9.0.1",
     "zod": "^3.23.8"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^9.4.3"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
