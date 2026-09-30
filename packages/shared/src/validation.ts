@@ -7,11 +7,53 @@ import {
   PaymentMode,
   CallOutcome,
   LoanStatus,
+  DealerStatus,
+  CollectionSource,
+  PaymentStatus,
+  SettlementStatus,
+  SettlementPaymentMethod,
+  UserStatus,
 } from './enums';
 
 export const loginSchema = z.object({
-  email: z.string().email('Invalid email address'),
+  email: z.string().min(3, 'Email or Dealer Login ID is required'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
+});
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'Current password is required'),
+  newPassword: z.string().min(6, 'New password must be at least 6 characters'),
+});
+
+export const updateDealerLoginStatusSchema = z.object({
+  status: z.nativeEnum(UserStatus),
+});
+
+export const createDealerSchema = z.object({
+  storeName: z.string().min(2, 'Store name must be at least 2 characters'),
+  ownerName: z.string().min(2, 'Owner name must be at least 2 characters'),
+  phone: z.string().regex(/^[0-9+()\-\s]{10,15}$/, 'Invalid mobile phone number'),
+  alternatePhone: z
+    .preprocess(
+      (v) => (v === '' || v === undefined ? null : v),
+      z.string().regex(/^[0-9+()\-\s]{10,15}$/, 'Invalid alternate phone number').nullable()
+    )
+    .optional(),
+  email: z
+    .preprocess(
+      (v) => (v === '' || v === undefined ? null : v),
+      z.string().email('Invalid email address').nullable()
+    )
+    .optional(),
+  address: z.string().min(5, 'Full store address is required'),
+  areaCity: z.string().min(2, 'Area/City is required'),
+  status: z.nativeEnum(DealerStatus).default(DealerStatus.ACTIVE),
+});
+
+export const updateDealerSchema = createDealerSchema.partial();
+
+export const updateDealerStatusSchema = z.object({
+  status: z.nativeEnum(DealerStatus),
 });
 
 export const createCustomerSchema = z.object({
@@ -25,10 +67,28 @@ export const createCustomerSchema = z.object({
   state: z.string().min(2, 'State is required'),
   pincode: z.string().regex(/^\d{6}$/, 'Pincode must be 6 digits'),
   areaRoute: z.string().min(2, 'Area/Route is required'),
-  photoUrl: z.string().url().optional().nullable(),
+  photoUrl: z.string().optional().nullable(),
 });
 
 export const updateCustomerSchema = createCustomerSchema.partial();
+
+export const onboardCustomerSchema = z.object({
+  customer: createCustomerSchema,
+  loan: z.object({
+    principalAmount: z.number().positive('Principal amount must be positive'),
+    downPayment: z.number().min(0, 'Down payment cannot be negative').default(0),
+    annualInterestRate: z.number().min(0, 'Interest rate cannot be negative'),
+    interestCalcMethod: z.nativeEnum(InterestMethod).default(InterestMethod.FLAT_RATE),
+    tenureMonths: z.number().int().positive('Tenure must be a positive integer'),
+    installmentFrequency: z.nativeEnum(RepaymentFrequency).default(RepaymentFrequency.MONTHLY),
+    disbursementDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Disbursement date must be YYYY-MM-DD'),
+    firstEmiDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'First EMI date must be YYYY-MM-DD').optional(),
+    dealerId: z.string().uuid('Invalid dealer ID').optional().nullable(),
+    assignedAgentId: z.string().uuid('Invalid agent ID').optional().nullable(),
+    status: z.nativeEnum(LoanStatus).optional(),
+  }).optional(),
+});
+export type OnboardCustomerInput = z.infer<typeof onboardCustomerSchema>;
 
 export const calculateLoanSchema = z.object({
   principalAmount: z.number().positive('Principal amount must be positive'),
@@ -44,6 +104,7 @@ export const calculateLoanSchema = z.object({
 export const createLoanSchema = calculateLoanSchema.extend({
   customerId: z.string().uuid('Invalid customer ID'),
   assignedAgentId: z.string().uuid('Invalid agent ID').optional().nullable(),
+  dealerId: z.string().uuid('Invalid dealer ID').optional().nullable(),
   status: z.nativeEnum(LoanStatus).optional(),
 });
 
@@ -67,9 +128,52 @@ export const recordPaymentSchema = z.object({
   customerId: z.string().uuid('Invalid customer ID'),
   amount: z.number().positive('Payment amount must be greater than 0'),
   paymentMode: z.nativeEnum(PaymentMode).default(PaymentMode.CASH),
+  collectionSource: z.nativeEnum(CollectionSource).optional(),
+  dealerId: z.string().uuid('Invalid dealer ID').optional().nullable(),
+  agentId: z.string().uuid('Invalid agent ID').optional().nullable(),
   referenceNumber: z.string().max(100).optional().nullable(),
   notes: z.string().max(500).optional().nullable(),
   idempotencyKey: z.string().min(5).max(150).optional(),
+}).superRefine((data, ctx) => {
+  if (data.collectionSource === CollectionSource.DIRECT_CUSTOMER) {
+    if (data.dealerId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['dealerId'],
+        message: 'Dealer ID must not be provided for direct customer payments',
+      });
+    }
+    if (data.agentId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['agentId'],
+        message: 'Agent ID must not be provided for direct customer payments',
+      });
+    }
+  } else if (data.collectionSource === CollectionSource.DEALER) {
+    if (!data.dealerId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['dealerId'],
+        message: 'Dealer ID is required for partner store payments',
+      });
+    }
+    if (data.agentId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['agentId'],
+        message: 'Agent ID must not be provided for partner store payments',
+      });
+    }
+  } else if (data.collectionSource === CollectionSource.RECOVERY_AGENT) {
+    if (data.dealerId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['dealerId'],
+        message: 'Dealer ID must not be provided for recovery agent payments',
+      });
+    }
+  }
 });
 
 export const reversePaymentSchema = z.object({
@@ -112,3 +216,124 @@ export const kycConfirmSchema = z.object({
   fileMimeType: z.string(),
   fileSizeBytes: z.number().int().positive(),
 });
+
+export const dealerCollectionsFilterSchema = z.object({
+  dealerId: z.string().uuid('Invalid dealer ID').optional(),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Start date must be YYYY-MM-DD').optional(),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'End date must be YYYY-MM-DD').optional(),
+  search: z.string().optional(),
+  page: z.preprocess((val) => (val ? Number(val) : 1), z.number().int().min(1)).optional(),
+  limit: z.preprocess((val) => (val ? Number(val) : 25), z.number().int().min(1).max(100)).optional(),
+});
+
+export const createDealerSettlementSchema = z.object({
+  dealerId: z.string().uuid('Invalid dealer ID'),
+  amount: z.number().positive('Settlement amount must be greater than 0'),
+  settlementDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Settlement date must be YYYY-MM-DD'),
+  paymentMethod: z.string().min(2, 'Payment method is required'),
+  referenceNumber: z.string().max(100).optional().nullable(),
+  notes: z.string().max(500).optional().nullable(),
+  allocations: z
+    .array(
+      z.object({
+        paymentId: z.string().uuid('Invalid payment ID'),
+        amountAllocated: z.number().positive('Allocation amount must be greater than 0'),
+      })
+    )
+    .optional(),
+});
+
+export const dealerSettlementsFilterSchema = z.object({
+  dealerId: z.string().uuid('Invalid dealer ID').optional(),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Start date must be YYYY-MM-DD').optional(),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'End date must be YYYY-MM-DD').optional(),
+  status: z.nativeEnum(SettlementStatus).optional(),
+  search: z.string().optional(),
+  page: z.preprocess((val) => (val ? Number(val) : 1), z.number().int().min(1)).optional(),
+  limit: z.preprocess((val) => (val ? Number(val) : 25), z.number().int().min(1).max(100)).optional(),
+});
+
+export const reverseDealerSettlementSchema = z.object({
+  reason: z.string().min(5, 'Reversal reason is mandatory and must be at least 5 characters'),
+});
+
+export const agentCollectionsFilterSchema = z.object({
+  agentId: z.string().uuid('Invalid agent ID').optional(),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Start date must be YYYY-MM-DD').optional(),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'End date must be YYYY-MM-DD').optional(),
+  search: z.string().optional(),
+  page: z.preprocess((val) => (val ? Number(val) : 1), z.number().int().min(1)).optional(),
+  limit: z.preprocess((val) => (val ? Number(val) : 25), z.number().int().min(1).max(100)).optional(),
+});
+
+export const directCollectionsFilterSchema = z.object({
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Start date must be YYYY-MM-DD').optional(),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'End date must be YYYY-MM-DD').optional(),
+  paymentMode: z.nativeEnum(PaymentMode).optional(),
+  status: z.nativeEnum(PaymentStatus).optional(),
+  search: z.string().optional(),
+  page: z.preprocess((val) => (val ? Number(val) : 1), z.number().int().min(1)).optional(),
+  limit: z.preprocess((val) => (val ? Number(val) : 25), z.number().int().min(1).max(100)).optional(),
+});
+
+export const paymentsFilterSchema = z.object({
+  collectionSource: z.nativeEnum(CollectionSource).optional(),
+  status: z.nativeEnum(PaymentStatus).optional(),
+  paymentMode: z.nativeEnum(PaymentMode).optional(),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Start date must be YYYY-MM-DD').optional(),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'End date must be YYYY-MM-DD').optional(),
+  search: z.string().optional(),
+  loanId: z.string().uuid('Invalid loan ID').optional(),
+  customerId: z.string().uuid('Invalid customer ID').optional(),
+  page: z.preprocess((val) => (val ? Number(val) : 1), z.number().int().min(1)).optional(),
+  limit: z.preprocess((val) => (val ? Number(val) : 25), z.number().int().min(1).max(100)).optional(),
+});
+
+export const financeDashboardFilterSchema = z.object({
+  preset: z.enum([
+    'today',
+    'yesterday',
+    'this-week',
+    'this-month',
+    'last-month',
+    'this-quarter',
+    'this-year',
+    'custom',
+    'all',
+  ]).optional(),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Start date must be YYYY-MM-DD').optional(),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'End date must be YYYY-MM-DD').optional(),
+});
+
+export const financeReportFilterSchema = z.object({
+  category: z.enum(['collections', 'loans', 'dealer', 'recovery']).default('collections'),
+  reportType: z.enum([
+    'all-collections',
+    'direct-collections',
+    'dealer-collections',
+    'agent-collections',
+    'disbursements',
+    'active-portfolio',
+    'closed-loans',
+    'overdue-loans',
+    'dealer-reconciliation',
+    'dealer-settlements',
+    'dealer-outstanding',
+    'agent-performance',
+    'recovery-queue',
+  ]).default('all-collections'),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Start date must be YYYY-MM-DD').optional(),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'End date must be YYYY-MM-DD').optional(),
+  dealerId: z.string().uuid('Invalid dealer ID').optional(),
+  agentId: z.string().uuid('Invalid agent ID').optional(),
+  collectionSource: z.nativeEnum(CollectionSource).optional(),
+  paymentMode: z.nativeEnum(PaymentMode).optional(),
+  paymentStatus: z.nativeEnum(PaymentStatus).optional(),
+  loanStatus: z.nativeEnum(LoanStatus).optional(),
+  bucket: z.string().optional(),
+  search: z.string().optional(),
+  page: z.preprocess((val) => (val ? Number(val) : 1), z.number().int().min(1)).optional(),
+  limit: z.preprocess((val) => (val ? Number(val) : 25), z.number().int().min(1).max(200)).optional(),
+});
+
+

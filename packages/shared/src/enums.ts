@@ -3,6 +3,7 @@ export enum UserRole {
   ADMIN = 'ADMIN',
   BRANCH_MANAGER = 'BRANCH_MANAGER',
   COLLECTION_AGENT = 'COLLECTION_AGENT',
+  DEALER = 'DEALER',
 }
 
 export enum UserStatus {
@@ -107,3 +108,31 @@ export enum NotificationStatus {
   FAILED = 'FAILED',
   READ = 'READ',
 }
+
+export enum DealerStatus {
+  ACTIVE = 'ACTIVE',
+  INACTIVE = 'INACTIVE',
+}
+
+export enum CollectionSource {
+  DIRECT_CUSTOMER = 'DIRECT_CUSTOMER',
+  DEALER = 'DEALER',
+  RECOVERY_AGENT = 'RECOVERY_AGENT',
+}
+
+export enum SettlementStatus {
+  PENDING = 'PENDING',
+  COMPLETED = 'COMPLETED',
+  REVERSED = 'REVERSED',
+}
+
+export enum SettlementPaymentMethod {
+  BANK_TRANSFER = 'BANK_TRANSFER',
+  UPI = 'UPI',
+  CHEQUE = 'CHEQUE',
+  CASH = 'CASH',
+  NEFT_RTGS = 'NEFT_RTGS',
+  OTHER = 'OTHER',
+}
+
+

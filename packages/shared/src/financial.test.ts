@@ -122,4 +122,106 @@ describe('Financial Calculation Engine', () => {
     expect(result.allocatedPayments[1].newStatus).toBe(EMIStatus.OVERDUE);
     expect(result.allocatedPayments[1].newRemainingAmount).toBe(1100);
   });
+
+  // ===========================================================================
+  // UAT REGRESSION TESTS: CASE 1 (REDUCING BALANCE) & CASE 2 (FLAT RATE)
+  // ===========================================================================
+  describe('UAT Financial Engine Audits: Reducing Balance vs Flat Rate & Installment Counts', () => {
+    test('CASE 1 — REDUCING BALANCE: Principal ₹100,000, 10% p.a., 12 Months -> exactly 12 installments, EMI ≈ ₹8,791.59', () => {
+      // Retail Price: 120,000, Down Payment: 20,000 => Net Disbursed (Financed Principal): 100,000
+      const result = generateAmortizationSchedule({
+        principalAmount: 120000,
+        downPayment: 20000,
+        annualInterestRate: 10,
+        tenureMonths: 12,
+        installmentFrequency: RepaymentFrequency.MONTHLY,
+        interestCalcMethod: InterestMethod.REDUCING_BALANCE,
+        disbursementDate: '2026-09-01',
+      });
+
+      expect(result.netDisbursedAmount).toBe(100000);
+      expect(result.totalInstallments).toBe(12);
+      expect(result.schedule.length).toBe(12);
+      expect(result.emiAmount).toBe(8791.59);
+      expect(Math.abs(result.totalInterest - 5499.06)).toBeLessThanOrEqual(0.02);
+      expect(Math.abs(result.totalPayable - 105499.06)).toBeLessThanOrEqual(0.02);
+
+      // Verify that EMI is NOT ₹7,033.27 (which occurred when down payment was subtracted twice: 100,000 - 20,000 = 80,000)
+      expect(result.emiAmount).not.toBe(7033.27);
+
+      // Verify each installment conservation
+      const sumPrincipal = result.schedule.reduce((acc, curr) => acc + curr.principalComponent, 0);
+      expect(toFixed2(sumPrincipal)).toBe(100000);
+
+      const sumInterest = result.schedule.reduce((acc, curr) => acc + curr.interestComponent, 0);
+      expect(toFixed2(sumInterest)).toBe(result.totalInterest);
+    });
+
+    test('CASE 2 — FLAT RATE: Principal ₹100,000, 10% p.a., 12 Months -> exactly 12 installments, Total Interest = ₹10,000, EMI ≈ ₹9,166.67', () => {
+      // Retail Price: 120,000, Down Payment: 20,000 => Net Disbursed (Financed Principal): 100,000
+      const result = generateAmortizationSchedule({
+        principalAmount: 120000,
+        downPayment: 20000,
+        annualInterestRate: 10,
+        tenureMonths: 12,
+        installmentFrequency: RepaymentFrequency.MONTHLY,
+        interestCalcMethod: InterestMethod.FLAT_RATE,
+        disbursementDate: '2026-09-01',
+      });
+
+      expect(result.netDisbursedAmount).toBe(100000);
+      expect(result.totalInstallments).toBe(12);
+      expect(result.schedule.length).toBe(12);
+
+      // Total interest = 100,000 * 10% * 1 year = 10,000
+      expect(result.totalInterest).toBe(10000);
+      // Total payable = 100,000 + 10,000 = 110,000
+      expect(result.totalPayable).toBe(110000);
+      // Monthly installment = 110,000 / 12 = 9,166.67
+      expect(result.emiAmount).toBe(9166.67);
+
+      // Sum of expected amounts must strictly match 110,000
+      const sumExpected = result.schedule.reduce((acc, curr) => acc + curr.expectedAmount, 0);
+      expect(toFixed2(sumExpected)).toBe(110000);
+
+      // Sum of principal components must strictly match 100,000
+      const sumPrincipal = result.schedule.reduce((acc, curr) => acc + curr.principalComponent, 0);
+      expect(toFixed2(sumPrincipal)).toBe(100000);
+
+      // Sum of interest components must strictly match 10,000
+      const sumInterest = result.schedule.reduce((acc, curr) => acc + curr.interestComponent, 0);
+      expect(toFixed2(sumInterest)).toBe(10000);
+    });
+
+    test('6-month monthly loan produces exactly 6 installments and 12-month produces exactly 12 installments', () => {
+      const loan6 = generateAmortizationSchedule({
+        principalAmount: 120000,
+        downPayment: 20000,
+        annualInterestRate: 10,
+        tenureMonths: 6,
+        installmentFrequency: RepaymentFrequency.MONTHLY,
+        interestCalcMethod: InterestMethod.FLAT_RATE,
+        disbursementDate: '2026-09-01',
+      });
+
+      expect(loan6.totalInstallments).toBe(6);
+      expect(loan6.schedule.length).toBe(6);
+
+      const loan12 = generateAmortizationSchedule({
+        principalAmount: 120000,
+        downPayment: 20000,
+        annualInterestRate: 10,
+        tenureMonths: 12,
+        installmentFrequency: RepaymentFrequency.MONTHLY,
+        interestCalcMethod: InterestMethod.FLAT_RATE,
+        disbursementDate: '2026-09-01',
+      });
+
+      expect(loan12.totalInstallments).toBe(12);
+      expect(loan12.schedule.length).toBe(12);
+      // A 12-month loan must NEVER produce 6 installments
+      expect(loan12.totalInstallments).not.toBe(6);
+      expect(loan12.schedule.length).not.toBe(6);
+    });
+  });
 });
