@@ -1,13 +1,14 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { AuthService } from './auth.service';
 import { validateBody } from '../../middlewares/validate.middleware';
-import { loginSchema } from '@crm/shared';
+import { loginSchema, changePasswordSchema } from '@crm/shared';
 import { authenticate } from '../../middlewares/auth.middleware';
 import { AuditService } from '../audit/audit.service';
+import { authRateLimiter } from '../../middlewares/rate-limit.middleware';
 
 const router = Router();
 
-router.post('/login', validateBody(loginSchema), async (req: Request, res: Response, next: NextFunction) => {
+router.post('/login', authRateLimiter, validateBody(loginSchema), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { email, password } = req.body;
     const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress;
@@ -24,7 +25,7 @@ router.post('/login', validateBody(loginSchema), async (req: Request, res: Respo
   }
 });
 
-router.post('/refresh', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/refresh', authRateLimiter, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { refreshToken } = req.body;
     if (!refreshToken) {
@@ -82,5 +83,35 @@ router.post('/logout', authenticate, async (req: Request, res: Response, next: N
     next(err);
   }
 });
+
+router.post(
+  '/change-password',
+  authenticate,
+  authRateLimiter,
+  validateBody(changePasswordSchema),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { currentPassword, newPassword } = req.body;
+      const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress;
+      const userAgent = req.headers['user-agent'];
+
+      const result = await AuthService.changePassword(
+        req.user!.id,
+        currentPassword,
+        newPassword,
+        ip,
+        userAgent
+      );
+
+      return res.json({
+        success: true,
+        data: result,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 
 export default router;

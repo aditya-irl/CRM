@@ -1,0 +1,24 @@
+{
+  "name": "Alpha Mobile Gallery — Shubh Pvt Ltd",
+  "short_name": "Alpha Mobile",
+  "description": "Alpha Mobile Gallery Enterprise FinTech, KYC & EMI Management System",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#f7f4ee",
+  "background_color": "#f7f4ee",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

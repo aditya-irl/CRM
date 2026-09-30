@@ -21,7 +21,7 @@ router.use(authenticate);
  */
 router.post(
   '/calculate-preview',
-  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER, UserRole.COLLECTION_AGENT),
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER, UserRole.COLLECTION_AGENT, UserRole.DEALER),
   validateBody(calculateLoanSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -83,7 +83,7 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
  */
 router.post(
   '/',
-  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER),
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER, UserRole.DEALER),
   validateBody(createLoanSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {

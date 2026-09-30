@@ -3,6 +3,7 @@ import { ApiClient } from '../services/api';
 import {
   ICustomer,
   ILoan,
+  IPayment,
   formatINR,
   CallOutcome,
   PaymentMode,
@@ -11,10 +12,12 @@ import {
 import { AddCustomerWizard } from '../components/AddCustomerWizard';
 import { EditCustomerModal } from '../components/EditCustomerModal';
 import { DynamicAttachmentManager, AttachmentItem } from '../components/DynamicAttachmentManager';
+import { PortalLinkManager } from '../components/PortalLinkManager';
 import {
   Plus,
   Search,
   Users,
+  Store,
   ShieldCheck,
   Smartphone,
   Banknote,
@@ -31,21 +34,25 @@ import {
   Edit,
   Trash2,
   Image as ImageIcon,
+  UserCheck,
+  Building2,
+  Printer,
 } from 'lucide-react';
 
-export const CustomersView: React.FC = () => {
+interface CustomersViewProps {
+  userRole?: string;
+}
+
+export const CustomersView: React.FC<CustomersViewProps> = ({ userRole }) => {
+  const currentUser = ApiClient.getUser();
   const [customers, setCustomers] = useState<ICustomer[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [routeFilter, setRouteFilter] = useState('');
-
-  // Add Customer Wizard
   const [showWizard, setShowWizard] = useState(false);
-
-  // Edit Customer Modal
   const [showEditModal, setShowEditModal] = useState(false);
 
-  // Central Customer Profile Modal
+  // Profile 360 State
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [customerDetail, setCustomerDetail] = useState<{
     customer: ICustomer;
@@ -53,6 +60,7 @@ export const CustomersView: React.FC = () => {
     kycDocuments: any[];
     callLogs: any[];
   } | null>(null);
+  const [customerPayments, setCustomerPayments] = useState<IPayment[]>([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [activeProfileTab, setActiveProfileTab] = useState<'contact' | 'photos' | 'documents' | 'product' | 'finance' | 'payments' | 'calls'>('contact');
 
@@ -68,6 +76,10 @@ export const CustomersView: React.FC = () => {
   const [promisedDate, setPromisedDate] = useState('');
   const [callNotes, setCallNotes] = useState('');
   const [savingCall, setSavingCall] = useState(false);
+
+  // Customer 360 Payment Details & Receipt Modals
+  const [selectedReceipt, setSelectedReceipt] = useState<any | null>(null);
+  const [selectedPaymentDetail, setSelectedPaymentDetail] = useState<any | null>(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -98,8 +110,12 @@ export const CustomersView: React.FC = () => {
     setNewCustomerPhotos([]);
     setNewProductPhotos([]);
     try {
-      const data = await ApiClient.getCustomerDetail(id);
+      const [data, pays] = await Promise.all([
+        ApiClient.getCustomerDetail(id),
+        ApiClient.listPayments(undefined, 1, 50, id).catch(() => []),
+      ]);
       setCustomerDetail(data);
+      setCustomerPayments(pays);
     } catch (err: any) {
       alert(err.message || 'Failed to load customer profile');
     } finally {
@@ -191,7 +207,7 @@ export const CustomersView: React.FC = () => {
 
   const sendWhatsApp = (cust: ICustomer) => {
     const clean = cust.primaryPhone.replace(/\D/g, '');
-    const msg = `Dear ${cust.fullName}, greeting from Finance & EMI services. Please let us know if you need assistance with your financed account.`;
+    const msg = `Dear ${cust.fullName}, greetings from Alpha Mobile Gallery (Shubh Pvt Ltd). Please let us know if you need assistance with your financed account.`;
     window.open(`https://wa.me/${clean}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
@@ -438,6 +454,12 @@ export const CustomersView: React.FC = () => {
                 className={`crm-tab ${activeProfileTab === 'finance' ? 'active' : ''}`}
               >
                 Finance & EMIs
+              </button>
+              <button
+                onClick={() => setActiveProfileTab('payments')}
+                className={`crm-tab ${activeProfileTab === 'payments' ? 'active' : ''}`}
+              >
+                Payments ({customerPayments.length})
               </button>
               <button
                 onClick={() => setActiveProfileTab('calls')}
@@ -699,6 +721,32 @@ export const CustomersView: React.FC = () => {
                             <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Status</div>
                             <span className="badge badge-paid">{loan.status}</span>
                           </div>
+
+                          {(loan.dealerStoreName || (loan as any).dealer_store_name) && (
+                            <div
+                              style={{
+                                gridColumn: 'span 3',
+                                padding: '8px 12px',
+                                background: 'var(--bg-surface-secondary)',
+                                borderRadius: 'var(--radius-md)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                marginTop: 4,
+                              }}
+                            >
+                              <Store size={14} color="var(--primary)" />
+                              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Financed Through Partner Store:</span>
+                              <strong style={{ fontSize: 12, color: 'var(--text-primary)' }}>
+                                {loan.dealerStoreName || (loan as any).dealer_store_name}
+                              </strong>
+                              {(loan.dealerCode || (loan as any).dealer_code) && (
+                                <span className="mono badge badge-terracotta" style={{ fontSize: 10 }}>
+                                  {loan.dealerCode || (loan as any).dealer_code}
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))
@@ -786,6 +834,17 @@ export const CustomersView: React.FC = () => {
                           </table>
                         </div>
                       )}
+
+                      {/* Customer EMI Portal Section */}
+                      <div style={{ marginTop: 8 }}>
+                        <PortalLinkManager
+                          loanId={loan.id}
+                          loanAccountNo={loan.loanAccountNo}
+                          customerName={customerDetail.customer.fullName}
+                          primaryPhone={customerDetail.customer.primaryPhone}
+                          userRole={currentUser?.role}
+                        />
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -838,6 +897,142 @@ export const CustomersView: React.FC = () => {
                       ))
                     )}
                   </div>
+                </div>
+              )}
+
+              {/* TAB 7: PAYMENTS HISTORY */}
+              {activeProfileTab === 'payments' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700 }}>
+                      <Receipt size={16} color="var(--primary)" />
+                      <span>Payment & Collection History</span>
+                    </div>
+                  </div>
+
+                  {customerPayments.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)', fontSize: 12 }}>
+                      No payment transactions recorded for this customer yet.
+                    </div>
+                  ) : (
+                    <div className="table-container">
+                      <table className="crm-table">
+                        <thead>
+                          <tr>
+                            <th>Receipt No</th>
+                            <th>Loan Acc</th>
+                            <th>Amount</th>
+                            <th>Mode</th>
+                            <th>Collected Through</th>
+                            <th>Date</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {customerPayments.map((p) => {
+                            const isReversed = p.status === 'REVERSED' || Boolean((p as any).is_reversal);
+                            const source = p.collectionSource || (p as any).collection_source || 'DIRECT_CUSTOMER';
+                            const storeName = p.dealerStoreName || (p as any).dealer_store_name;
+                            const dealerCode = p.dealerCode || (p as any).dealer_code;
+                            const agentName = p.agentName || (p as any).source_agent_name || (p as any).collected_by_name;
+
+                            return (
+                              <tr key={p.id}>
+                                <td className="mono" style={{ fontWeight: 700, color: 'var(--primary)' }}>
+                                  {p.receiptNumber || (p as any).receipt_number}
+                                </td>
+                                <td className="mono">{(p as any).loan_account_no || (p as any).loanAccountNo || 'Loan'}</td>
+                                <td
+                                  className="mono"
+                                  style={{
+                                    fontWeight: 700,
+                                    color: isReversed ? 'var(--text-muted)' : 'var(--success-text)',
+                                    textDecoration: isReversed ? 'line-through' : 'none',
+                                  }}
+                                >
+                                  {formatINR(p.amount)}
+                                </td>
+                                <td>
+                                  <span className="badge badge-upcoming">{p.paymentMode || (p as any).payment_mode}</span>
+                                </td>
+                                <td>
+                                  {source === 'DEALER' ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                      <span className="badge badge-terracotta" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, width: 'fit-content' }}>
+                                        <Store size={11} />
+                                        <span>Partner Store</span>
+                                      </span>
+                                      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)' }}>
+                                        {storeName || 'Store'} {dealerCode ? `(${dealerCode})` : ''}
+                                      </span>
+                                    </div>
+                                  ) : source === 'RECOVERY_AGENT' ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                      <span className="badge badge-due-today" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, width: 'fit-content' }}>
+                                        <UserCheck size={11} />
+                                        <span>Recovery Agent</span>
+                                      </span>
+                                      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)' }}>
+                                        {agentName || 'Field Agent'}
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <span className="badge badge-paid" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                      <Building2 size={11} />
+                                      <span>Direct Customer</span>
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="mono" style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                  {new Date(p.paymentTimestamp || (p as any).payment_timestamp).toLocaleDateString('en-IN')}
+                                </td>
+                                <td>
+                                  <span className={`badge ${isReversed ? 'badge-overdue' : 'badge-paid'}`}>
+                                    {isReversed ? 'REVERSED' : 'SUCCESS'}
+                                  </span>
+                                </td>
+                                <td>
+                                  <div style={{ display: 'flex', gap: 6 }}>
+                                    <button
+                                      onClick={async () => {
+                                        try {
+                                          const r = await ApiClient.getReceipt(p.id);
+                                          setSelectedReceipt(r);
+                                        } catch (e: any) {
+                                          alert(e.message || 'Failed to fetch receipt');
+                                        }
+                                      }}
+                                      className="btn btn-secondary btn-sm"
+                                      title="View Receipt"
+                                    >
+                                      <Receipt size={12} />
+                                      <span>Receipt</span>
+                                    </button>
+                                    <button
+                                      onClick={async () => {
+                                        try {
+                                          const d = await ApiClient.getPaymentDetail(p.id);
+                                          setSelectedPaymentDetail(d);
+                                        } catch (e: any) {
+                                          alert(e.message || 'Failed to fetch payment details');
+                                        }
+                                      }}
+                                      className="btn btn-secondary btn-sm"
+                                      title="View Details"
+                                    >
+                                      <Eye size={12} />
+                                      <span>Details</span>
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -959,6 +1154,150 @@ export const CustomersView: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Customer 360 Receipt Viewer Modal */}
+      {selectedReceipt && (
+        <div className="modal-overlay" style={{ background: 'rgba(0,0,0,0.7)' }}>
+          <div
+            className="modal-content"
+            style={{
+              width: '100%',
+              maxWidth: 440,
+              padding: 24,
+              background: '#ffffff',
+              color: '#0f172a',
+              borderRadius: 8,
+            }}
+          >
+            <div style={{ textAlign: 'center', borderBottom: '2px solid #e2e8f0', paddingBottom: 12, marginBottom: 14 }}>
+              <div style={{ fontSize: 16, fontWeight: 900, color: '#0f172a', letterSpacing: '0.5px' }}>ALPHA MOBILE GALLERY</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#b8532f', marginTop: 1 }}>SHUBH PVT LTD</div>
+              <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>OFFICIAL PAYMENT RECEIPT</div>
+              <div className="mono" style={{ fontSize: 13, fontWeight: 800, color: '#0f172a', marginTop: 4 }}>
+                {selectedReceipt.receiptNumber}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#64748b' }}>Borrower:</span>
+                <strong>{selectedReceipt.customer?.name} ({selectedReceipt.customer?.code})</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#64748b' }}>Loan Account:</span>
+                <strong className="mono">{selectedReceipt.loan?.accountNo}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#64748b' }}>Collection Source:</span>
+                <strong style={{ color: '#9a3412' }}>{selectedReceipt.collectionSource}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#64748b' }}>Payment Mode:</span>
+                <span>{selectedReceipt.paymentMode}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed #cbd5e1', paddingTop: 8, marginTop: 4 }}>
+                <span style={{ fontWeight: 800 }}>Amount Paid:</span>
+                <strong className="mono" style={{ fontSize: 16, color: '#15803d' }}>
+                  {formatINR(selectedReceipt.amount)}
+                </strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#64748b' }}>Remaining Loan:</span>
+                <span className="mono font-bold">{formatINR(selectedReceipt.loan?.remainingOutstanding || 0)}</span>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+              <button onClick={() => window.print()} className="btn btn-primary btn-sm" style={{ flex: 1 }}>
+                <Printer size={13} />
+                <span>Print</span>
+              </button>
+              <button onClick={() => setSelectedReceipt(null)} className="btn btn-secondary btn-sm" style={{ flex: 1 }}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Customer 360 Payment Detail Modal */}
+      {selectedPaymentDetail && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ width: '100%', maxWidth: 520, padding: 22 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <h3 style={{ fontSize: 16, fontWeight: 800 }}>Payment Transaction Details</h3>
+              <button onClick={() => setSelectedPaymentDetail(null)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 12, background: 'var(--bg-surface-secondary)', padding: 12, borderRadius: 'var(--radius-md)', marginBottom: 12 }}>
+              <div>
+                <span style={{ color: 'var(--text-secondary)' }}>Receipt:</span>{' '}
+                <strong className="mono">{selectedPaymentDetail.receiptNumber}</strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-secondary)' }}>Amount:</span>{' '}
+                <strong className="mono" style={{ color: 'var(--success-text)' }}>{formatINR(selectedPaymentDetail.amount)}</strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-secondary)' }}>Source:</span>{' '}
+                <span className="badge badge-terracotta">{selectedPaymentDetail.collectionSource}</span>
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-secondary)' }}>Mode:</span>{' '}
+                <span>{selectedPaymentDetail.paymentMode}</span>
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-secondary)' }}>Status:</span>{' '}
+                <span className={`badge ${selectedPaymentDetail.isReversal ? 'badge-overdue' : 'badge-paid'}`}>
+                  {selectedPaymentDetail.isReversal ? 'REVERSED' : 'COMPLETED'}
+                </span>
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-secondary)' }}>Date:</span>{' '}
+                <span>{new Date(selectedPaymentDetail.paymentTimestamp).toLocaleString('en-IN', { hour12: true })}</span>
+              </div>
+            </div>
+
+            {selectedPaymentDetail.allocations && selectedPaymentDetail.allocations.length > 0 && (
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Waterfall Allocation:</div>
+                <div className="table-container">
+                  <table className="crm-table">
+                    <thead>
+                      <tr>
+                        <th>Inst #</th>
+                        <th>Principal</th>
+                        <th>Interest</th>
+                        <th>Penalty</th>
+                        <th>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedPaymentDetail.allocations.map((a: any) => (
+                        <tr key={a.id}>
+                          <td className="mono">#{a.installmentNumber}</td>
+                          <td className="mono">{formatINR(a.principalComponent)}</td>
+                          <td className="mono">{formatINR(a.interestComponent)}</td>
+                          <td className="mono">{formatINR(a.penaltyComponent)}</td>
+                          <td className="mono font-bold">{formatINR(a.totalAmount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+              <button onClick={() => setSelectedPaymentDetail(null)} className="btn btn-secondary btn-sm">
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -109,7 +109,7 @@ describe('PHASE 1: Real Integration & Security Test Suite (PostgreSQL & Redis)',
     test('PostgreSQL connection is healthy and responsive', async () => {
       const res = await queryPostgres('SELECT NOW() as current_time, current_database() as db_name');
       expect(res.rows.length).toBe(1);
-      expect(res.rows[0].db_name).toBe('crm_db');
+      expect(res.rows[0].db_name).toBe('crm_test_db');
     });
 
     test('All Phase 1 production tables exist in PostgreSQL', async () => {

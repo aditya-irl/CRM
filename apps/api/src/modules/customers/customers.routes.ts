@@ -2,7 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { CustomerService } from './customers.service';
 import { authenticate, requireRole } from '../../middlewares/auth.middleware';
 import { validateBody } from '../../middlewares/validate.middleware';
-import { createCustomerSchema, updateCustomerSchema, UserRole } from '@crm/shared';
+import { createCustomerSchema, updateCustomerSchema, onboardCustomerSchema, UserRole } from '@crm/shared';
 
 const router = Router();
 
@@ -42,10 +42,29 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-// Create customer (Admin / Branch Manager only)
+// Atomic Customer + Loan Onboarding (Admin / Branch Manager / Dealer)
+router.post(
+  '/onboard',
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER, UserRole.DEALER),
+  validateBody(onboardCustomerSchema),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await CustomerService.onboardCustomer(req.body, req.user!);
+      return res.status(201).json({
+        success: true,
+        data: result,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// Create customer (Admin / Branch Manager / Dealer)
 router.post(
   '/',
-  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER),
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER, UserRole.DEALER),
   validateBody(createCustomerSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {

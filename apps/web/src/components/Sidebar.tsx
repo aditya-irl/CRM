@@ -3,15 +3,32 @@ import { IUser, UserRole } from '@crm/shared';
 import {
   LayoutDashboard,
   Users,
+  Store,
   Clock,
   Banknote,
   Receipt,
   FileSpreadsheet,
   ShieldCheck,
   ShieldAlert,
+  Landmark,
+  CreditCard,
+  UserCheck,
+  Building2,
 } from 'lucide-react';
 
-export type NavTab = 'dashboard' | 'customers' | 'queue' | 'loans' | 'payments' | 'reports' | 'audit';
+export type NavTab =
+  | 'dashboard'
+  | 'dealers'
+  | 'dealer-collections'
+  | 'dealer-settlements'
+  | 'agent-collections'
+  | 'direct-collections'
+  | 'customers'
+  | 'queue'
+  | 'loans'
+  | 'payments'
+  | 'reports'
+  | 'audit';
 
 interface SidebarProps {
   activeTab: NavTab;
@@ -21,12 +38,41 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onSelectTab, user }) => {
   const isAgent = user.role === UserRole.COLLECTION_AGENT;
+  const isDealer = user.role === UserRole.DEALER;
+
+  const dealerAllowedTabs: NavTab[] = [
+    'dashboard',
+    'customers',
+    'loans',
+    'dealer-collections',
+    'dealer-settlements',
+  ];
 
   const items: Array<{ id: NavTab; label: string; icon: React.ReactNode; hiddenForAgent?: boolean }> = [
-    { id: 'dashboard', label: 'Operations Dashboard', icon: <LayoutDashboard size={17} />, hiddenForAgent: true },
-    { id: 'customers', label: 'Customers & Devices', icon: <Users size={17} /> },
+    {
+      id: 'dashboard',
+      label: isDealer ? 'Store Dashboard' : 'Operations Dashboard',
+      icon: isDealer ? <Store size={17} /> : <LayoutDashboard size={17} />,
+      hiddenForAgent: true,
+    },
+    { id: 'dealers', label: 'Dealer Stores', icon: <Store size={17} />, hiddenForAgent: true },
+    {
+      id: 'dealer-collections',
+      label: isDealer ? 'Store Collections' : 'Dealer Collections',
+      icon: <Landmark size={17} />,
+      hiddenForAgent: true,
+    },
+    {
+      id: 'dealer-settlements',
+      label: isDealer ? 'Store Settlements' : 'Dealer Settlements',
+      icon: <Banknote size={17} />,
+      hiddenForAgent: true,
+    },
+    { id: 'agent-collections', label: 'Agent Collections', icon: <UserCheck size={17} />, hiddenForAgent: true },
+    { id: 'direct-collections', label: 'Direct Collections', icon: <Building2 size={17} />, hiddenForAgent: true },
+    { id: 'customers', label: isDealer ? 'Store Customers' : 'Customers & Devices', icon: <Users size={17} /> },
     { id: 'queue', label: 'Collection Queue', icon: <Clock size={17} /> },
-    { id: 'loans', label: 'Loans & EMI Terms', icon: <Banknote size={17} /> },
+    { id: 'loans', label: isDealer ? 'Financed Devices' : 'Loans & EMI Terms', icon: <CreditCard size={17} /> },
     { id: 'payments', label: 'Payments Ledger', icon: <Receipt size={17} /> },
     { id: 'reports', label: 'Reports & Analytics', icon: <FileSpreadsheet size={17} />, hiddenForAgent: true },
     { id: 'audit', label: 'Audit Trail & Logs', icon: <ShieldCheck size={17} />, hiddenForAgent: true },
@@ -54,12 +100,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onSelectTab, user }
           letterSpacing: '0.04em',
         }}
       >
-        Operations Menu
+        {isDealer ? 'Partner Terminal' : 'Operations Menu'}
       </div>
 
       <nav style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
         {items.map((item) => {
           if (isAgent && item.hiddenForAgent) return null;
+          if (isDealer && !dealerAllowedTabs.includes(item.id)) return null;
           const isActive = activeTab === item.id;
 
           return (
@@ -112,10 +159,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onSelectTab, user }
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: 'var(--success)' }}>
-          <span>🔒 ACID Ledger Protected</span>
+          <span>🔒 {isDealer ? 'Store Isolation Enforced' : 'ACID Ledger Protected'}</span>
         </div>
         <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4, lineHeight: 1.3 }}>
-          Decimal.js engine • Row-level lock safety
+          {isDealer ? 'Partner scoped • Row-level lock safety' : 'Decimal.js engine • Row-level lock safety'}
+        </div>
+        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 6, borderTop: '1px solid var(--border-subtle)', paddingTop: 6, fontWeight: 600 }}>
+          Alpha Mobile Gallery • Shubh Pvt Ltd
         </div>
       </div>
     </aside>

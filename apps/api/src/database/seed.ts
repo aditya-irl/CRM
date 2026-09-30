@@ -37,11 +37,11 @@ export async function seedPostgres() {
     await queryPostgres(`
       INSERT INTO users (id, email, phone, password_hash, full_name, role, status, assigned_branch, created_at, updated_at)
       VALUES 
-        ($1, 'admin@financecrm.com', '+919876500001', $5, 'Vikram Malhotra (Admin)', 'SUPER_ADMIN', 'ACTIVE', 'Headquarters', NOW(), NOW()),
+        ($1, 'admin@financecrm.com', '+919876500001', $5, 'Mr. Sparsh', 'SUPER_ADMIN', 'ACTIVE', 'Headquarters', NOW(), NOW()),
         ($2, 'manager@financecrm.com', '+919876500002', $5, 'Anita Deshmukh (Branch Manager)', 'BRANCH_MANAGER', 'ACTIVE', 'North Branch', NOW(), NOW()),
         ($3, 'agent.rahul@financecrm.com', '+919876500003', $6, 'Rahul Sharma (Field Agent)', 'COLLECTION_AGENT', 'ACTIVE', 'North Branch', NOW(), NOW()),
         ($4, 'agent.priya@financecrm.com', '+919876500004', $6, 'Priya Verma (Field Agent)', 'COLLECTION_AGENT', 'ACTIVE', 'North Branch', NOW(), NOW())
-      ON CONFLICT (email) DO NOTHING
+      ON CONFLICT (email) DO UPDATE SET full_name = EXCLUDED.full_name WHERE users.role = 'SUPER_ADMIN'
     `, [SEED_ADMIN_ID, SEED_MANAGER_ID, SEED_AGENT_RAHUL_ID, SEED_AGENT_PRIYA_ID, passwordHash, agentPasswordHash]);
 
     console.log('[Seed] PostgreSQL database seeded successfully.');
@@ -55,6 +55,7 @@ export function seedDatabase() {
 
   const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
   if (userCount.count > 0) {
+    db.prepare("UPDATE users SET full_name = 'Mr. Sparsh' WHERE role = 'SUPER_ADMIN'").run();
     return;
   }
 
@@ -75,7 +76,7 @@ export function seedDatabase() {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  insertUser.run(adminId, 'admin@financecrm.com', '+919876500001', passwordHash, 'Vikram Malhotra (Admin)', UserRole.SUPER_ADMIN, UserStatus.ACTIVE, 'Headquarters', now, now);
+  insertUser.run(adminId, 'admin@financecrm.com', '+919876500001', passwordHash, 'Mr. Sparsh', UserRole.SUPER_ADMIN, UserStatus.ACTIVE, 'Headquarters', now, now);
   insertUser.run(managerId, 'manager@financecrm.com', '+919876500002', passwordHash, 'Anita Deshmukh (Branch Manager)', UserRole.BRANCH_MANAGER, UserStatus.ACTIVE, 'North Branch', now, now);
   insertUser.run(agentRahulId, 'agent.rahul@financecrm.com', '+919876500003', agentPasswordHash, 'Rahul Sharma (Field Agent)', UserRole.COLLECTION_AGENT, UserStatus.ACTIVE, 'North Branch', now, now);
   insertUser.run(agentPriyaId, 'agent.priya@financecrm.com', '+919876500004', agentPasswordHash, 'Priya Verma (Field Agent)', UserRole.COLLECTION_AGENT, UserStatus.ACTIVE, 'North Branch', now, now);

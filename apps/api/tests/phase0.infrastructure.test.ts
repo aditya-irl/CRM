@@ -26,8 +26,10 @@ describe('Phase 0: Production Infrastructure & Baseline Tests', () => {
     test('Environment variables are loaded and validated strictly via Zod', () => {
       expect(env).toBeDefined();
       expect(env.PORT).toBeGreaterThan(0);
-      expect(env.JWT_SECRET.length).toBeGreaterThanOrEqual(16);
-      expect(env.JWT_REFRESH_SECRET.length).toBeGreaterThanOrEqual(16);
+      // JWT_SECRET and JWT_REFRESH_SECRET are required at runtime (enforced by auth.middleware.ts).
+      // They are optional in the Zod schema to support fail-fast messaging, but must be present here.
+      expect(env.JWT_SECRET!.length).toBeGreaterThanOrEqual(16);
+      expect(env.JWT_REFRESH_SECRET!.length).toBeGreaterThanOrEqual(16);
       expect(env.BUSINESS_TIMEZONE).toBe('Asia/Kolkata');
     });
   });
@@ -62,7 +64,10 @@ describe('Phase 0: Production Infrastructure & Baseline Tests', () => {
       });
 
       expect(signedUrl).toBeDefined();
-      expect(signedUrl).toContain('X-Amz-Expires=300');
+      expect(signedUrl.length).toBeGreaterThan(0);
+      // Expiry must be clamped to MAX_KYC_URL_EXPIRY_SECONDS (300s).
+      // Local provider uses X-Dev-Expires=300; S3 provider uses X-Amz-Expires=300.
+      expect(signedUrl).toMatch(/(?:X-Amz-Expires|X-Dev-Expires)=300/);
       expect(MAX_KYC_URL_EXPIRY_SECONDS).toBe(300);
     });
   });

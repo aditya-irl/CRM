@@ -14,13 +14,15 @@ export interface UserAuthResponse {
   role: UserRole;
   status?: UserStatus;
   assignedBranch?: string | null;
+  dealerId?: string | null;
+  mustChangePassword?: boolean;
   lastLoginAt?: string | null;
   createdAt?: string;
 }
 
 export class AuthService {
   /**
-   * Authenticate user with email/phone and password.
+   * Authenticate user with email/phone/dealerCode and password.
    */
   public static async login(
     identifier: string,
@@ -29,6 +31,16 @@ export class AuthService {
     userAgent?: string
   ) {
     const cleanIdentifier = identifier.trim().toLowerCase();
+
+    // Check if identifier matches dealer code format (e.g. DLR-0001 or DLR-000001)
+    let dlrPad4: string | null = null;
+    let dlrPad6: string | null = null;
+    const dlrMatch = cleanIdentifier.match(/^dlr-?(\d+)$/i);
+    if (dlrMatch) {
+      const numStr = dlrMatch[1];
+      dlrPad4 = `dlr-${numStr.padStart(4, '0')}`;
+      dlrPad6 = `dlr-${numStr.padStart(6, '0')}`;
+    }
 
     const result = await queryPostgres<{
       id: string;
@@ -39,12 +51,22 @@ export class AuthService {
       role: UserRole;
       status: UserStatus;
       assigned_branch?: string | null;
+      dealer_id?: string | null;
+      must_change_password?: boolean;
       deleted_at?: string | null;
     }>(
-      `SELECT id, email, phone, password_hash, full_name, role, status, assigned_branch, deleted_at
-       FROM users
-       WHERE (LOWER(email) = $1 OR phone = $2) AND deleted_at IS NULL`,
-      [cleanIdentifier, identifier.trim()]
+      `SELECT u.id, u.email, u.phone, u.password_hash, u.full_name, u.role, u.status,
+              u.assigned_branch, u.dealer_id, u.must_change_password, u.deleted_at
+       FROM users u
+       LEFT JOIN dealers d ON u.dealer_id = d.id
+       WHERE (
+         LOWER(u.email) = $1
+         OR u.phone = $2
+         OR LOWER(d.dealer_code) = $1
+         OR ($3::text IS NOT NULL AND LOWER(d.dealer_code) = $3)
+         OR ($4::text IS NOT NULL AND LOWER(d.dealer_code) = $4)
+       ) AND u.deleted_at IS NULL`,
+      [cleanIdentifier, identifier.trim(), dlrPad4, dlrPad6]
     );
 
     const user = result.rows[0];
@@ -97,6 +119,7 @@ export class AuthService {
       role: user.role,
       fullName: user.full_name,
       assignedBranch: user.assigned_branch,
+      dealerId: user.dealer_id || null,
     };
 
     const accessToken = jwt.sign(payload, JWT_SECRET, { expiresIn: '15m' });
@@ -119,6 +142,8 @@ export class AuthService {
         fullName: user.full_name,
         role: user.role,
         assignedBranch: user.assigned_branch,
+        dealerId: user.dealer_id || null,
+        mustChangePassword: user.must_change_password || false,
       },
       tokens: {
         accessToken,
@@ -143,9 +168,10 @@ export class AuthService {
         role: UserRole;
         status: UserStatus;
         assigned_branch?: string | null;
+        dealer_id?: string | null;
         deleted_at?: string | null;
       }>(
-        `SELECT id, email, phone, full_name, role, status, assigned_branch, deleted_at
+        `SELECT id, email, phone, full_name, role, status, assigned_branch, dealer_id, deleted_at
          FROM users
          WHERE id = $1 AND status = 'ACTIVE' AND deleted_at IS NULL`,
         [payload.id]
@@ -164,6 +190,7 @@ export class AuthService {
           role: user.role,
           fullName: user.full_name,
           assignedBranch: user.assigned_branch,
+          dealerId: user.dealer_id || null,
         },
         JWT_SECRET,
         { expiresIn: '15m' }
@@ -193,10 +220,12 @@ export class AuthService {
       role: UserRole;
       status: UserStatus;
       assigned_branch?: string | null;
+      dealer_id?: string | null;
+      must_change_password?: boolean;
       last_login_at?: string | null;
       created_at: string;
     }>(
-      `SELECT id, email, phone, full_name, role, status, assigned_branch, last_login_at, created_at
+      `SELECT id, email, phone, full_name, role, status, assigned_branch, dealer_id, must_change_password, last_login_at, created_at
        FROM users
        WHERE id = $1 AND deleted_at IS NULL`,
       [userId]
@@ -216,8 +245,70 @@ export class AuthService {
       role: user.role,
       status: user.status,
       assignedBranch: user.assigned_branch,
+      dealerId: user.dealer_id || null,
+      mustChangePassword: user.must_change_password || false,
       lastLoginAt: user.last_login_at,
       createdAt: user.created_at,
     };
   }
+
+  /**
+   * Change authenticated user's password and clear must_change_password flag.
+   */
+  public static async changePassword(
+    userId: string,
+    currentPass: string,
+    newPass: string,
+    ip?: string,
+    userAgent?: string
+  ) {
+    if (!newPass || newPass.length < 6) {
+      throw new UnauthorizedError('New password must be at least 6 characters');
+    }
+
+    const result = await queryPostgres<{
+      id: string;
+      password_hash: string;
+      status: UserStatus;
+    }>(
+      `SELECT id, password_hash, status FROM users WHERE id = $1 AND deleted_at IS NULL`,
+      [userId]
+    );
+
+    const user = result.rows[0];
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+
+    if (user.status !== UserStatus.ACTIVE) {
+      throw new UnauthorizedError('Account is inactive');
+    }
+
+    const isMatch = bcrypt.compareSync(currentPass, user.password_hash);
+    if (!isMatch) {
+      throw new UnauthorizedError('Current password is incorrect');
+    }
+
+    const newHash = bcrypt.hashSync(newPass, 10);
+
+    await queryPostgres(
+      'UPDATE users SET password_hash = $1, must_change_password = FALSE, updated_at = NOW() WHERE id = $2',
+      [newHash, user.id]
+    );
+
+    await AuditService.log({
+      userId: user.id,
+      action: 'USER_PASSWORD_CHANGED',
+      entity: 'User',
+      entityId: user.id,
+      ipAddress: ip,
+      userAgent,
+    });
+
+    return {
+      success: true,
+      message: 'Password changed successfully',
+    };
+  }
 }
+

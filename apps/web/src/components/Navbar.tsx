@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { IUser, UserRole } from '@crm/shared';
 import { ApiClient } from '../services/api';
-import { LogOut, Play, CheckCircle2, Shield, Plus, Calendar } from 'lucide-react';
+import { LogOut, Play, CheckCircle2, Shield, Plus, Calendar, Store } from 'lucide-react';
+import { BrandLogo } from './BrandLogo';
 
 interface NavbarProps {
   user: IUser;
@@ -42,6 +43,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         return <span className="badge badge-due-today">Branch Manager</span>;
       case UserRole.COLLECTION_AGENT:
         return <span className="badge badge-partial">Field Agent</span>;
+      case UserRole.DEALER:
+        return <span className="badge badge-upcoming"><Store size={10} /> Store Partner</span>;
       default:
         return <span className="badge badge-upcoming">{role}</span>;
     }
@@ -67,29 +70,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 'var(--radius-sm)',
-              background: 'var(--primary)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#ffffff',
-              fontWeight: 800,
-              fontSize: 16,
-            }}
-          >
-            ₹
-          </div>
-          <div>
-            <h1 style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
-              Finance & Collection CRM
-            </h1>
-          </div>
-        </div>
+        <BrandLogo variant="horizontal" size="sm" showLegal={true} />
 
         <div style={{ height: 20, width: 1, background: 'var(--border-subtle)' }} />
 

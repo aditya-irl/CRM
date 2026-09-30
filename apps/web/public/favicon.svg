@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" fill="none">
+  <defs>
+    <linearGradient id="fav-bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#1e293b" />
+    </linearGradient>
+    <linearGradient id="fav-terra" x1="32" y1="12" x2="48" y2="52" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#ea580c" />
+      <stop offset="100%" stop-color="#b8532f" />
+    </linearGradient>
+    <linearGradient id="fav-gold" x1="24" y1="36" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#fb923c" />
+      <stop offset="100%" stop-color="#f59e0b" />
+    </linearGradient>
+  </defs>
+
+  <!-- App Tile Background -->
+  <rect width="64" height="64" rx="16" fill="url(#fav-bg)"/>
+
+  <!-- Left Leg of 'A' / Device Frame -->
+  <path d="M16 49L28.8 12.5C29.2 11.2 30.4 10.4 31.8 10.4H32.2C33.6 10.4 34.8 11.2 35.2 12.5L48 49C48.5 50.6 47.3 52 45.6 52H40.8C39.6 52 38.5 51.2 38.1 50.1L35 41H29L25.9 50.1C25.5 51.2 24.4 52 23.2 52H18.4C16.7 52 15.5 50.6 16 49Z" fill="#334155"/>
+
+  <!-- Right Accent Leg (Terracotta) -->
+  <path d="M32 10.4H32.2C33.6 10.4 34.8 11.2 35.2 12.5L48 49C48.5 50.6 47.3 52 45.6 52H40.8C39.6 52 38.5 51.2 38.1 50.1L35 41H32V10.4Z" fill="url(#fav-terra)"/>
+
+  <!-- Top Speaker Notch -->
+  <rect x="29" y="14" width="6" height="2" rx="1" fill="#f8fafc" opacity="0.9"/>
+
+  <!-- Screen Cutout Core -->
+  <polygon points="32,20 37,35 27,35" fill="#0f172a"/>
+
+  <!-- EMI / Smart Chip Bar -->
+  <rect x="24" y="36" width="16" height="4" rx="2" fill="url(#fav-gold)"/>
+  <circle cx="32" cy="38" r="1.6" fill="#ffffff"/>
+</svg>

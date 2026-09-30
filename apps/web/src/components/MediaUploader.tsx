@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { Camera, Upload, X, CheckCircle2, Image as ImageIcon, FileText } from 'lucide-react';
+import { compressImageFile } from '../utils/imageCompressor';
 
 export type MediaCategory = 'CUSTOMER_PHOTO' | 'DOCUMENT_PHOTO' | 'PRODUCT_PHOTO' | 'INVOICE_PHOTO' | 'OTHER';
 
@@ -35,9 +36,10 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
   const [preview, setPreview] = useState<string | null>(value || null);
   const [fileName, setFileName] = useState<string>('');
   const [isPdf, setIsPdf] = useState(false);
+  const [compressing, setCompressing] = useState(false);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    let file = e.target.files?.[0];
     if (!file) return;
 
     const isPdfFile = file.type === 'application/pdf';
@@ -54,19 +56,46 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
         fileSizeBytes: file.size,
       });
     } else {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const url = reader.result as string;
-        setPreview(url);
-        onChange({
-          file,
-          previewUrl: url,
-          mimeType: file.type,
-          fileName: file.name,
-          fileSizeBytes: file.size,
-        });
-      };
-      reader.readAsDataURL(file);
+      setCompressing(true);
+      try {
+        if (file.type.startsWith('image/')) {
+          const maxDim = category === 'CUSTOMER_PHOTO' ? 400 : 1000;
+          const qual = category === 'CUSTOMER_PHOTO' ? 0.7 : 0.75;
+          file = await compressImageFile(file, maxDim, qual);
+        }
+
+        const reader = new FileReader();
+        const processedFile = file;
+        reader.onloadend = () => {
+          const url = reader.result as string;
+          setPreview(url);
+          onChange({
+            file: processedFile,
+            previewUrl: url,
+            mimeType: processedFile.type,
+            fileName: processedFile.name,
+            fileSizeBytes: processedFile.size,
+          });
+          setCompressing(false);
+        };
+        reader.readAsDataURL(processedFile);
+      } catch (err) {
+        console.error('Image compression failed, falling back to original:', err);
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const url = reader.result as string;
+          setPreview(url);
+          onChange({
+            file,
+            previewUrl: url,
+            mimeType: file.type,
+            fileName: file.name,
+            fileSizeBytes: file.size,
+          });
+          setCompressing(false);
+        };
+        reader.readAsDataURL(file);
+      }
     }
   };
 

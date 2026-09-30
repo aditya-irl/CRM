@@ -335,7 +335,7 @@ describe('PHASE 3: Real Integration & Security Test Suite (EMI State Machine & B
       const auditRes = await queryPostgres(
         `SELECT action, entity, entity_id FROM audit_logs
          WHERE action IN ('EMI_MARKED_DUE', 'EMI_MARKED_OVERDUE', 'EMI_REMINDER_SCHEDULED')
-         ORDER BY created_at DESC LIMIT 50`
+         ORDER BY created_at DESC LIMIT 200`
       );
 
       const actions = auditRes.rows.map((a) => a.action);

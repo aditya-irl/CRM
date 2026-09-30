@@ -4,23 +4,53 @@ import { env } from '../config/env';
 let redisClient: Redis | null = null;
 const inMemoryLocks: Map<string, { lockId: string; expiresAt: number }> = new Map();
 
+/**
+ * Resolve the Redis URL to use.
+ *
+ * - Production:  REDIS_URL must be set (enforced by env schema). Never falls back to localhost.
+ * - Dev / Test:  Falls back to localhost if REDIS_URL is not set.
+ *
+ * Credentials and TLS are encoded in the URL (e.g. rediss://:password@host:6380).
+ * ioredis automatically enables TLS when the scheme is `rediss://`.
+ */
+function resolveRedisUrl(): string {
+  if (env.REDIS_URL) {
+    return env.REDIS_URL;
+  }
+  if (env.NODE_ENV === 'production') {
+    // env.ts superRefine already rejects this state, but fail fast as defense-in-depth
+    throw new Error(
+      '[FATAL] REDIS_URL is required in production. ' +
+      'Set a managed Redis URL (e.g. rediss://:<password>@host:6380).'
+    );
+  }
+  // Dev / test convenience fallback only
+  return 'redis://127.0.0.1:6379';
+}
+
 export function getRedisClient(): Redis {
   if (!redisClient) {
+    const redisUrl = resolveRedisUrl();
+
     const opts: RedisOptions = {
       maxRetriesPerRequest: null,
       enableReadyCheck: false,
       connectTimeout: 1000,
       lazyConnect: true,
       retryStrategy(times) {
-        if (env.NODE_ENV === 'test' && times > 1) return null; // Don't hang in tests if redis not running
+        if (env.NODE_ENV === 'test' && times > 1) return null; // Don't hang in tests if Redis not running
         return Math.min(times * 100, 2000);
       },
     };
 
-    redisClient = new Redis(env.REDIS_URL, opts);
+    redisClient = new Redis(redisUrl, opts);
 
-    redisClient.on('error', (_err) => {
-      // Suppress unhandled crash in test/dev mode when standalone redis container is not running
+    redisClient.on('error', (err) => {
+      if (env.NODE_ENV === 'production') {
+        // In production, log Redis errors server-side — do not suppress them silently
+        console.error('[Redis] Connection error:', err.message);
+      }
+      // In dev/test: suppress unhandled crash when Redis is not running locally
     });
   }
 
@@ -28,7 +58,7 @@ export function getRedisClient(): Redis {
 }
 
 /**
- * Distributed Lock using Redis SET NX PX with in-memory fallback for local testing
+ * Distributed Lock using Redis SET NX PX with in-memory fallback for local testing.
  */
 export async function acquireDistributedLock(
   lockKey: string,
@@ -47,7 +77,7 @@ export async function acquireDistributedLock(
     // Fallback to in-memory lock store
   }
 
-  // In-Memory Lock Fallback (Used during offline unit testing)
+  // In-Memory Lock Fallback (used during offline unit testing)
   const now = Date.now();
   const existing = inMemoryLocks.get(lockKey);
   if (existing && existing.expiresAt > now) {
@@ -59,7 +89,7 @@ export async function acquireDistributedLock(
 }
 
 /**
- * Release Distributed Lock using Lua script with in-memory fallback
+ * Release Distributed Lock using Lua script with in-memory fallback.
  */
 export async function releaseDistributedLock(
   lockKey: string,
@@ -92,14 +122,19 @@ export async function releaseDistributedLock(
   return true;
 }
 
-export async function closeRedisConnection() {
+/**
+ * Close the Redis connection gracefully.
+ * Idempotent — safe to call multiple times or when no connection exists.
+ */
+export async function closeRedisConnection(): Promise<void> {
   if (redisClient) {
+    const client = redisClient;
+    redisClient = null; // Null out immediately to prevent re-use during shutdown
     try {
-      await redisClient.quit();
+      await client.quit();
     } catch {
-      redisClient.disconnect();
+      client.disconnect();
     }
-    redisClient = null;
   }
 }
 

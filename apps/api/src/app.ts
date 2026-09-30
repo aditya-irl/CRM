@@ -1,7 +1,8 @@
 import express from 'express';
-import cors from 'cors';
+import cors, { CorsOptions } from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import { env } from './config/env';
 
 import { errorHandler } from './middlewares/error.middleware';
 import authRoutes from './modules/auth/auth.routes';
@@ -15,6 +16,12 @@ import callLogRoutes from './modules/call-logs/call-logs.routes';
 import assignmentRoutes from './modules/assignments/assignments.routes';
 import reportRoutes from './modules/reports/reports.routes';
 import auditRoutes from './modules/audit/audit.routes';
+import dealerRoutes from './modules/dealers/dealers.routes';
+import dealerCollectionsRoutes from './modules/dealer-collections/dealer-collections.routes';
+import dealerSettlementsRoutes from './modules/dealer-settlements/dealer-settlements.routes';
+import agentCollectionsRoutes from './modules/agent-collections/agent-collections.routes';
+import directCollectionsRoutes from './modules/direct-collections/direct-collections.routes';
+import portalRoutes from './modules/portal/portal.routes';
 import { EMIStateEngineJob } from './jobs/emi-state-engine.job';
 import { ReminderDispatcherJob } from './jobs/reminder-dispatcher.job';
 import { authenticate, requireRole } from './middlewares/auth.middleware';
@@ -22,11 +29,49 @@ import { UserRole } from '@crm/shared';
 
 const app = express();
 
+// --- Blocker 1: Secure, environment-based CORS ---
+// CORS_ORIGIN accepts a single origin or comma-separated list of origins.
+// In production, an explicit value is required. In dev/test, defaults to permissive if unset.
+const buildCorsOptions = (): CorsOptions => {
+  const rawOrigin = env.CORS_ORIGIN.trim();
+
+  if (!rawOrigin) {
+    // Dev/test convenience: no CORS_ORIGIN set — allow all origins (non-production only)
+    if (env.NODE_ENV === 'production') {
+      // Should not reach here: env validation also warns, but be safe
+      console.warn('[CORS] WARNING: CORS_ORIGIN is not set in production. Blocking all cross-origin requests.');
+      return { origin: false, credentials: true };
+    }
+    return { origin: true, credentials: true };
+  }
+
+  if (rawOrigin === '*') {
+    return { origin: '*' };
+  }
+
+  // Support comma-separated origin list: "https://app.example.com,https://admin.example.com"
+  const allowedOrigins = rawOrigin.split(',').map((o) => o.trim()).filter(Boolean);
+
+  return {
+    origin: (requestOrigin, callback) => {
+      // Allow server-to-server requests (no Origin header)
+      if (!requestOrigin) return callback(null, true);
+      if (allowedOrigins.includes(requestOrigin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS: Origin "${requestOrigin}" is not allowed.`));
+      }
+    },
+    credentials: true,
+  };
+};
+
 // Security and utility middlewares
 app.use(helmet());
-app.use(cors({ origin: true, credentials: true }));
-app.use(express.json({ limit: '5mb' }));
-app.use(morgan('dev'));
+app.use(cors(buildCorsOptions()));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 // Health Check
 app.get('/health', (_req, res) => {
@@ -36,6 +81,11 @@ app.get('/health', (_req, res) => {
 // Mount V1 API Routes
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/users', userRoutes);
+app.use('/api/v1/dealers', dealerRoutes);
+app.use('/api/v1/dealer-collections', dealerCollectionsRoutes);
+app.use('/api/v1/dealer-settlements', dealerSettlementsRoutes);
+app.use('/api/v1/agent-collections', agentCollectionsRoutes);
+app.use('/api/v1/direct-collections', directCollectionsRoutes);
 app.use('/api/v1/customers', customerRoutes);
 app.use('/api/v1/kyc', kycRoutes);
 app.use('/api/v1/loans', loanRoutes);
@@ -46,6 +96,7 @@ app.use('/api/v1/call-logs', callLogRoutes);
 app.use('/api/v1/assignments', assignmentRoutes);
 app.use('/api/v1/reports', reportRoutes);
 app.use('/api/v1/audit-logs', auditRoutes);
+app.use('/api/v1/portal', portalRoutes);
 
 // Admin trigger endpoint for manual execution of background jobs
 app.post(

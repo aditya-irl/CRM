@@ -2,12 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { ApiClient } from '../services/api';
 import { IAuditLog } from '@crm/shared';
 import { ShieldCheck, Search, Eye, Filter, X } from 'lucide-react';
+import { AuditDetailModal } from '../components/AuditDetailModal';
 
 export const AuditView: React.FC = () => {
   const [logs, setLogs] = useState<IAuditLog[]>([]);
   const [entityFilter, setEntityFilter] = useState('');
   const [loading, setLoading] = useState(true);
-  const [selectedLog, setSelectedLog] = useState<any | null>(null);
+  const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
 
   const loadLogs = async () => {
     setLoading(true);
@@ -104,8 +105,9 @@ export const AuditView: React.FC = () => {
                   </td>
                   <td>
                     <button
-                      onClick={() => setSelectedLog(log)}
+                      onClick={() => setSelectedLogId(log.id)}
                       className="btn btn-secondary btn-sm"
+                      id={`inspect-btn-${log.id}`}
                     >
                       <Eye size={12} />
                       <span>Inspect</span>
@@ -118,48 +120,12 @@ export const AuditView: React.FC = () => {
         </table>
       </div>
 
-      {/* State JSON Inspector Modal */}
-      {selectedLog && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ width: '100%', maxWidth: 620, padding: 24 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <h3 style={{ fontSize: 16, fontWeight: 700 }}>
-                Audit Snapshot: {selectedLog.action}
-              </h3>
-              <button onClick={() => setSelectedLog(null)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                <X size={18} />
-              </button>
-            </div>
-
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>
-              Entity: <strong>{selectedLog.entity}</strong> • ID: <span className="mono">{selectedLog.entityId || selectedLog.entity_id}</span>
-            </div>
-
-            {selectedLog.previous_state && (
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--danger-text)', marginBottom: 4 }}>Previous State:</div>
-                <pre style={{ background: 'var(--bg-surface-secondary)', border: '1px solid var(--border-subtle)', padding: 12, borderRadius: 6, fontSize: 12, overflowX: 'auto' }}>
-                  {JSON.stringify(selectedLog.previous_state, null, 2)}
-                </pre>
-              </div>
-            )}
-
-            {selectedLog.new_state && (
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--success-text)', marginBottom: 4 }}>New State Delta:</div>
-                <pre style={{ background: 'var(--bg-surface-secondary)', border: '1px solid var(--border-subtle)', padding: 12, borderRadius: 6, fontSize: 12, overflowX: 'auto' }}>
-                  {JSON.stringify(selectedLog.new_state, null, 2)}
-                </pre>
-              </div>
-            )}
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
-              <button onClick={() => setSelectedLog(null)} className="btn btn-secondary">
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Professional Enterprise Audit-Log Inspector Modal */}
+      {selectedLogId && (
+        <AuditDetailModal
+          logId={selectedLogId}
+          onClose={() => setSelectedLogId(null)}
+        />
       )}
     </div>
   );

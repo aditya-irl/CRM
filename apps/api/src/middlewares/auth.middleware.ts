@@ -5,8 +5,16 @@ import { queryPostgres } from '../database/postgres';
 import { env } from '../config/env';
 import { UnauthorizedError, ForbiddenError } from './error.middleware';
 
-export const JWT_SECRET = env.JWT_SECRET || 'crm_super_secret_jwt_key_2026';
-export const JWT_REFRESH_SECRET = env.JWT_REFRESH_SECRET || 'crm_super_secret_refresh_key_2026';
+// Fail fast if JWT secrets are not configured — never fall back to an in-source default.
+if (!env.JWT_SECRET) {
+  throw new Error('[FATAL] JWT_SECRET environment variable is not set. Configure it before starting the server.');
+}
+if (!env.JWT_REFRESH_SECRET) {
+  throw new Error('[FATAL] JWT_REFRESH_SECRET environment variable is not set. Configure it before starting the server.');
+}
+
+export const JWT_SECRET: string = env.JWT_SECRET;
+export const JWT_REFRESH_SECRET: string = env.JWT_REFRESH_SECRET;
 
 export interface AuthenticatedUser {
   id: string;
@@ -14,6 +22,7 @@ export interface AuthenticatedUser {
   role: UserRole;
   fullName: string;
   assignedBranch?: string | null;
+  dealerId?: string | null;
 }
 
 declare global {
@@ -47,9 +56,10 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
       role: UserRole;
       status: string;
       assigned_branch?: string | null;
+      dealer_id?: string | null;
       deleted_at?: string | null;
     }>(
-      'SELECT id, email, full_name, role, status, assigned_branch, deleted_at FROM users WHERE id = $1',
+      'SELECT id, email, full_name, role, status, assigned_branch, dealer_id, deleted_at FROM users WHERE id = $1',
       [payload.id]
     );
 
@@ -65,6 +75,7 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
       role: user.role,
       fullName: user.full_name,
       assignedBranch: user.assigned_branch,
+      dealerId: user.dealer_id || null,
     };
     next();
   } catch (dbErr) {

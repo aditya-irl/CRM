@@ -1,8 +1,8 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { PaymentService } from './payments.service';
 import { authenticate, requireRole } from '../../middlewares/auth.middleware';
-import { validateBody } from '../../middlewares/validate.middleware';
-import { recordPaymentSchema, reversePaymentSchema, UserRole } from '@crm/shared';
+import { validateBody, validateQuery } from '../../middlewares/validate.middleware';
+import { recordPaymentSchema, reversePaymentSchema, paymentsFilterSchema, UserRole } from '@crm/shared';
 
 const router = Router();
 
@@ -64,7 +64,33 @@ router.post(
   }
 );
 
-router.get('/', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/summary', validateQuery(paymentsFilterSchema), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const summary = await PaymentService.getPaymentsSummary(req.user!, req.query);
+    return res.json({
+      success: true,
+      data: summary,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const payment = await PaymentService.getPaymentById(req.params.id, req.user!);
+    return res.json({
+      success: true,
+      data: payment,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/', validateQuery(paymentsFilterSchema), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const result = await PaymentService.listPayments(req.user!, req.query);
     return res.json({
@@ -84,3 +110,4 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
 });
 
 export default router;
+

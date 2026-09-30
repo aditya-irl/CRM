@@ -85,12 +85,26 @@ export function errorHandler(err: Error, req: Request, res: Response, _next: Nex
     });
   }
 
+  // Handle body-parser / request entity too large (HTTP 413)
+  if ((err as any).type === 'entity.too.large' || (err as any).status === 413 || (err as any).statusCode === 413) {
+    return res.status(413).json({
+      success: false,
+      error: {
+        code: 'PAYLOAD_TOO_LARGE',
+        message: 'The submitted file or request payload is too large. Please select a smaller or compressed image (max 10MB).',
+        traceId,
+      },
+      timestamp,
+    });
+  }
+
   console.error('[Unhandled Server Error]', err);
+  const isProduction = process.env.NODE_ENV === 'production';
   return res.status(500).json({
     success: false,
     error: {
       code: 'INTERNAL_SERVER_ERROR',
-      message: err.message,
+      message: isProduction ? 'Internal server error' : err.message,
       traceId,
     },
     timestamp,

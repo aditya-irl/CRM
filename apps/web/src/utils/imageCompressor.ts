@@ -40,15 +40,19 @@ export async function compressImageFile(file: File, maxDimension: number = 1600,
 
         canvas.toBlob(
           (blob) => {
-            if (!blob || blob.size >= file.size) {
+            if (!blob) {
               resolve(file);
               return;
             }
-            const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, '.jpg'), {
-              type: 'image/jpeg',
-              lastModified: Date.now(),
-            });
-            resolve(compressedFile);
+            if (blob.size < file.size || file.size > 200 * 1024) {
+              const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, '.jpg'), {
+                type: 'image/jpeg',
+                lastModified: Date.now(),
+              });
+              resolve(compressedFile);
+            } else {
+              resolve(file);
+            }
           },
           'image/jpeg',
           quality

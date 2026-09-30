@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../services/api';
 import {
   KYCType,
@@ -7,9 +7,12 @@ import {
   formatINR,
   ICustomer,
   ILoan,
+  IDealer,
+  UserRole,
 } from '@crm/shared';
 import { MediaUploader, MediaUploadResult } from './MediaUploader';
 import { DynamicAttachmentManager, AttachmentItem } from './DynamicAttachmentManager';
+import { PortalLinkManager } from './PortalLinkManager';
 import {
   Check,
   ChevronRight,
@@ -23,6 +26,7 @@ import {
   FileSpreadsheet,
   AlertCircle,
   Plus,
+  Store,
 } from 'lucide-react';
 
 interface AddCustomerWizardProps {
@@ -31,12 +35,31 @@ interface AddCustomerWizardProps {
   onSuccess: (customer: ICustomer, loan?: ILoan) => void;
 }
 
-export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({
-  isOpen,
-  onClose,
-  onSuccess,
-}) => {
+export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, onClose, onSuccess }) => {
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+  const [dealers, setDealers] = useState<IDealer[]>([]);
+  const [selectedDealerId, setSelectedDealerId] = useState<string>('');
+
+  const currentUser = ApiClient.getUser();
+  const isDealer = currentUser?.role === UserRole.DEALER;
+
+  useEffect(() => {
+    if (isOpen) {
+      if (isDealer && currentUser?.dealerId) {
+        setSelectedDealerId(currentUser.dealerId);
+      }
+      ApiClient.getDealers(undefined, 'ACTIVE')
+        .then((data) => {
+          setDealers(data);
+          if (isDealer && currentUser?.dealerId) {
+            setSelectedDealerId(currentUser.dealerId);
+          } else if (data.length > 0 && !selectedDealerId) {
+            setSelectedDealerId(data[0].id);
+          }
+        })
+        .catch((err) => console.error('Failed to load active dealers', err));
+    }
+  }, [isOpen, isDealer, currentUser?.dealerId]);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -126,13 +149,11 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({
   // Final Success Summary State
   const [createdResult, setCreatedResult] = useState<{ customer: ICustomer; loan: ILoan } | null>(null);
 
-  if (!isOpen) return null;
-
   // Trigger server-authoritative preview calculation
   const handleFetchPreview = async () => {
     const financed = Math.max(0, productPrice - downPayment);
     if (financed <= 0) {
-      setErrorMsg('Financed amount must be greater than zero.');
+      setErrorMsg('Financed amount must be greater than zero. Down payment cannot equal or exceed product price.');
       return;
     }
 
@@ -140,7 +161,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({
     setErrorMsg(null);
     try {
       const res = await ApiClient.calculateLoanPreview({
-        principalAmount: financed,
+        principalAmount: Number(productPrice),
         downPayment: Number(downPayment),
         annualInterestRate: Number(annualRate),
         interestCalcMethod: calcMethod,
@@ -156,6 +177,19 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({
       setCalculatingPreview(false);
     }
   };
+
+  // Auto-recalculate preview when configuration changes in Step 4
+  useEffect(() => {
+    if (!isOpen || currentStep !== 4) return;
+    const financed = Math.max(0, productPrice - downPayment);
+    if (financed <= 0 || !tenureMonths || tenureMonths <= 0) return;
+
+    const timer = setTimeout(() => {
+      handleFetchPreview();
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [productPrice, downPayment, annualRate, calcMethod, tenureMonths, frequency, disbursementDate, firstEmiDate, currentStep, isOpen]);
 
   const handleNext = async () => {
     setErrorMsg(null);
@@ -173,12 +207,19 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({
         setErrorMsg('Please specify product brand, model, and valid cash price.');
         return;
       }
+      if (dealers.length > 0 && !selectedDealerId) {
+        setErrorMsg('Please select the partner retail store originating this loan.');
+        return;
+      }
       setCurrentStep(4);
       setTimeout(handleFetchPreview, 50);
     } else if (currentStep === 4) {
-      if (!previewSchedule) {
-        await handleFetchPreview();
+      const financed = Math.max(0, productPrice - downPayment);
+      if (financed <= 0) {
+        setErrorMsg('Financed amount must be greater than zero. Down payment cannot equal or exceed product price.');
+        return;
       }
+      await handleFetchPreview();
       setCurrentStep(5);
     }
   };
@@ -195,22 +236,46 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({
     setErrorMsg(null);
 
     try {
-      // 1. Create Customer
-      const newCustomer = await ApiClient.createCustomer({
-        fullName: fullName.trim(),
-        primaryPhone: primaryPhone.trim(),
-        alternatePhone: alternatePhone.trim() || undefined,
-        addressLine1: addressLine1.trim(),
-        addressLine2: addressLine2.trim() || undefined,
-        landmark: landmark.trim() || undefined,
-        city: city.trim(),
-        state: state.trim(),
-        pincode: pincode.trim(),
-        areaRoute: areaRoute.trim(),
-        photoUrl: customerPhoto?.previewUrl || undefined,
+      // 1. Atomic Customer + Loan Onboarding (all-or-nothing database transaction)
+      const financedAmount = Math.max(0, productPrice - downPayment);
+      if (financedAmount <= 0) {
+        setErrorMsg('Financed amount must be greater than zero. Down payment cannot equal or exceed product price.');
+        setSubmitting(false);
+        return;
+      }
+      const effectiveDealerId = isDealer && currentUser?.dealerId ? currentUser.dealerId : selectedDealerId;
+
+      const onboardResult = await ApiClient.onboardCustomer({
+        customer: {
+          fullName: fullName.trim(),
+          primaryPhone: primaryPhone.trim(),
+          alternatePhone: alternatePhone.trim() || undefined,
+          addressLine1: addressLine1.trim(),
+          addressLine2: addressLine2.trim() || undefined,
+          landmark: landmark.trim() || undefined,
+          city: city.trim(),
+          state: state.trim(),
+          pincode: pincode.trim(),
+          areaRoute: areaRoute.trim(),
+          photoUrl: customerPhoto?.previewUrl || undefined,
+        },
+        loan: {
+          principalAmount: Number(productPrice),
+          downPayment: Number(downPayment),
+          annualInterestRate: Number(annualRate),
+          interestCalcMethod: calcMethod,
+          tenureMonths: Number(tenureMonths),
+          installmentFrequency: frequency,
+          disbursementDate,
+          firstEmiDate: firstEmiDate || undefined,
+          dealerId: effectiveDealerId || undefined,
+        },
       });
 
-      // 2. Upload / Confirm KYC Documents
+      const newCustomer = onboardResult.customer;
+      const newLoan = onboardResult.loan || undefined;
+
+      // 2. Upload / Confirm KYC Documents for the newly created customer
       for (const kyc of kycAttachments) {
         if (kyc.file) {
           try {
@@ -235,21 +300,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({
         }
       }
 
-      // 3. Create Loan for Customer
-      const financedAmount = Math.max(0, productPrice - downPayment);
-      const newLoan = await ApiClient.createLoan({
-        customerId: newCustomer.id,
-        principalAmount: financedAmount,
-        downPayment: Number(downPayment),
-        annualInterestRate: Number(annualRate),
-        interestCalcMethod: calcMethod,
-        tenureMonths: Number(tenureMonths),
-        installmentFrequency: frequency,
-        disbursementDate,
-        firstEmiDate: firstEmiDate || undefined,
-      });
-
-      setCreatedResult({ customer: newCustomer, loan: newLoan });
+      setCreatedResult({ customer: newCustomer, loan: newLoan! });
       onSuccess(newCustomer, newLoan);
     } catch (err: any) {
       setErrorMsg(err.message || 'Error creating customer & loan agreement.');
@@ -265,6 +316,8 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({
     { num: 4, label: 'EMI Terms', icon: <Calculator size={15} /> },
     { num: 5, label: 'Review & Book', icon: <FileSpreadsheet size={15} /> },
   ];
+
+  if (!isOpen) return null;
 
   return (
     <div className="modal-overlay">
@@ -362,6 +415,18 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({
                 </span>
               </div>
             </div>
+
+            {createdResult.loan && (
+              <div style={{ marginTop: 20, width: '100%', maxWidth: 460, textAlign: 'left' }}>
+                <PortalLinkManager
+                  loanId={createdResult.loan.id}
+                  loanAccountNo={createdResult.loan.loanAccountNo}
+                  customerName={createdResult.customer.fullName}
+                  primaryPhone={createdResult.customer.primaryPhone}
+                  userRole={currentUser?.role}
+                />
+              </div>
+            )}
 
             <div style={{ marginTop: 24, display: 'flex', gap: 12 }}>
               <button onClick={onClose} className="btn btn-primary btn-lg">
@@ -573,6 +638,48 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({
               {/* STEP 3: Product / Device Information & Photos (NO artificial limit) */}
               {currentStep === 3 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  {/* Originating Partner Dealer / Store */}
+                  <div
+                    style={{
+                      padding: 14,
+                      background: 'var(--bg-surface-secondary)',
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--border-subtle)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                      <Store size={16} color="var(--primary)" />
+                      <label style={{ fontSize: 13, fontWeight: 700, margin: 0 }}>
+                        Partner Mobile Store / Dealer <span style={{ color: 'var(--danger)' }}>*</span>
+                      </label>
+                    </div>
+                    <select
+                      className="form-select"
+                      value={selectedDealerId}
+                      onChange={(e) => setSelectedDealerId(e.target.value)}
+                      disabled={isDealer}
+                      required
+                      style={{ background: isDealer ? 'var(--bg-surface-secondary)' : '#ffffff' }}
+                    >
+                      <option value="">-- Select Originating Partner Store --</option>
+                      {dealers.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.storeName} ({d.dealerCode}) — {d.areaCity} {isDealer && d.id === currentUser?.dealerId ? '(Your Store)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {isDealer && (
+                      <div style={{ fontSize: 11, color: 'var(--success-text)', marginTop: 4, fontWeight: 600 }}>
+                        ✓ Locked to your authorized partner store origin.
+                      </div>
+                    )}
+                    {!isDealer && (
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                        Select the retail store where the customer is purchasing this mobile handset under financing.
+                      </div>
+                    )}
+                  </div>
+
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
                     <div>
                       <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>

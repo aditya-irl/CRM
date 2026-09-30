@@ -1,12 +1,13 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { CallLogService } from './call-logs.service';
-import { authenticate } from '../../middlewares/auth.middleware';
+import { authenticate, requireRole } from '../../middlewares/auth.middleware';
 import { validateBody } from '../../middlewares/validate.middleware';
-import { createCallLogSchema } from '@crm/shared';
+import { createCallLogSchema, UserRole } from '@crm/shared';
 
 const router = Router();
 
 router.use(authenticate);
+router.use(requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER, UserRole.COLLECTION_AGENT));
 
 router.post('/', validateBody(createCallLogSchema), async (req: Request, res: Response, next: NextFunction) => {
   try {

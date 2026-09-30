@@ -25,6 +25,7 @@ export interface CreateLoanDTO {
   disbursementDate: string;
   firstEmiDate?: string;
   assignedAgentId?: string | null;
+  dealerId?: string | null;
   status?: LoanStatus;
 }
 
@@ -52,7 +53,34 @@ export class LoanService {
 
     const customer = custRes.rows[0];
 
-    // 2. Resolve assigned agent
+    // 2. Validate dealer (RLAC: never trust dealerId supplied by frontend for DEALER role)
+    let dealerId: string | null = data.dealerId || null;
+    if (user.role === UserRole.DEALER) {
+      if (!user.dealerId) {
+        throw new ForbiddenError('Dealer context missing');
+      }
+      dealerId = user.dealerId;
+    }
+
+    let dealerInfo: { store_name: string; dealer_code: string } | null = null;
+    if (dealerId) {
+      const dealerCheck = await queryPostgres(
+        'SELECT id, store_name, dealer_code, status FROM dealers WHERE id = $1',
+        [dealerId]
+      );
+      if (dealerCheck.rows.length === 0) {
+        throw new NotFoundError('Selected dealer not found');
+      }
+      if (dealerCheck.rows[0].status !== 'ACTIVE') {
+        throw new AppError('Selected dealer is inactive and cannot be linked to new loans');
+      }
+      dealerInfo = {
+        store_name: dealerCheck.rows[0].store_name,
+        dealer_code: dealerCheck.rows[0].dealer_code,
+      };
+    }
+
+    // 3. Resolve assigned agent
     let assignedAgentId = data.assignedAgentId || null;
     if (assignedAgentId) {
       const agentCheck = await queryPostgres(
@@ -76,7 +104,7 @@ export class LoanService {
       }
     }
 
-    // 3. Calculate deterministic amortization schedule (Banker's rounding & last-cent conservation)
+    // 4. Calculate deterministic amortization schedule (Banker's rounding & last-cent conservation)
     const calc = generateAmortizationSchedule({
       principalAmount: data.principalAmount,
       downPayment: data.downPayment || 0,
@@ -91,26 +119,26 @@ export class LoanService {
     const loanId = uuidv4();
     const targetStatus = data.status || LoanStatus.ACTIVE;
 
-    // 4. Generate unique loan account number
+    // 5. Generate unique loan account number
     const countRes = await queryPostgres<{ count: string }>('SELECT COUNT(*) as count FROM loans');
     const totalCount = parseInt(countRes.rows[0]?.count || '0', 10);
     const loanAccountNo = `LN-2026-${(1000 + totalCount + 1).toString()}`;
     const now = new Date().toISOString();
 
-    // 5. Execute atomic PostgreSQL transaction
+    // 6. Execute atomic PostgreSQL transaction
     await runPostgresTransaction(async (client) => {
       // Insert Loan record
       const insertLoanSql = `
         INSERT INTO loans (
-          id, loan_account_no, customer_id, principal_amount, down_payment, net_disbursed_amount,
+          id, loan_account_no, customer_id, dealer_id, principal_amount, down_payment, net_disbursed_amount,
           annual_interest_rate, interest_calc_method, tenure_months, installment_frequency,
           total_installments, emi_amount, total_interest, total_payable, total_paid,
           outstanding_balance, disbursement_date, first_emi_date, maturity_date,
           assigned_agent_id, status, created_by, created_at, updated_at
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-          $11, $12, $13, $14, 0.00, $15, $16, $17, $18,
-          $19, $20, $21, NOW(), NOW()
+          $11, $12, $13, $14, $15, 0.00, $16, $17, $18, $19,
+          $20, $21, $22, NOW(), NOW()
         )
       `;
 
@@ -118,6 +146,7 @@ export class LoanService {
         loanId,
         loanAccountNo,
         customer.id,
+        dealerId,
         calc.principalAmount,
         calc.downPayment,
         calc.netDisbursedAmount,
@@ -193,14 +222,14 @@ export class LoanService {
 
       db.prepare(`
         INSERT INTO loans (
-          id, loan_account_no, customer_id, principal_amount, down_payment, net_disbursed_amount,
+          id, loan_account_no, customer_id, dealer_id, principal_amount, down_payment, net_disbursed_amount,
           annual_interest_rate, interest_calc_method, tenure_months, installment_frequency,
           total_installments, emi_amount, total_interest, total_payable, total_paid,
           outstanding_balance, disbursement_date, first_emi_date, maturity_date,
           assigned_agent_id, status, created_by, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0.0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        loanId, loanAccountNo, customer.id, calc.principalAmount, calc.downPayment, calc.netDisbursedAmount,
+        loanId, loanAccountNo, customer.id, dealerId, calc.principalAmount, calc.downPayment, calc.netDisbursedAmount,
         calc.annualInterestRate, calc.interestCalcMethod, calc.tenureMonths, calc.installmentFrequency,
         calc.totalInstallments, calc.emiAmount, calc.totalInterest, calc.totalPayable, calc.totalPayable,
         calc.disbursementDate, calc.firstEmiDate, calc.maturityDate, sqliteAssignedAgentId,
@@ -237,6 +266,7 @@ export class LoanService {
       newState: {
         loanAccountNo,
         customerId: customer.id,
+        dealerId,
         principalAmount: calc.principalAmount,
         totalPayable: calc.totalPayable,
         totalInstallments: calc.totalInstallments,
@@ -249,6 +279,9 @@ export class LoanService {
       loanAccountNo,
       customerId: customer.id,
       customerName: customer.full_name,
+      dealerId,
+      dealerStoreName: dealerInfo?.store_name || null,
+      dealerCode: dealerInfo?.dealer_code || null,
       principalAmount: calc.principalAmount,
       downPayment: calc.downPayment,
       netDisbursedAmount: calc.netDisbursedAmount,
@@ -359,7 +392,7 @@ export class LoanService {
   }
 
   /**
-   * Disburse an approved loan and generate/activate EMI installments schedule.
+   * Disburse an approved loan and activate its repayment schedule.
    */
   public static async disburseLoan(
     id: string,
@@ -465,6 +498,7 @@ export class LoanService {
       search?: string;
       customerId?: string;
       agentId?: string;
+      dealerId?: string;
     }
   ) {
     const page = Math.max(1, Number(query.page) || 1);
@@ -477,17 +511,27 @@ export class LoanService {
              c.customer_code,
              c.primary_phone,
              c.area_route,
-             u.full_name as assigned_agent_name
+             u.full_name as assigned_agent_name,
+             d.store_name as dealer_store_name,
+             d.dealer_code
       FROM loans l
       JOIN customers c ON l.customer_id = c.id
       LEFT JOIN users u ON l.assigned_agent_id = u.id
+      LEFT JOIN dealers d ON l.dealer_id = d.id
       WHERE c.deleted_at IS NULL
     `;
     const params: any[] = [];
     let paramIndex = 1;
 
-    // Agent Row-Level Scoping: Agent only sees loans assigned to them OR within assigned route
-    if (user.role === UserRole.COLLECTION_AGENT) {
+    // Dealer Row-Level Scoping: Dealer only sees loans originated from their store
+    if (user.role === UserRole.DEALER) {
+      if (!user.dealerId) {
+        throw new ForbiddenError('Dealer context missing');
+      }
+      sql += ` AND l.dealer_id = $${paramIndex++}`;
+      params.push(user.dealerId);
+    } else if (user.role === UserRole.COLLECTION_AGENT) {
+      // Agent Row-Level Scoping: Agent only sees loans assigned to them OR within assigned route
       sql += ` AND (
         l.assigned_agent_id = $${paramIndex}
         OR c.id IN (
@@ -501,14 +545,15 @@ export class LoanService {
       )`;
       params.push(user.id);
       paramIndex++;
-    } else if (query.agentId) {
-      sql += ` AND l.assigned_agent_id = $${paramIndex++}`;
-      params.push(query.agentId);
-    }
-
-    if (query.customerId) {
-      sql += ` AND l.customer_id = $${paramIndex++}`;
-      params.push(query.customerId);
+    } else {
+      if (query.agentId) {
+        sql += ` AND l.assigned_agent_id = $${paramIndex++}`;
+        params.push(query.agentId);
+      }
+      if (query.dealerId) {
+        sql += ` AND l.dealer_id = $${paramIndex++}`;
+        params.push(query.dealerId);
+      }
     }
 
     if (query.status) {
@@ -522,6 +567,8 @@ export class LoanService {
         OR c.full_name ILIKE $${paramIndex}
         OR c.primary_phone ILIKE $${paramIndex}
         OR c.customer_code ILIKE $${paramIndex}
+        OR d.store_name ILIKE $${paramIndex}
+        OR d.dealer_code ILIKE $${paramIndex}
       )`;
       params.push(`%${query.search}%`);
       paramIndex++;
@@ -545,6 +592,9 @@ export class LoanService {
       customerCode: l.customer_code,
       primaryPhone: l.primary_phone,
       areaRoute: l.area_route,
+      dealerId: l.dealer_id,
+      dealerStoreName: l.dealer_store_name,
+      dealerCode: l.dealer_code,
       principalAmount: Number(l.principal_amount),
       downPayment: Number(l.down_payment),
       netDisbursedAmount: Number(l.net_disbursed_amount),
@@ -588,10 +638,13 @@ export class LoanService {
              c.primary_phone,
              c.address_line1,
              c.area_route,
-             u.full_name as assigned_agent_name
+             u.full_name as assigned_agent_name,
+             d.store_name as dealer_store_name,
+             d.dealer_code
       FROM loans l
       JOIN customers c ON l.customer_id = c.id
       LEFT JOIN users u ON l.assigned_agent_id = u.id
+      LEFT JOIN dealers d ON l.dealer_id = d.id
       WHERE l.id = $1 AND c.deleted_at IS NULL
     `;
 
@@ -602,8 +655,12 @@ export class LoanService {
 
     const loan = loanRes.rows[0];
 
-    // Server-side RLAC: Check collection agent assignment permission (IDOR protection)
-    if (user.role === UserRole.COLLECTION_AGENT) {
+    // Server-side RLAC: Check dealer scoping and collection agent assignment permission (IDOR protection)
+    if (user.role === UserRole.DEALER) {
+      if (!user.dealerId || loan.dealer_id !== user.dealerId) {
+        throw new ForbiddenError('You do not have access to this loan account');
+      }
+    } else if (user.role === UserRole.COLLECTION_AGENT) {
       const isDirectlyAssigned = loan.assigned_agent_id === user.id;
       if (!isDirectlyAssigned) {
         const assignmentRes = await queryPostgres(
@@ -651,6 +708,9 @@ export class LoanService {
       primaryPhone: loan.primary_phone,
       addressLine1: loan.address_line1,
       areaRoute: loan.area_route,
+      dealerId: loan.dealer_id,
+      dealerStoreName: loan.dealer_store_name,
+      dealerCode: loan.dealer_code,
       principalAmount: Number(loan.principal_amount),
       downPayment: Number(loan.down_payment),
       netDisbursedAmount: Number(loan.net_disbursed_amount),

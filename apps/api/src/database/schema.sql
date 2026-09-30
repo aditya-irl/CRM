@@ -56,10 +56,30 @@ CREATE TABLE IF NOT EXISTS kyc_documents (
 );
 CREATE INDEX IF NOT EXISTS idx_kyc_customer ON kyc_documents(customer_id);
 
+CREATE TABLE IF NOT EXISTS dealers (
+    id TEXT PRIMARY KEY,
+    dealer_code TEXT UNIQUE NOT NULL,
+    store_name TEXT NOT NULL,
+    owner_name TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    alternate_phone TEXT,
+    email TEXT,
+    address TEXT NOT NULL,
+    area_city TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'ACTIVE', -- 'ACTIVE', 'INACTIVE'
+    created_by TEXT REFERENCES users(id),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dealers_code ON dealers(dealer_code);
+CREATE INDEX IF NOT EXISTS idx_dealers_status ON dealers(status);
+CREATE INDEX IF NOT EXISTS idx_dealers_phone ON dealers(phone);
+
 CREATE TABLE IF NOT EXISTS loans (
     id TEXT PRIMARY KEY,
     loan_account_no TEXT UNIQUE NOT NULL,
     customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
+    dealer_id TEXT REFERENCES dealers(id),
     principal_amount REAL NOT NULL,
     down_payment REAL NOT NULL DEFAULT 0.0,
     net_disbursed_amount REAL NOT NULL,
@@ -83,6 +103,7 @@ CREATE TABLE IF NOT EXISTS loans (
     updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_loans_customer ON loans(customer_id);
+CREATE INDEX IF NOT EXISTS idx_loans_dealer ON loans(dealer_id);
 CREATE INDEX IF NOT EXISTS idx_loans_agent ON loans(assigned_agent_id);
 CREATE INDEX IF NOT EXISTS idx_loans_status ON loans(status);
 CREATE INDEX IF NOT EXISTS idx_loans_acc_no ON loans(loan_account_no);
@@ -119,6 +140,9 @@ CREATE TABLE IF NOT EXISTS payments (
     customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
     amount REAL NOT NULL,
     payment_mode TEXT NOT NULL DEFAULT 'CASH', -- 'CASH', 'UPI', 'BANK_TRANSFER', 'CHEQUE'
+    collection_source TEXT NOT NULL DEFAULT 'DIRECT_CUSTOMER', -- 'DIRECT_CUSTOMER', 'DEALER', 'RECOVERY_AGENT'
+    dealer_id TEXT REFERENCES dealers(id),
+    agent_id TEXT REFERENCES users(id),
     reference_number TEXT,
     collected_by_agent_id TEXT NOT NULL REFERENCES users(id),
     payment_timestamp TEXT NOT NULL,
@@ -134,6 +158,10 @@ CREATE TABLE IF NOT EXISTS payments (
 CREATE INDEX IF NOT EXISTS idx_payments_loan ON payments(loan_id);
 CREATE INDEX IF NOT EXISTS idx_payments_customer ON payments(customer_id);
 CREATE INDEX IF NOT EXISTS idx_payments_agent ON payments(collected_by_agent_id);
+CREATE INDEX IF NOT EXISTS idx_payments_receipt ON payments(receipt_number);
+CREATE INDEX IF NOT EXISTS idx_payments_collection_source ON payments(collection_source);
+CREATE INDEX IF NOT EXISTS idx_payments_dealer_id ON payments(dealer_id);
+CREATE INDEX IF NOT EXISTS idx_payments_dealer_source_date ON payments(collection_source, dealer_id, payment_timestamp);
 
 CREATE TABLE IF NOT EXISTS call_logs (
     id TEXT PRIMARY KEY,
@@ -180,6 +208,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 );
 CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_logs(entity, entity_id);
 CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_logs(created_at DESC);
 
 CREATE TABLE IF NOT EXISTS notifications (
     id TEXT PRIMARY KEY,
@@ -205,3 +234,50 @@ CREATE TABLE IF NOT EXISTS system_settings (
     updated_by TEXT REFERENCES users(id),
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS dealer_settlements (
+    id TEXT PRIMARY KEY,
+    settlement_number TEXT UNIQUE NOT NULL,
+    dealer_id TEXT NOT NULL REFERENCES dealers(id) ON DELETE RESTRICT,
+    amount REAL NOT NULL,
+    settlement_date TEXT NOT NULL,
+    payment_method TEXT NOT NULL,
+    reference_number TEXT,
+    notes TEXT,
+    status TEXT NOT NULL DEFAULT 'COMPLETED',
+    is_reversal INTEGER NOT NULL DEFAULT 0,
+    reversal_reason TEXT,
+    reversed_at TEXT,
+    created_by TEXT REFERENCES users(id) ON DELETE RESTRICT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dealer_settlements_dealer_id ON dealer_settlements(dealer_id);
+CREATE INDEX IF NOT EXISTS idx_dealer_settlements_date ON dealer_settlements(settlement_date);
+CREATE INDEX IF NOT EXISTS idx_dealer_settlements_status ON dealer_settlements(status);
+
+CREATE TABLE IF NOT EXISTS dealer_settlement_allocations (
+    id TEXT PRIMARY KEY,
+    settlement_id TEXT NOT NULL REFERENCES dealer_settlements(id) ON DELETE CASCADE,
+    payment_id TEXT NOT NULL REFERENCES payments(id) ON DELETE RESTRICT,
+    amount_allocated REAL NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_settlement_allocations_settlement_id ON dealer_settlement_allocations(settlement_id);
+CREATE INDEX IF NOT EXISTS idx_settlement_allocations_payment_id ON dealer_settlement_allocations(payment_id);
+
+CREATE TABLE IF NOT EXISTS customer_portal_tokens (
+    id TEXT PRIMARY KEY,
+    loan_id TEXT NOT NULL REFERENCES loans(id) ON DELETE CASCADE,
+    customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    token_hash TEXT UNIQUE NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    last_accessed_at TEXT,
+    revoked_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_portal_tokens_hash ON customer_portal_tokens(token_hash);
+CREATE INDEX IF NOT EXISTS idx_portal_tokens_loan ON customer_portal_tokens(loan_id);
+CREATE INDEX IF NOT EXISTS idx_portal_tokens_customer ON customer_portal_tokens(customer_id);
+CREATE INDEX IF NOT EXISTS idx_portal_tokens_active ON customer_portal_tokens(is_active);
+

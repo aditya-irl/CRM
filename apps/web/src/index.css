@@ -354,3 +354,40 @@ h1, h2, h3, h4, h5, h6 {
 ::-webkit-scrollbar-thumb:hover {
   background: #bab3a7;
 }
+
+/* Print Styles for Receipts */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 12pt !important;
+  }
+
+  .sidebar,
+  .top-nav,
+  .navbar,
+  .no-print,
+  button,
+  .crm-tab,
+  .table-container {
+    display: none !important;
+  }
+
+  .modal-overlay {
+    position: static !important;
+    background: none !important;
+    backdrop-filter: none !important;
+    padding: 0 !important;
+    display: block !important;
+  }
+
+  .modal-content.receipt-print-container {
+    box-shadow: none !important;
+    border: 1px solid #000000 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    margin: 0 auto !important;
+    padding: 20px !important;
+  }
+}
+

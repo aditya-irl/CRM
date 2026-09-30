@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ApiClient } from '../services/api';
-import { IAgentQueueItem, formatINR, EMIStatus, CallOutcome, PaymentMode } from '@crm/shared';
+import { IAgentQueueItem, formatINR, EMIStatus, CallOutcome, PaymentMode, CollectionSource, IDealer } from '@crm/shared';
 import {
   Phone,
   MessageCircle,
@@ -14,6 +14,8 @@ import {
   X,
   Share2,
   Receipt as ReceiptIcon,
+  Store,
+  UserCheck,
 } from 'lucide-react';
 
 export const QueueView: React.FC = () => {
@@ -39,6 +41,11 @@ export const QueueView: React.FC = () => {
   // Payment form state
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [paymentMode, setPaymentMode] = useState<PaymentMode>(PaymentMode.CASH);
+  const [collectionSource, setCollectionSource] = useState<CollectionSource>(CollectionSource.DIRECT_CUSTOMER);
+  const [selectedDealerId, setSelectedDealerId] = useState<string>('');
+  const [selectedAgentId, setSelectedAgentId] = useState<string>('');
+  const [dealersList, setDealersList] = useState<IDealer[]>([]);
+  const [agentsList, setAgentsList] = useState<any[]>([]);
   const [refNumber, setRefNumber] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');
   const [submittingPayment, setSubmittingPayment] = useState(false);
@@ -103,13 +110,33 @@ export const QueueView: React.FC = () => {
     const fullDue = item.remainingAmount + item.penaltyAmount;
     setPaymentAmount(fullDue);
     setPaymentMode(PaymentMode.CASH);
+    setCollectionSource(CollectionSource.DIRECT_CUSTOMER);
+    setSelectedDealerId('');
+    setSelectedAgentId('');
     setRefNumber('');
     setPaymentNotes('');
+
+    // Fetch active dealers and collection agents if not loaded
+    if (dealersList.length === 0) {
+      ApiClient.getDealers(undefined, 'ACTIVE').then(setDealersList).catch(console.error);
+    }
+    if (agentsList.length === 0) {
+      ApiClient.getUsers('COLLECTION_AGENT', 'ACTIVE').then(setAgentsList).catch(console.error);
+    }
   };
 
   const handleSubmitPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedItemForPayment) return;
+    if (collectionSource === CollectionSource.DEALER && !selectedDealerId) {
+      alert('Please select a partner store');
+      return;
+    }
+    if (collectionSource === CollectionSource.RECOVERY_AGENT && !selectedAgentId) {
+      alert('Please select a recovery agent');
+      return;
+    }
+
     setSubmittingPayment(true);
     try {
       const idempotencyKey = `WEB_${selectedItemForPayment.installmentId}_${Date.now()}`;
@@ -119,6 +146,9 @@ export const QueueView: React.FC = () => {
         customerId: selectedItemForPayment.customerId,
         amount: Number(paymentAmount),
         paymentMode,
+        collectionSource,
+        dealerId: collectionSource === CollectionSource.DEALER ? selectedDealerId : undefined,
+        agentId: collectionSource === CollectionSource.RECOVERY_AGENT ? selectedAgentId : undefined,
         referenceNumber: refNumber || undefined,
         notes: paymentNotes || undefined,
         idempotencyKey,
@@ -442,6 +472,72 @@ export const QueueView: React.FC = () => {
                   required
                 />
               </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                  Collection Through
+                </label>
+                <select
+                  className="form-select"
+                  value={collectionSource}
+                  onChange={(e) => {
+                    const src = e.target.value as CollectionSource;
+                    setCollectionSource(src);
+                    if (src === CollectionSource.DEALER && !selectedDealerId && dealersList.length > 0) {
+                      setSelectedDealerId(dealersList[0].id);
+                    }
+                    if (src === CollectionSource.RECOVERY_AGENT && !selectedAgentId && agentsList.length > 0) {
+                      setSelectedAgentId(agentsList[0].id);
+                    }
+                  }}
+                >
+                  <option value={CollectionSource.DIRECT_CUSTOMER}>Direct Customer</option>
+                  <option value={CollectionSource.DEALER}>Partner Store</option>
+                  <option value={CollectionSource.RECOVERY_AGENT}>Recovery Agent</option>
+                </select>
+              </div>
+
+              {collectionSource === CollectionSource.DEALER && (
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                    Partner Store (Active Stores Only)
+                  </label>
+                  <select
+                    className="form-select"
+                    value={selectedDealerId}
+                    onChange={(e) => setSelectedDealerId(e.target.value)}
+                    required
+                  >
+                    <option value="">-- Select Partner Store --</option>
+                    {dealersList.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.storeName} ({d.dealerCode}) - {d.areaCity}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {collectionSource === CollectionSource.RECOVERY_AGENT && (
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                    Recovery Agent
+                  </label>
+                  <select
+                    className="form-select"
+                    value={selectedAgentId}
+                    onChange={(e) => setSelectedAgentId(e.target.value)}
+                    required
+                  >
+                    <option value="">-- Select Recovery Agent --</option>
+                    {agentsList.map((ag) => (
+                      <option key={ag.id} value={ag.id}>
+                        {ag.fullName || ag.full_name} ({ag.phone})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div>
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>

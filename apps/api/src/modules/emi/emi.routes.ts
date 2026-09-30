@@ -1,10 +1,12 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { EMIService } from './emi.service';
-import { authenticate } from '../../middlewares/auth.middleware';
+import { authenticate, requireRole } from '../../middlewares/auth.middleware';
+import { UserRole } from '@crm/shared';
 
 const router = Router();
 
 router.use(authenticate);
+router.use(requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER, UserRole.COLLECTION_AGENT));
 
 router.get('/queue', async (req: Request, res: Response, next: NextFunction) => {
   try {

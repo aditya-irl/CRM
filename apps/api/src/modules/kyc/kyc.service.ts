@@ -54,6 +54,19 @@ export class KYCService {
       if (assignmentRes.rows.length === 0) {
         throw new ForbiddenError('You are not authorized to upload KYC documents for this customer');
       }
+    } else if (user.role === UserRole.DEALER) {
+      if (!user.dealerId) {
+        throw new ForbiddenError('Dealer context missing');
+      }
+      const dealerAccess = await queryPostgres(
+        `SELECT id FROM loans WHERE dealer_id = $1 AND customer_id = $2
+         UNION
+         SELECT id FROM customers WHERE id = $2 AND created_by = $3`,
+        [user.dealerId, customer.id, user.id]
+      );
+      if (dealerAccess.rows.length === 0) {
+        throw new ForbiddenError('You are not authorized to upload KYC documents for this customer');
+      }
     }
 
     const fileExt = fileName.split('.').pop()?.toLowerCase() || 'bin';
@@ -100,7 +113,12 @@ export class KYCService {
 
     const customer = custRes.rows[0];
 
-    // RLAC check for agents
+    // Storage key path validation to prevent linking files from other customers
+    if (!data.storageKey.startsWith(`kyc/${data.customerId}/`)) {
+      throw new ValidationError('Invalid storage key: document must be uploaded to the customer directory');
+    }
+
+    // RLAC check for agents and dealers
     if (user.role === UserRole.COLLECTION_AGENT) {
       const assignmentRes = await queryPostgres(
         `SELECT id FROM collection_assignments
@@ -109,6 +127,19 @@ export class KYCService {
         [user.id, customer.id, customer.area_route]
       );
       if (assignmentRes.rows.length === 0) {
+        throw new ForbiddenError('You are not authorized to confirm KYC documents for this customer');
+      }
+    } else if (user.role === UserRole.DEALER) {
+      if (!user.dealerId) {
+        throw new ForbiddenError('Dealer context missing');
+      }
+      const dealerAccess = await queryPostgres(
+        `SELECT id FROM loans WHERE dealer_id = $1 AND customer_id = $2
+         UNION
+         SELECT id FROM customers WHERE id = $2 AND created_by = $3`,
+        [user.dealerId, data.customerId, user.id]
+      );
+      if (dealerAccess.rows.length === 0) {
         throw new ForbiddenError('You are not authorized to confirm KYC documents for this customer');
       }
     }
@@ -175,8 +206,8 @@ export class KYCService {
    * Generate short-lived (max 300s) pre-signed download URL (Strict Admin/Manager only).
    */
   public static async generatePresignedDownloadUrl(docId: string, user: AuthenticatedUser) {
-    if (user.role === UserRole.COLLECTION_AGENT) {
-      throw new ForbiddenError('Collection agents are not authorized to download raw KYC documents');
+    if (user.role === UserRole.COLLECTION_AGENT || user.role === UserRole.DEALER) {
+      throw new ForbiddenError('You are not authorized to download raw KYC documents');
     }
 
     const docRes = await queryPostgres(
@@ -216,7 +247,7 @@ export class KYCService {
   }
 
   /**
-   * List KYC documents for customer with PII masking and agent storage_key stripping.
+   * List KYC documents for customer with PII masking and agent/dealer storage_key stripping.
    */
   public static async getKYCDocumentsForCustomer(customerId: string, user: AuthenticatedUser) {
     const custRes = await queryPostgres(
@@ -239,6 +270,19 @@ export class KYCService {
       if (assignmentRes.rows.length === 0) {
         throw new ForbiddenError('You are not authorized to view KYC documents for this customer');
       }
+    } else if (user.role === UserRole.DEALER) {
+      if (!user.dealerId) {
+        throw new ForbiddenError('Dealer context missing');
+      }
+      const dealerAccess = await queryPostgres(
+        `SELECT id FROM loans WHERE dealer_id = $1 AND customer_id = $2
+         UNION
+         SELECT id FROM customers WHERE id = $2 AND created_by = $3`,
+        [user.dealerId, customer.id, user.id]
+      );
+      if (dealerAccess.rows.length === 0) {
+        throw new ForbiddenError('You are not authorized to view KYC documents for this customer');
+      }
     }
 
     const docsRes = await queryPostgres(
@@ -246,7 +290,7 @@ export class KYCService {
       [customerId]
     );
 
-    const isAgent = user.role === UserRole.COLLECTION_AGENT;
+    const hideKey = user.role === UserRole.COLLECTION_AGENT || user.role === UserRole.DEALER;
 
     return docsRes.rows.map((doc: any) => ({
       id: doc.id,
@@ -254,7 +298,7 @@ export class KYCService {
       docType: doc.doc_type,
       docNumberMasked: doc.doc_number_masked,
       status: doc.status,
-      storageKey: isAgent ? undefined : doc.storage_key, // Strip raw key for agents
+      storageKey: hideKey ? undefined : doc.storage_key, // Strip raw key for agents and dealers
       fileMimeType: doc.file_mime_type,
       fileSizeBytes: Number(doc.file_size_bytes),
       verifiedAt: doc.verified_at,
@@ -264,10 +308,11 @@ export class KYCService {
 
   /**
    * Delete / remove a KYC document (Admin / Branch Manager only).
+   * Safely deletes the corresponding storage object before removing the database record.
    */
   public static async deleteKYCDocument(docId: string, user: AuthenticatedUser) {
-    if (user.role === UserRole.COLLECTION_AGENT) {
-      throw new ForbiddenError('Collection agents are not authorized to delete KYC documents');
+    if (user.role === UserRole.COLLECTION_AGENT || user.role === UserRole.DEALER) {
+      throw new ForbiddenError('You are not authorized to delete KYC documents');
     }
 
     const docRes = await queryPostgres(
@@ -280,6 +325,30 @@ export class KYCService {
     }
 
     const doc = docRes.rows[0];
+
+    // Safely delete object from configured storage provider abstraction
+    if (doc.storage_key) {
+      const storage = getStorageProvider();
+      try {
+        await storage.delete(doc.storage_key);
+      } catch (storageErr: any) {
+        // Safe if already missing / idempotently deleted
+        const isAlreadyMissing =
+          storageErr?.code === 'ENOENT' ||
+          storageErr?.name === 'NoSuchKey' ||
+          storageErr?.code === 'NoSuchKey' ||
+          storageErr?.$metadata?.httpStatusCode === 404;
+
+        if (!isAlreadyMissing) {
+          console.error('[KYC Delete] Storage object deletion failed:', storageErr?.message || storageErr);
+          throw new AppError(
+            'Unable to delete the stored document file. The document record was not removed.',
+            500,
+            'STORAGE_DELETION_FAILED'
+          );
+        }
+      }
+    }
 
     await queryPostgres('DELETE FROM kyc_documents WHERE id = $1', [docId]);
 

@@ -1,17 +1,20 @@
 import fs from 'fs';
 import path from 'path';
 import { Pool } from 'pg';
-import { env } from '../config/env';
+import { getEffectiveDatabaseConfig, buildSslConfig } from './postgres';
 
 export async function runPostgresMigrations(connectionString?: string) {
-  const connStr = connectionString || env.DATABASE_URL;
+  let connStr = connectionString;
   if (!connStr) {
-    console.warn('[Postgres Migrations] No DATABASE_URL provided. Skipping PostgreSQL migration.');
-    return { applied: [], skipped: true };
+    const config = getEffectiveDatabaseConfig();
+    connStr = config.connectionString;
   }
 
   console.log('[Postgres Migrations] Connecting to PostgreSQL database...');
-  const pool = new Pool({ connectionString: connStr });
+  const pool = new Pool({
+    connectionString: connStr,
+    ssl: buildSslConfig(),
+  });
   const client = await pool.connect();
 
   try {
@@ -77,6 +80,9 @@ export async function runPostgresMigrations(connectionString?: string) {
 }
 
 if (require.main === module) {
+  if (process.argv.includes('--test')) {
+    process.env.NODE_ENV = 'test';
+  }
   runPostgresMigrations()
     .then(() => process.exit(0))
     .catch((err) => {

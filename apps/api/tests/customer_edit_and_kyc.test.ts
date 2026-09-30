@@ -3,6 +3,7 @@ import app from '../src/app';
 import { queryPostgres, closePostgresPool } from '../src/database/postgres';
 import { closeRedisConnection } from '../src/core/redis';
 import { closeAllQueues } from '../src/core/queue';
+import { getStorageProvider } from '../src/core/storage';
 import { UserRole, KYCType } from '@crm/shared';
 import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
@@ -171,6 +172,16 @@ describe('Customer Data, Manual Route & Dynamic KYC Integration Tests', () => {
     expect(listRes.status).toBe(200);
     expect(listRes.body.data.kycDocuments.length).toBe(2);
 
+    // Physically upload 1st document file to verify storage deletion
+    const storage = getStorageProvider();
+    await storage.upload({
+      key: presigned1.body.data.storageKey,
+      body: 'fake document content for aadhaar',
+      mimeType: presigned1.body.data.fileMimeType,
+      isPrivate: true,
+    });
+    expect(await storage.exists(presigned1.body.data.storageKey)).toBe(true);
+
     // Delete 1st Document
     const delRes = await request(app)
       .delete(`/api/v1/kyc/${doc1Id}`)
@@ -178,11 +189,45 @@ describe('Customer Data, Manual Route & Dynamic KYC Integration Tests', () => {
     expect(delRes.status).toBe(200);
     expect(delRes.body.success).toBe(true);
 
+    // Verify storage object was removed from storage provider
+    expect(await storage.exists(presigned1.body.data.storageKey)).toBe(false);
+
     // Verify list after deletion
     const listAfterDel = await request(app)
       .get(`/api/v1/customers/${customerId}`)
       .set('Authorization', `Bearer ${adminToken}`);
     expect(listAfterDel.body.data.kycDocuments.length).toBe(1);
     expect(listAfterDel.body.data.kycDocuments[0].docType).toBe(KYCType.PAN);
+
+    // Test storage failure safety: simulate storage error on 2nd document
+    const doc2Id = confirm2.body.data.id;
+    const deleteSpy = jest.spyOn(storage, 'delete').mockRejectedValueOnce(new Error('Storage connection failure'));
+
+    const failDelRes = await request(app)
+      .delete(`/api/v1/kyc/${doc2Id}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(failDelRes.status).toBe(500);
+    expect(failDelRes.body.error.code).toBe('STORAGE_DELETION_FAILED');
+    expect(failDelRes.body.error.message).toBe('Unable to delete the stored document file. The document record was not removed.');
+    // Ensure no sensitive credentials or internal error leaked
+    expect(JSON.stringify(failDelRes.body)).not.toContain('Storage connection failure');
+
+    // Verify document was NOT removed from database
+    const checkDoc2 = await queryPostgres('SELECT id FROM kyc_documents WHERE id = $1', [doc2Id]);
+    expect(checkDoc2.rows.length).toBe(1);
+
+    deleteSpy.mockRestore();
+
+    // Test idempotent deletion: storage object is already missing
+    expect(await storage.exists(presigned2.body.data.storageKey)).toBe(false);
+    const idempotentDelRes = await request(app)
+      .delete(`/api/v1/kyc/${doc2Id}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(idempotentDelRes.status).toBe(200);
+    expect(idempotentDelRes.body.success).toBe(true);
+
+    // Verify document is now deleted from database
+    const checkDoc2After = await queryPostgres('SELECT id FROM kyc_documents WHERE id = $1', [doc2Id]);
+    expect(checkDoc2After.rows.length).toBe(0);
   });
 });

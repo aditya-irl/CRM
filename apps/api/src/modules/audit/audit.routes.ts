@@ -36,4 +36,21 @@ router.get(
   }
 );
 
+router.get(
+  '/:id',
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const log = await AuditService.getLogById(req.params.id);
+      return res.json({
+        success: true,
+        data: log,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 export default router;

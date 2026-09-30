@@ -51,6 +51,7 @@ router.get(
 // Get agent portfolio (RLAC: Agents can only view their own)
 router.get(
   '/agent/:agentId',
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER, UserRole.COLLECTION_AGENT),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const portfolio = await AssignmentService.getAgentPortfolio(req.params.agentId, req.user!);

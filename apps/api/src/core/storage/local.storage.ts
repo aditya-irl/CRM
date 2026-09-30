@@ -33,10 +33,16 @@ export class LocalStorageProvider implements StorageProvider {
     }
   }
 
+  /**
+   * Development/test only: returns a local dev URL.
+   * This is NOT a real presigned URL and will NOT work in production.
+   * Set STORAGE_PROVIDER=s3 with valid AWS credentials for production.
+   */
   public async getSignedUrl(params: PresignedUrlParams): Promise<string> {
     const effectiveExpiry = Math.min(params.expiresInSeconds, MAX_KYC_URL_EXPIRY_SECONDS);
-    const signature = crypto.randomBytes(16).toString('hex');
-    return `https://s3-secure-vault.internal/loans-bucket/${params.key}?X-Amz-Expires=${effectiveExpiry}&X-Amz-Signature=${signature}`;
+    const token = crypto.randomBytes(16).toString('hex');
+    // Clearly namespaced as a local dev URL — not routable externally
+    return `local://dev-storage/${params.key}?operation=${params.operation}&X-Dev-Expires=${effectiveExpiry}&X-Dev-Token=${token}`;
   }
 
   public async exists(key: string): Promise<boolean> {
