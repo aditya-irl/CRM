@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import { ApiClient } from '../services/api';
-import { ShieldCheck, UserCheck, Lock, ArrowRight, Wallet, CheckCircle2 } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 
 interface LoginViewProps {
   onSuccess: () => void;
 }
 
 export const LoginView: React.FC<LoginViewProps> = ({ onSuccess }) => {
-  const [email, setEmail] = useState('admin@financecrm.com');
-  const [password, setPassword] = useState('Admin@123456');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,11 +24,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSuccess }) => {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleDemoLogin = (demoEmail: string, demoPass: string) => {
-    setEmail(demoEmail);
-    setPassword(demoPass);
   };
 
   return (
@@ -51,7 +46,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSuccess }) => {
           boxShadow: 'var(--shadow-modal)',
         }}
       >
-        {/* Brand Header */}
+        {/* Official Brand Header */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 26 }}>
           <div
             style={{
@@ -71,9 +66,9 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSuccess }) => {
           </div>
           <div>
             <h2 style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
-              Finance & Collection CRM
+              Alpha Mobile Gallery
             </h2>
-            <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Enterprise Loan, KYC & EMI Platform</p>
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Enterprise EMI Platform</p>
           </div>
         </div>
 
@@ -96,14 +91,14 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSuccess }) => {
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-              Work Email
+              Work Email or Dealer Login ID
             </label>
             <input
-              type="email"
+              type="text"
               className="form-input"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="name@company.com"
+              placeholder="name@company.com or DLR-0001"
               required
             />
           </div>
@@ -137,66 +132,11 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSuccess }) => {
           </button>
         </form>
 
-        {/* Demo Quick Logins */}
-        <div style={{ marginTop: 24, paddingTop: 18, borderTop: '1px solid var(--border-subtle)' }}>
-          <p
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              color: 'var(--text-muted)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.04em',
-              marginBottom: 10,
-            }}
-          >
-            Quick Preset Logins
-          </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              style={{ justifyContent: 'space-between', padding: '7px 10px' }}
-              onClick={() => handleDemoLogin('admin@financecrm.com', 'Admin@123456')}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <ShieldCheck size={13} color="var(--primary)" />
-                <span style={{ fontSize: 12, fontWeight: 600 }}>Super Admin (Vikram Malhotra)</span>
-              </div>
-              <span className="mono" style={{ fontSize: 11, color: 'var(--text-muted)' }}>Admin@123456</span>
-            </button>
-
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              style={{ justifyContent: 'space-between', padding: '7px 10px' }}
-              onClick={() => handleDemoLogin('agent.rahul@financecrm.com', 'Agent@123456')}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <UserCheck size={13} color="var(--success)" />
-                <span style={{ fontSize: 12, fontWeight: 600 }}>Field Agent (Rahul Sharma)</span>
-              </div>
-              <span className="mono" style={{ fontSize: 11, color: 'var(--text-muted)' }}>Agent@123456</span>
-            </button>
-
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              style={{ justifyContent: 'space-between', padding: '7px 10px' }}
-              onClick={() => handleDemoLogin('manager@financecrm.com', 'Manager@123456')}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Lock size={13} color="var(--warning)" />
-                <span style={{ fontSize: 12, fontWeight: 600 }}>Branch Manager (Anita Deshmukh)</span>
-              </div>
-              <span className="mono" style={{ fontSize: 11, color: 'var(--text-muted)' }}>Manager@123456</span>
-            </button>
-          </div>
-        </div>
-
-        <div style={{ marginTop: 20, textAlign: 'center', fontSize: 11, color: 'var(--text-muted)' }}>
-          🔒 ACID Ledger Protected • Zero Discrepancies
+        <div style={{ marginTop: 24, textAlign: 'center', fontSize: 11, color: 'var(--text-muted)' }}>
+          🔒 ACID Ledger Protected • Alpha Mobile Gallery • Shubh Pvt Ltd
         </div>
       </div>
     </div>
   );
 };
+
