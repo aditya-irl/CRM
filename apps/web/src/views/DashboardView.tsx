@@ -3,6 +3,8 @@ import { ApiClient } from '../services/api';
 import {
   IFinanceDashboardStats,
   IPaymentDetail,
+  IUser,
+  UserRole,
   formatINR,
   formatDisplayDate,
   CollectionSource,
@@ -37,11 +39,20 @@ import { BrandLogo } from '../components/BrandLogo';
 interface DashboardViewProps {
   onOpenAddCustomer?: () => void;
   onNavigateToTab?: (tab: string) => void;
+  user?: IUser;
 }
+
+/** Roles permitted to view the executive finance dashboard */
+const DASHBOARD_ALLOWED_ROLES = [
+  UserRole.SUPER_ADMIN,
+  UserRole.ADMIN,
+  UserRole.BRANCH_MANAGER,
+] as const;
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
   onOpenAddCustomer,
   onNavigateToTab,
+  user: userProp,
 }) => {
   const [stats, setStats] = useState<IFinanceDashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -59,6 +70,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     start = customStartDate,
     end = customEndDate
   ) => {
+    // Guard: only SUPER_ADMIN, ADMIN, BRANCH_MANAGER may call the finance dashboard endpoint.
+    // COLLECTION_AGENT and DEALER are not authorized; skip the request to avoid a guaranteed 403.
+    const effectiveUser = userProp ?? ApiClient.getUser();
+    if (
+      effectiveUser &&
+      !DASHBOARD_ALLOWED_ROLES.includes(effectiveUser.role as typeof DASHBOARD_ALLOWED_ROLES[number])
+    ) {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
       const data = await ApiClient.getFinanceDashboard({

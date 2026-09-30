@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { Pool } from 'pg';
-import { getEffectiveDatabaseConfig, buildSslConfig } from './postgres';
+import { getEffectiveDatabaseConfig, buildSslConfig, normalizeConnectionString } from './postgres';
 
 export async function runPostgresMigrations(connectionString?: string) {
   let connStr = connectionString;
@@ -9,6 +9,9 @@ export async function runPostgresMigrations(connectionString?: string) {
     const config = getEffectiveDatabaseConfig();
     connStr = config.connectionString;
   }
+
+  // Normalize sslmode alias to silence pg-connection-string deprecation warning
+  connStr = normalizeConnectionString(connStr);
 
   console.log('[Postgres Migrations] Connecting to PostgreSQL database...');
   const pool = new Pool({

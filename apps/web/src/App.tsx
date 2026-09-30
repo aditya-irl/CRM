@@ -35,7 +35,12 @@ export const App: React.FC = () => {
   }
 
   const [user, setUser] = useState<IUser | null>(ApiClient.getUser());
-  const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
+  // Lazy initializer: resolve the correct default tab synchronously at mount time
+  // so COLLECTION_AGENT never sees 'dashboard' even on the very first render.
+  const [activeTab, setActiveTab] = useState<NavTab>(() => {
+    const currentUser = ApiClient.getUser();
+    return currentUser?.role === UserRole.COLLECTION_AGENT ? 'queue' : 'dashboard';
+  });
   const [selectedDealerIdForCollections, setSelectedDealerIdForCollections] = useState<string | null>(null);
   const [selectedDealerIdForSettlements, setSelectedDealerIdForSettlements] = useState<string | null>(null);
   const [selectedAgentIdForCollections, setSelectedAgentIdForCollections] = useState<string | null>(null);
@@ -62,7 +67,8 @@ export const App: React.FC = () => {
 
   const handlePasswordChangeSuccess = (updatedUser: IUser) => {
     setUser(updatedUser);
-    setActiveTab('dashboard');
+    // Route agents to their home tab, not the admin dashboard
+    setActiveTab(updatedUser.role === UserRole.COLLECTION_AGENT ? 'queue' : 'dashboard');
   };
 
   const handleNavigateToDealerCollections = (dealerId?: string) => {
@@ -116,6 +122,14 @@ export const App: React.FC = () => {
       !['dashboard', 'customers', 'loans', 'dealer-collections', 'dealer-settlements'].includes(activeTab)
     ) {
       return <DealerDashboardView onNavigateToTab={(t) => setActiveTab(t as NavTab)} />;
+    }
+
+    // If collection agent attempts to access admin-only tabs, redirect to queue
+    // This prevents the finance-dashboard API call that would result in a 403.
+    const isAgent = user.role === UserRole.COLLECTION_AGENT;
+    const agentAllowedTabs: NavTab[] = ['queue', 'customers', 'loans', 'payments'];
+    if (isAgent && !agentAllowedTabs.includes(activeTab)) {
+      return <QueueView />;
     }
 
     switch (activeTab) {

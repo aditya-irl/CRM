@@ -4,6 +4,42 @@ import { env } from '../config/env';
 let pgPool: Pool | null = null;
 
 /**
+ * Normalizes a PostgreSQL connection string by replacing deprecated sslmode aliases
+ * ('prefer', 'require', 'verify-ca') with the explicit 'verify-full' equivalent.
+ *
+ * This prevents the node-postgres / pg-connection-string v2 security deprecation warning:
+ *   "The SSL modes 'prefer', 'require', and 'verify-ca' are treated as aliases for
+ *    'verify-full'. In pg v9.0.0 these will adopt standard libpq semantics."
+ *
+ * The substitution preserves identical TLS behavior: pg currently treats all three
+ * as 'verify-full' (rejectUnauthorized: true), so replacing them is a no-op for
+ * actual connectivity and certificate verification.
+ *
+ * Safe for:
+ *   - Neon production URLs (postgresql://...?sslmode=require)
+ *   - Local dev with sslmode=disable or no sslmode param (left unchanged)
+ *   - DATABASE_SSL=no-verify paths (sslmode=no-verify is not a deprecated alias)
+ */
+export function normalizeConnectionString(connStr?: string): string {
+  if (!connStr || typeof connStr !== 'string') return connStr ?? '';
+  try {
+    const url = new URL(connStr);
+    const mode = url.searchParams.get('sslmode');
+    if (mode === 'require' || mode === 'prefer' || mode === 'verify-ca') {
+      url.searchParams.set('sslmode', 'verify-full');
+      return url.toString();
+    }
+    return connStr;
+  } catch {
+    // Fallback for non-URL-parseable connection strings (key=value format)
+    return connStr.replace(
+      /([?&]sslmode=)(require|prefer|verify-ca)(?=&|$)/g,
+      '$1verify-full'
+    );
+  }
+}
+
+/**
  * Build PostgreSQL SSL configuration from DATABASE_SSL env var.
  *   'true'      → SSL with full certificate verification
  *   'no-verify' → SSL without certificate verification (some managed providers)
@@ -85,9 +121,10 @@ export function getEffectiveDatabaseConfig(options?: ResolveDbConfigOptions): Ef
     if (!devUrl) {
       throw new Error('[Database Config] DATABASE_URL is required in production.');
     }
+    const normalizedUrl = normalizeConnectionString(devUrl);
     return {
-      connectionString: devUrl,
-      databaseName: extractDatabaseName(devUrl) || '',
+      connectionString: normalizedUrl,
+      databaseName: extractDatabaseName(normalizedUrl) || '',
       isTest: false,
     };
   }
@@ -141,8 +178,9 @@ export function getEffectiveDatabaseConfig(options?: ResolveDbConfigOptions): Ef
       );
     }
 
+    const normalizedTestUrl = normalizeConnectionString(testUrl);
     return {
-      connectionString: testUrl,
+      connectionString: normalizedTestUrl,
       databaseName: testDbName,
       isTest: true,
     };
@@ -153,9 +191,10 @@ export function getEffectiveDatabaseConfig(options?: ResolveDbConfigOptions): Ef
     throw new Error('DATABASE_URL is not defined in environment configuration');
   }
 
+  const normalizedDevUrl = normalizeConnectionString(devUrl);
   return {
-    connectionString: devUrl,
-    databaseName: extractDatabaseName(devUrl) || '',
+    connectionString: normalizedDevUrl,
+    databaseName: extractDatabaseName(normalizedDevUrl) || '',
     isTest: false,
   };
 }
