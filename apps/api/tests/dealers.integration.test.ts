@@ -338,4 +338,81 @@ describe('Dealer & Mobile Store Management Integration Tests', () => {
     expect(listRes.body.data.length).toBeGreaterThanOrEqual(1);
     expect(listRes.body.data[0].storeName).toContain('Sharma Telecom');
   });
+
+  // ─── COLLECTION_AGENT Dealer Authorization & Projection ───────────────────
+
+  it('11. COLLECTION_AGENT GET /dealers returns 200 with only minimum safe fields', async () => {
+    const res = await request(app)
+      .get('/api/v1/dealers?status=ACTIVE&limit=10')
+      .set('Authorization', `Bearer ${agentToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(Array.isArray(res.body.data)).toBe(true);
+
+    // Each item must have the fields required for the payment-source dropdown
+    for (const dealer of res.body.data) {
+      expect(dealer).toHaveProperty('id');
+      expect(dealer).toHaveProperty('storeName');
+      expect(dealer).toHaveProperty('dealerCode');
+      expect(dealer).toHaveProperty('areaCity');
+      expect(dealer).toHaveProperty('status');
+
+      // Must NOT contain PII or account-management fields
+      expect(dealer).not.toHaveProperty('phone');
+      expect(dealer).not.toHaveProperty('alternatePhone');
+      expect(dealer).not.toHaveProperty('email');
+      expect(dealer).not.toHaveProperty('userId');
+      expect(dealer).not.toHaveProperty('userLoginId');
+      expect(dealer).not.toHaveProperty('userStatus');
+      expect(dealer).not.toHaveProperty('mustChangePassword');
+      expect(dealer).not.toHaveProperty('address');
+      expect(dealer).not.toHaveProperty('ownerName');
+      expect(dealer).not.toHaveProperty('activeLoansCount');
+      expect(dealer).not.toHaveProperty('closedLoansCount');
+      expect(dealer).not.toHaveProperty('totalCustomersCount');
+    }
+  });
+
+  it('12. COLLECTION_AGENT GET /dealers/:id returns 403 Forbidden', async () => {
+    // Own dealer (uses the dealer created in test 1)
+    const res = await request(app)
+      .get(`/api/v1/dealers/${createdDealerId}`)
+      .set('Authorization', `Bearer ${agentToken}`);
+
+    expect(res.status).toBe(403);
+    expect(res.body.success).toBe(false);
+
+    // Also verify with a non-existent dealer ID — must still 403 (auth checked before lookup)
+    const randomId = '00000000-0000-0000-0000-000000000000';
+    const res2 = await request(app)
+      .get(`/api/v1/dealers/${randomId}`)
+      .set('Authorization', `Bearer ${agentToken}`);
+
+    expect(res2.status).toBe(403);
+  });
+
+  it('13. Admin GET /dealers retains full dealer-management response', async () => {
+    const res = await request(app)
+      .get('/api/v1/dealers?limit=5')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.length).toBeGreaterThanOrEqual(1);
+
+    const sample = res.body.data[0];
+    // Admin must still receive all management fields
+    expect(sample).toHaveProperty('phone');
+    expect(sample).toHaveProperty('email');
+    expect(sample).toHaveProperty('userId');
+    expect(sample).toHaveProperty('userLoginId');
+    expect(sample).toHaveProperty('userStatus');
+    expect(sample).toHaveProperty('mustChangePassword');
+    expect(sample).toHaveProperty('activeLoansCount');
+    expect(sample).toHaveProperty('closedLoansCount');
+    expect(sample).toHaveProperty('totalCustomersCount');
+    expect(sample).toHaveProperty('ownerName');
+    expect(sample).toHaveProperty('address');
+  });
 });

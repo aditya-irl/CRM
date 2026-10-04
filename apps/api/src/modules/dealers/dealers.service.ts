@@ -92,27 +92,44 @@ export class DealerService {
     const result = await queryPostgres(sql, params);
 
     return {
-      dealers: result.rows.map((d: any) => ({
-        id: d.id,
-        dealerCode: d.dealer_code,
-        storeName: d.store_name,
-        ownerName: d.owner_name,
-        phone: d.phone,
-        alternatePhone: d.alternate_phone,
-        email: d.email,
-        address: d.address,
-        areaCity: d.area_city,
-        status: d.status as DealerStatus,
-        userId: d.user_id || null,
-        userLoginId: d.user_id ? d.dealer_code : null,
-        userStatus: d.user_status || null,
-        mustChangePassword: d.must_change_password || false,
-        activeLoansCount: Number(d.active_loans_count || 0),
-        closedLoansCount: Number(d.closed_loans_count || 0),
-        totalCustomersCount: Number(d.total_customers_count || 0),
-        createdAt: d.created_at,
-        updatedAt: d.updated_at,
-      })),
+      dealers: result.rows.map((d: any) => {
+        // COLLECTION_AGENT RLAC projection:
+        // Agents legitimately need the dealer list for the payment-source dropdown
+        // (CollectionSource.DEALER), but do NOT need PII or account-management fields.
+        // Return only the minimum safe fields sufficient for the dropdown UI.
+        if (user && user.role === UserRole.COLLECTION_AGENT) {
+          return {
+            id: d.id,
+            dealerCode: d.dealer_code,
+            storeName: d.store_name,
+            areaCity: d.area_city,
+            status: d.status as DealerStatus,
+          };
+        }
+
+        // Admin / Branch Manager / Dealer / SuperAdmin: full dealer-management response
+        return {
+          id: d.id,
+          dealerCode: d.dealer_code,
+          storeName: d.store_name,
+          ownerName: d.owner_name,
+          phone: d.phone,
+          alternatePhone: d.alternate_phone,
+          email: d.email,
+          address: d.address,
+          areaCity: d.area_city,
+          status: d.status as DealerStatus,
+          userId: d.user_id || null,
+          userLoginId: d.user_id ? d.dealer_code : null,
+          userStatus: d.user_status || null,
+          mustChangePassword: d.must_change_password || false,
+          activeLoansCount: Number(d.active_loans_count || 0),
+          closedLoansCount: Number(d.closed_loans_count || 0),
+          totalCustomersCount: Number(d.total_customers_count || 0),
+          createdAt: d.created_at,
+          updatedAt: d.updated_at,
+        };
+      }),
       total,
       page,
       limit,
