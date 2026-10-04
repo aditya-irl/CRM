@@ -10,6 +10,7 @@
     "dev": "npm run dev --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
     "build:api": "npm run build --workspace=@crm/shared && npm run build --workspace=@crm/api",
+    "worker": "npm run worker --workspace=@crm/api",
     "test": "npm run test --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run build --workspaces --if-present",
