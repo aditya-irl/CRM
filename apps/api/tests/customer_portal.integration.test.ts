@@ -299,7 +299,8 @@ describe('Customer Payment Portal Backend Integration Tests', () => {
       expect(Array.isArray(data.installments)).toBe(true);
       expect(data.installments.length).toBe(2);
       expect(data.installments[0].status).toBe('PAID');
-      expect(data.installments[1].status).toBe('UPCOMING');
+      // Due date 2026-03-10 is in the past relative to current business today (2026-10-05), so dynamic derivation correctly returns OVERDUE
+      expect(data.installments[1].status).toBe('OVERDUE');
     });
 
     test('Supports token via x-portal-token header', async () => {

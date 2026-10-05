@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import Decimal from 'decimal.js';
 import { queryPostgres, runPostgresTransaction } from '../../database/postgres';
-import { EMIStatus, UserRole, getBusinessDate, getDaysDifference, toFixed2 } from '@crm/shared';
+import { EMIStatus, UserRole, getBusinessDate, getDaysDifference, toFixed2, computeEmiStatus } from '@crm/shared';
 import { AuthenticatedUser } from '../../middlewares/auth.middleware';
 import { AppError, NotFoundError, ForbiddenError } from '../../middlewares/error.middleware';
 import { AuditService } from '../audit/audit.service';
@@ -74,9 +74,10 @@ export class EMIService {
       sql += ` AND (e.status = 'DUE_TODAY' OR e.due_date = $${paramIndex++})`;
       params.push(businessToday);
     } else if (filters.status === 'OVERDUE') {
-      sql += ` AND (e.status = 'OVERDUE' OR e.days_overdue > 0)`;
+      sql += ` AND (e.status = 'OVERDUE' OR e.days_overdue > 0 OR e.due_date < $${paramIndex++})`;
+      params.push(businessToday);
     } else if (filters.status === 'UPCOMING') {
-      sql += ` AND e.status = 'UPCOMING' AND e.due_date > $${paramIndex++}`;
+      sql += ` AND (e.status = 'UPCOMING' OR e.status = 'PARTIALLY_PAID') AND e.due_date > $${paramIndex++}`;
       params.push(businessToday);
     }
 
@@ -97,10 +98,9 @@ export class EMIService {
     const countRes = await queryPostgres<{ total: string }>(countSql, params);
     const total = parseInt(countRes.rows[0]?.total || '0', 10);
 
-    // Dynamic ordering: default is business priority (Overdue -> Due Today -> Upcoming)
     if (filters.sortBy === 'days_overdue') {
       const order = filters.sortOrder === 'ASC' ? 'ASC' : 'DESC';
-      sql += ` ORDER BY e.days_overdue ${order}, e.due_date ASC`;
+      sql += ` ORDER BY GREATEST(e.days_overdue, GREATEST(0, ('${businessToday}'::date - e.due_date))) ${order}, e.due_date ASC`;
     } else if (filters.sortBy === 'due_date') {
       const order = filters.sortOrder === 'DESC' ? 'DESC' : 'ASC';
       sql += ` ORDER BY e.due_date ${order}`;
@@ -111,11 +111,11 @@ export class EMIService {
       const order = filters.sortOrder === 'DESC' ? 'DESC' : 'ASC';
       sql += ` ORDER BY c.area_route ${order}, e.due_date ASC`;
     } else {
-      sql += ` ORDER BY CASE 
-        WHEN e.status = 'OVERDUE' THEN 1 
-        WHEN e.status = 'DUE_TODAY' THEN 2 
-        ELSE 3 
-      END, e.days_overdue DESC, e.due_date ASC`;
+      sql += ` ORDER BY CASE
+        WHEN e.status = 'OVERDUE' OR e.due_date < '${businessToday}' THEN 1
+        WHEN e.status = 'DUE_TODAY' OR e.due_date = '${businessToday}' THEN 2
+        ELSE 3
+      END, GREATEST(e.days_overdue, GREATEST(0, ('${businessToday}'::date - e.due_date))) DESC, e.due_date ASC`;
     }
 
     sql += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
@@ -123,29 +123,40 @@ export class EMIService {
 
     const res = await queryPostgres(sql, params);
 
-    const items = res.rows.map((r) => ({
-      installmentId: r.installment_id,
-      installmentNumber: Number(r.installment_number),
-      dueDate: r.due_date,
-      expectedAmount: Number(r.expected_amount),
-      paidAmount: Number(r.paid_amount),
-      remainingAmount: Number(r.remaining_amount),
-      penaltyAmount: Number(r.penalty_amount),
-      status: r.emi_status,
-      daysOverdue: Number(r.days_overdue),
-      loanId: r.loan_id,
-      loanAccountNo: r.loan_account_no,
-      totalInstallments: Number(r.total_installments),
-      totalOutstandingLoan: Number(r.total_loan_outstanding),
-      customerId: r.customer_id,
-      customerCode: r.customer_code,
-      customerName: r.customer_name,
-      primaryPhone: r.primary_phone,
-      areaRoute: r.area_route,
-      addressSummary: r.address_summary,
-      lastCallOutcome: r.last_call_outcome,
-      promisedPaymentDate: r.promised_payment_date || null,
-    }));
+    const items = res.rows.map((r) => {
+      const evalResult = computeEmiStatus({
+        dueDate: r.due_date,
+        expectedAmount: Number(r.expected_amount),
+        paidAmount: Number(r.paid_amount),
+        remainingAmount: Number(r.remaining_amount),
+        penaltyAmount: Number(r.penalty_amount || 0),
+        businessToday,
+      });
+
+      return {
+        installmentId: r.installment_id,
+        installmentNumber: Number(r.installment_number),
+        dueDate: r.due_date,
+        expectedAmount: Number(r.expected_amount),
+        paidAmount: Number(r.paid_amount),
+        remainingAmount: Number(r.remaining_amount),
+        penaltyAmount: Number(r.penalty_amount || 0),
+        status: evalResult.status,
+        daysOverdue: evalResult.daysOverdue,
+        loanId: r.loan_id,
+        loanAccountNo: r.loan_account_no,
+        totalInstallments: Number(r.total_installments),
+        totalOutstandingLoan: Number(r.total_loan_outstanding),
+        customerId: r.customer_id,
+        customerCode: r.customer_code,
+        customerName: r.customer_name,
+        primaryPhone: r.primary_phone,
+        areaRoute: r.area_route,
+        addressSummary: r.address_summary,
+        lastCallOutcome: r.last_call_outcome,
+        promisedPaymentDate: r.promised_payment_date || null,
+      };
+    });
 
     return {
       items,
@@ -178,7 +189,7 @@ export class EMIService {
     // Today's expected collection for this agent's queue
     let expectedSql = `
       SELECT COALESCE(SUM(e.expected_amount), 0) as total_expected,
-             COUNT(CASE WHEN e.status = 'OVERDUE' OR e.days_overdue > 0 THEN 1 END) as overdue_count,
+             COUNT(CASE WHEN e.status = 'OVERDUE' OR e.days_overdue > 0 OR e.due_date < $1 THEN 1 END) as overdue_count,
              COUNT(CASE WHEN e.status = 'DUE_TODAY' OR e.due_date = $1 THEN 1 END) as due_today_count
       FROM emi_installments e
       JOIN loans l ON e.loan_id = l.id

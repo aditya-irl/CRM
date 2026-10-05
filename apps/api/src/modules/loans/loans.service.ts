@@ -3,6 +3,8 @@ import { queryPostgres, runPostgresTransaction } from '../../database/postgres';
 import { db } from '../../database/db';
 import {
   generateAmortizationSchedule,
+  computeEmiStatus,
+  getBusinessDate,
   LoanCalculationInput,
   LoanStatus,
   UserRole,
@@ -684,20 +686,32 @@ export class LoanService {
       [id]
     );
 
-    const installments = emiRes.rows.map((e: any) => ({
-      id: e.id,
-      installmentNumber: Number(e.installment_number),
-      dueDate: e.due_date,
-      principalComponent: Number(e.principal_component),
-      interestComponent: Number(e.interest_component),
-      expectedAmount: Number(e.expected_amount),
-      paidAmount: Number(e.paid_amount),
-      remainingAmount: Number(e.remaining_amount),
-      penaltyAmount: Number(e.penalty_amount),
-      status: e.status as EMIStatus,
-      daysOverdue: Number(e.days_overdue),
-      lastPaymentDate: e.last_payment_date,
-    }));
+    const businessToday = getBusinessDate(undefined, 'Asia/Kolkata');
+    const installments = emiRes.rows.map((e: any) => {
+      const evalResult = computeEmiStatus({
+        dueDate: getBusinessDate(e.due_date, 'Asia/Kolkata'),
+        expectedAmount: Number(e.expected_amount),
+        paidAmount: Number(e.paid_amount),
+        remainingAmount: Number(e.remaining_amount),
+        penaltyAmount: Number(e.penalty_amount || 0),
+        businessToday,
+      });
+
+      return {
+        id: e.id,
+        installmentNumber: Number(e.installment_number),
+        dueDate: e.due_date,
+        principalComponent: Number(e.principal_component),
+        interestComponent: Number(e.interest_component),
+        expectedAmount: Number(e.expected_amount),
+        paidAmount: Number(e.paid_amount),
+        remainingAmount: Number(e.remaining_amount),
+        penaltyAmount: Number(e.penalty_amount || 0),
+        status: evalResult.status,
+        daysOverdue: evalResult.daysOverdue,
+        lastPaymentDate: e.last_payment_date,
+      };
+    });
 
     return {
       id: loan.id,

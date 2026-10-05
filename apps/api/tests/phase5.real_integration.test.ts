@@ -215,11 +215,15 @@ describe('PHASE 5: Real Integration Test Suite (Reporting, Analytics, Call Logs,
       [loan1Id]
     );
     emi1Id = emisLoan1.rows[0].id;
+    const [y, m, d] = businessToday.split('-').map(Number);
+    const overdue15 = new Date(Date.UTC(y, m - 1, d - 15)).toISOString().slice(0, 10);
+    const overdue45 = new Date(Date.UTC(y, m - 1, d - 45)).toISOString().slice(0, 10);
+
     await queryPostgres(
       `UPDATE emi_installments 
-       SET status = 'OVERDUE', days_overdue = 15, due_date = '2026-09-04', penalty_amount = 100.00
-       WHERE id = $1`,
-      [emi1Id]
+       SET status = 'OVERDUE', days_overdue = 15, due_date = $1, penalty_amount = 100.00
+       WHERE id = $2`,
+      [overdue15, emi1Id]
     );
     await queryPostgres(
       `UPDATE emi_installments 
@@ -227,6 +231,15 @@ describe('PHASE 5: Real Integration Test Suite (Reporting, Analytics, Call Logs,
        WHERE id = $2`,
       [businessToday, emisLoan1.rows[1].id]
     );
+    const futureDate = new Date(Date.UTC(y, m - 1, d + 30)).toISOString().slice(0, 10);
+    if (emisLoan1.rows[2]) {
+      await queryPostgres(
+        `UPDATE emi_installments
+         SET status = 'UPCOMING', due_date = $1
+         WHERE id = $2`,
+        [futureDate, emisLoan1.rows[2].id]
+      );
+    }
 
     // Adjust Loan 2 EMI 1 to be OVERDUE (45 days overdue in PAR 31-60 bucket)
     const emisLoan2 = await queryPostgres(
@@ -236,9 +249,9 @@ describe('PHASE 5: Real Integration Test Suite (Reporting, Analytics, Call Logs,
     emi2Id = emisLoan2.rows[0].id;
     await queryPostgres(
       `UPDATE emi_installments 
-       SET status = 'OVERDUE', days_overdue = 45, due_date = '2026-08-05', penalty_amount = 250.00
-       WHERE id = $1`,
-      [emi2Id]
+       SET status = 'OVERDUE', days_overdue = 45, due_date = $1, penalty_amount = 250.00
+       WHERE id = $2`,
+      [overdue45, emi2Id]
     );
 
     // Record a payment on Loan 1 collected by Agent 1

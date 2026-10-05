@@ -49,7 +49,7 @@ export class ReminderDispatcherJob {
           e.due_date = $2 OR -- T-3
           e.due_date = $3 OR -- T-1
           e.due_date = $4 OR -- Due Today
-          (e.due_date < $4 AND e.status = 'OVERDUE') -- Overdue
+          e.due_date < $4 -- Overdue
         )
     `;
 

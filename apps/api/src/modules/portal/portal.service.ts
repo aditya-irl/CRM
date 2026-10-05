@@ -5,6 +5,7 @@ import { AppError, NotFoundError, UnauthorizedError, ForbiddenError } from '../.
 import { AuthenticatedUser } from '../../middlewares/auth.middleware';
 import { AuditService } from '../audit/audit.service';
 import { env } from '../../config/env';
+import { computeEmiStatus, getBusinessDate, EMIStatus } from '@crm/shared';
 
 const PORTAL_BASE_URL = env?.PORTAL_BASE_URL || process.env.PORTAL_BASE_URL || 'http://localhost:5173/portal';
 
@@ -312,21 +313,55 @@ export class PortalService {
       [row.loan_id]
     );
 
+    const businessToday = getBusinessDate(undefined, 'Asia/Kolkata');
+
+    const mappedInstallments = installmentsRes.rows.map((i) => {
+      const expected = Number(i.expected_amount);
+      const paid = Number(i.paid_amount);
+      const remaining = Number(i.remaining_amount);
+      const penalty = Number(i.penalty_amount || 0);
+      const totalDue = remaining + penalty;
+      const dueDateStr = formatDateOnly(i.due_date);
+
+      const evalResult = computeEmiStatus({
+        dueDate: dueDateStr,
+        expectedAmount: expected,
+        paidAmount: paid,
+        remainingAmount: remaining,
+        penaltyAmount: penalty,
+        businessToday,
+      });
+
+      return {
+        installmentNumber: Number(i.installment_number),
+        dueDate: dueDateStr,
+        expectedAmount: expected,
+        paidAmount: paid,
+        remainingAmount: remaining,
+        penaltyAmount: penalty,
+        totalDue: Math.max(0, Math.round(totalDue * 100) / 100),
+        daysOverdue: evalResult.daysOverdue,
+        status: evalResult.status,
+        isPaid: evalResult.isPaid,
+        isOverdue: evalResult.isOverdue,
+      };
+    });
+
     let paidInstallments = 0;
     let overdueInstallments = 0;
     let nextDueDate: string | null = null;
 
-    for (const inst of installmentsRes.rows) {
-      if (inst.status === 'PAID') {
+    for (const inst of mappedInstallments) {
+      if (inst.isPaid) {
         paidInstallments++;
-      } else if (inst.status === 'OVERDUE') {
+      } else if (inst.isOverdue) {
         overdueInstallments++;
         if (!nextDueDate) {
-          nextDueDate = formatDateOnly(inst.due_date);
+          nextDueDate = inst.dueDate;
         }
       } else {
         if (!nextDueDate) {
-          nextDueDate = formatDateOnly(inst.due_date);
+          nextDueDate = inst.dueDate;
         }
       }
     }
@@ -377,24 +412,17 @@ export class PortalService {
         paymentMode: p.payment_mode,
         status: p.status,
       })),
-      installments: installmentsRes.rows.map((i) => {
-        const expected = Number(i.expected_amount);
-        const paid = Number(i.paid_amount);
-        const remaining = Number(i.remaining_amount);
-        const penalty = Number(i.penalty_amount || 0);
-        const totalDue = remaining + penalty;
-        return {
-          installmentNumber: Number(i.installment_number),
-          dueDate: formatDateOnly(i.due_date),
-          expectedAmount: expected,
-          paidAmount: paid,
-          remainingAmount: remaining,
-          penaltyAmount: penalty,
-          totalDue: Math.max(0, Math.round(totalDue * 100) / 100),
-          daysOverdue: Number(i.days_overdue || 0),
-          status: i.status,
-        };
-      }),
+      installments: mappedInstallments.map((i) => ({
+        installmentNumber: i.installmentNumber,
+        dueDate: i.dueDate,
+        expectedAmount: i.expectedAmount,
+        paidAmount: i.paidAmount,
+        remainingAmount: i.remainingAmount,
+        penaltyAmount: i.penaltyAmount,
+        totalDue: i.totalDue,
+        daysOverdue: i.daysOverdue,
+        status: i.status,
+      })),
     };
   }
 }

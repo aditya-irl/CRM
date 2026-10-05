@@ -195,8 +195,8 @@ export class ReportService {
       WHERE l.status = 'ACTIVE' 
         AND c.deleted_at IS NULL 
         AND e.status != 'PAID'
-        AND (e.status = 'OVERDUE' OR e.days_overdue > 0)
-    `);
+        AND (e.status = 'OVERDUE' OR e.days_overdue > 0 OR e.due_date < $1::date)
+    `, [todayStr]);
     const odRow = overdueRes.rows[0] || {};
     const totalOverdueAmount = Number(odRow.total_overdue || 0);
     const overdueLoanCount = Number(odRow.overdue_loans || 0);
@@ -270,21 +270,21 @@ export class ReportService {
 
     const agingRes = await queryPostgres(`
       SELECT 
-        COUNT(CASE WHEN e.days_overdue = 0 THEN e.id END)::int as current_count,
-        COALESCE(SUM(CASE WHEN e.days_overdue = 0 THEN e.remaining_amount ELSE 0 END), 0)::numeric as current_amount,
-        COUNT(CASE WHEN e.days_overdue BETWEEN 1 AND 30 THEN e.id END)::int as dpd_1_30_count,
-        COALESCE(SUM(CASE WHEN e.days_overdue BETWEEN 1 AND 30 THEN e.remaining_amount + e.penalty_amount ELSE 0 END), 0)::numeric as dpd_1_30_amount,
-        COUNT(CASE WHEN e.days_overdue BETWEEN 31 AND 60 THEN e.id END)::int as dpd_31_60_count,
-        COALESCE(SUM(CASE WHEN e.days_overdue BETWEEN 31 AND 60 THEN e.remaining_amount + e.penalty_amount ELSE 0 END), 0)::numeric as dpd_31_60_amount,
-        COUNT(CASE WHEN e.days_overdue BETWEEN 61 AND 90 THEN e.id END)::int as dpd_61_90_count,
-        COALESCE(SUM(CASE WHEN e.days_overdue BETWEEN 61 AND 90 THEN e.remaining_amount + e.penalty_amount ELSE 0 END), 0)::numeric as dpd_61_90_amount,
-        COUNT(CASE WHEN e.days_overdue > 90 THEN e.id END)::int as dpd_90_plus_count,
-        COALESCE(SUM(CASE WHEN e.days_overdue > 90 THEN e.remaining_amount + e.penalty_amount ELSE 0 END), 0)::numeric as dpd_90_plus_amount
+        COUNT(CASE WHEN GREATEST(e.days_overdue, ($1::date - e.due_date)) <= 0 THEN e.id END)::int as current_count,
+        COALESCE(SUM(CASE WHEN GREATEST(e.days_overdue, ($1::date - e.due_date)) <= 0 THEN e.remaining_amount ELSE 0 END), 0)::numeric as current_amount,
+        COUNT(CASE WHEN GREATEST(e.days_overdue, ($1::date - e.due_date)) BETWEEN 1 AND 30 THEN e.id END)::int as dpd_1_30_count,
+        COALESCE(SUM(CASE WHEN GREATEST(e.days_overdue, ($1::date - e.due_date)) BETWEEN 1 AND 30 THEN e.remaining_amount + e.penalty_amount ELSE 0 END), 0)::numeric as dpd_1_30_amount,
+        COUNT(CASE WHEN GREATEST(e.days_overdue, ($1::date - e.due_date)) BETWEEN 31 AND 60 THEN e.id END)::int as dpd_31_60_count,
+        COALESCE(SUM(CASE WHEN GREATEST(e.days_overdue, ($1::date - e.due_date)) BETWEEN 31 AND 60 THEN e.remaining_amount + e.penalty_amount ELSE 0 END), 0)::numeric as dpd_31_60_amount,
+        COUNT(CASE WHEN GREATEST(e.days_overdue, ($1::date - e.due_date)) BETWEEN 61 AND 90 THEN e.id END)::int as dpd_61_90_count,
+        COALESCE(SUM(CASE WHEN GREATEST(e.days_overdue, ($1::date - e.due_date)) BETWEEN 61 AND 90 THEN e.remaining_amount + e.penalty_amount ELSE 0 END), 0)::numeric as dpd_61_90_amount,
+        COUNT(CASE WHEN GREATEST(e.days_overdue, ($1::date - e.due_date)) > 90 THEN e.id END)::int as dpd_90_plus_count,
+        COALESCE(SUM(CASE WHEN GREATEST(e.days_overdue, ($1::date - e.due_date)) > 90 THEN e.remaining_amount + e.penalty_amount ELSE 0 END), 0)::numeric as dpd_90_plus_amount
       FROM emi_installments e
       JOIN loans l ON e.loan_id = l.id
       JOIN customers c ON e.customer_id = c.id
       WHERE l.status = 'ACTIVE' AND c.deleted_at IS NULL AND e.status != 'PAID'
-    `);
+    `, [todayStr]);
     const agRow = agingRes.rows[0] || {};
 
     // 4. Dealer Reconciliation Summary & Table
@@ -409,18 +409,18 @@ export class ReportService {
     const queueRes = await queryPostgres(`
       SELECT 
         COUNT(DISTINCT e.id)::int as total_accounts,
-        COUNT(DISTINCT CASE WHEN e.days_overdue BETWEEN 1 AND 30 THEN e.id END)::int as dpd_1_30,
-        COUNT(DISTINCT CASE WHEN e.days_overdue BETWEEN 31 AND 60 THEN e.id END)::int as dpd_31_60,
-        COUNT(DISTINCT CASE WHEN e.days_overdue BETWEEN 61 AND 90 THEN e.id END)::int as dpd_61_90,
-        COUNT(DISTINCT CASE WHEN e.days_overdue > 90 THEN e.id END)::int as dpd_90_plus,
+        COUNT(DISTINCT CASE WHEN GREATEST(e.days_overdue, ($1::date - e.due_date)) BETWEEN 1 AND 30 THEN e.id END)::int as dpd_1_30,
+        COUNT(DISTINCT CASE WHEN GREATEST(e.days_overdue, ($1::date - e.due_date)) BETWEEN 31 AND 60 THEN e.id END)::int as dpd_31_60,
+        COUNT(DISTINCT CASE WHEN GREATEST(e.days_overdue, ($1::date - e.due_date)) BETWEEN 61 AND 90 THEN e.id END)::int as dpd_61_90,
+        COUNT(DISTINCT CASE WHEN GREATEST(e.days_overdue, ($1::date - e.due_date)) > 90 THEN e.id END)::int as dpd_90_plus,
         COUNT(DISTINCT CASE WHEN l.assigned_agent_id IS NOT NULL OR ca.id IS NOT NULL THEN e.id END)::int as assigned_count,
         COUNT(DISTINCT CASE WHEN l.assigned_agent_id IS NULL AND ca.id IS NULL THEN e.id END)::int as unassigned_count
       FROM emi_installments e
       JOIN loans l ON e.loan_id = l.id
       JOIN customers c ON e.customer_id = c.id
       LEFT JOIN collection_assignments ca ON ca.customer_id = c.id AND ca.is_active = TRUE
-      WHERE l.status = 'ACTIVE' AND c.deleted_at IS NULL AND e.status != 'PAID' AND (e.status = 'OVERDUE' OR e.days_overdue > 0)
-    `);
+      WHERE l.status = 'ACTIVE' AND c.deleted_at IS NULL AND e.status != 'PAID' AND (e.status = 'OVERDUE' OR e.days_overdue > 0 OR e.due_date < $1::date)
+    `, [todayStr]);
     const qRow = queueRes.rows[0] || {};
 
     // 8. Operational Metrics
@@ -720,6 +720,7 @@ export class ReportService {
 
     // 2. LOANS CATEGORY
     if (category === 'loans') {
+      const todayStr = getBusinessDate(undefined, 'Asia/Kolkata');
       let sql = `
         SELECT l.id, l.loan_account_no, l.principal_amount::numeric, l.down_payment::numeric,
                l.annual_interest_rate::numeric, l.tenure_months, l.interest_calc_method,
@@ -728,7 +729,7 @@ export class ReportService {
                COALESCE((
                  SELECT SUM(ei.remaining_amount + ei.penalty_amount)
                  FROM emi_installments ei
-                 WHERE ei.loan_id = l.id AND (ei.status = 'OVERDUE' OR ei.days_overdue > 0)
+                 WHERE ei.loan_id = l.id AND ei.status != 'PAID' AND (ei.status = 'OVERDUE' OR ei.days_overdue > 0 OR ei.due_date < '${todayStr}'::date)
                ), 0)::numeric as overdue_amount,
                c.full_name as customer_name, c.customer_code, c.primary_phone, c.area_route,
                d.store_name as dealer_store_name, d.dealer_code,
@@ -753,7 +754,7 @@ export class ReportService {
         sql += ` AND l.status = 'CLOSED'`;
       } else if (reportType === 'overdue-loans') {
         sql += ` AND l.status = 'ACTIVE' AND l.id IN (
-          SELECT loan_id FROM emi_installments WHERE status != 'PAID' AND (status = 'OVERDUE' OR days_overdue > 0)
+          SELECT loan_id FROM emi_installments WHERE status != 'PAID' AND (status = 'OVERDUE' OR days_overdue > 0 OR due_date < '${todayStr}'::date)
         )`;
       } else if (filters.loanStatus) {
         sql += ` AND l.status = $${idx++}`;
@@ -1099,7 +1100,7 @@ export class ReportService {
       FROM emi_installments e
       JOIN loans l ON e.loan_id = l.id
       JOIN customers c ON e.customer_id = c.id
-      WHERE l.status = 'ACTIVE' AND c.deleted_at IS NULL AND (e.status = 'OVERDUE' OR e.days_overdue > 0)
+      WHERE l.status = 'ACTIVE' AND c.deleted_at IS NULL AND e.status != 'PAID' AND (e.status = 'OVERDUE' OR e.days_overdue > 0 OR e.due_date < '${businessToday}'::date)
     `;
     const overdueParams: any[] = [];
     if (isAgent) {
@@ -1125,10 +1126,10 @@ export class ReportService {
       const p: any[] = [];
       let idx = 1;
       if (maxDays !== undefined) {
-        agingSql += ` AND e.days_overdue BETWEEN $${idx++} AND $${idx++}`;
+        agingSql += ` AND GREATEST(e.days_overdue, ('${businessToday}'::date - e.due_date)) BETWEEN $${idx++} AND $${idx++}`;
         p.push(minDays, maxDays);
       } else {
-        agingSql += ` AND e.days_overdue >= $${idx++}`;
+        agingSql += ` AND GREATEST(e.days_overdue, ('${businessToday}'::date - e.due_date)) >= $${idx++}`;
         p.push(minDays);
       }
 
@@ -1310,13 +1311,14 @@ export class ReportService {
     user?: AuthenticatedUser
   ) {
     const isAgent = user?.role === UserRole.COLLECTION_AGENT;
+    const businessToday = getBusinessDate(undefined, 'Asia/Kolkata');
 
     let baseSql = `
       FROM emi_installments e
       JOIN loans l ON e.loan_id = l.id
       JOIN customers c ON e.customer_id = c.id
       LEFT JOIN users u ON l.assigned_agent_id = u.id
-      WHERE l.status = 'ACTIVE' AND c.deleted_at IS NULL AND e.status != 'PAID' AND (e.status = 'OVERDUE' OR e.days_overdue > 0)
+      WHERE l.status = 'ACTIVE' AND c.deleted_at IS NULL AND e.status != 'PAID' AND (e.status = 'OVERDUE' OR e.days_overdue > 0 OR e.due_date < '${businessToday}'::date)
     `;
     const params: any[] = [];
     let paramIndex = 1;
@@ -1354,14 +1356,14 @@ export class ReportService {
         COALESCE(SUM(e.remaining_amount + e.penalty_amount), 0)::numeric as total_overdue_amount,
         COALESCE(SUM(e.remaining_amount), 0)::numeric as total_principal_interest_overdue,
         COALESCE(SUM(e.penalty_amount), 0)::numeric as total_penalty_overdue,
-        COUNT(DISTINCT CASE WHEN e.days_overdue BETWEEN 1 AND 30 THEN e.id END)::int as par_1_30_count,
-        COALESCE(SUM(CASE WHEN e.days_overdue BETWEEN 1 AND 30 THEN e.remaining_amount + e.penalty_amount ELSE 0 END), 0)::numeric as par_1_30_amount,
-        COUNT(DISTINCT CASE WHEN e.days_overdue BETWEEN 31 AND 60 THEN e.id END)::int as par_31_60_count,
-        COALESCE(SUM(CASE WHEN e.days_overdue BETWEEN 31 AND 60 THEN e.remaining_amount + e.penalty_amount ELSE 0 END), 0)::numeric as par_31_60_amount,
-        COUNT(DISTINCT CASE WHEN e.days_overdue BETWEEN 61 AND 90 THEN e.id END)::int as par_61_90_count,
-        COALESCE(SUM(CASE WHEN e.days_overdue BETWEEN 61 AND 90 THEN e.remaining_amount + e.penalty_amount ELSE 0 END), 0)::numeric as par_61_90_amount,
-        COUNT(DISTINCT CASE WHEN e.days_overdue > 90 THEN e.id END)::int as par_90_plus_count,
-        COALESCE(SUM(CASE WHEN e.days_overdue > 90 THEN e.remaining_amount + e.penalty_amount ELSE 0 END), 0)::numeric as par_90_plus_amount
+        COUNT(DISTINCT CASE WHEN GREATEST(e.days_overdue, ('${businessToday}'::date - e.due_date)) BETWEEN 1 AND 30 THEN e.id END)::int as par_1_30_count,
+        COALESCE(SUM(CASE WHEN GREATEST(e.days_overdue, ('${businessToday}'::date - e.due_date)) BETWEEN 1 AND 30 THEN e.remaining_amount + e.penalty_amount ELSE 0 END), 0)::numeric as par_1_30_amount,
+        COUNT(DISTINCT CASE WHEN GREATEST(e.days_overdue, ('${businessToday}'::date - e.due_date)) BETWEEN 31 AND 60 THEN e.id END)::int as par_31_60_count,
+        COALESCE(SUM(CASE WHEN GREATEST(e.days_overdue, ('${businessToday}'::date - e.due_date)) BETWEEN 31 AND 60 THEN e.remaining_amount + e.penalty_amount ELSE 0 END), 0)::numeric as par_31_60_amount,
+        COUNT(DISTINCT CASE WHEN GREATEST(e.days_overdue, ('${businessToday}'::date - e.due_date)) BETWEEN 61 AND 90 THEN e.id END)::int as par_61_90_count,
+        COALESCE(SUM(CASE WHEN GREATEST(e.days_overdue, ('${businessToday}'::date - e.due_date)) BETWEEN 61 AND 90 THEN e.remaining_amount + e.penalty_amount ELSE 0 END), 0)::numeric as par_61_90_amount,
+        COUNT(DISTINCT CASE WHEN GREATEST(e.days_overdue, ('${businessToday}'::date - e.due_date)) > 90 THEN e.id END)::int as par_90_plus_count,
+        COALESCE(SUM(CASE WHEN GREATEST(e.days_overdue, ('${businessToday}'::date - e.due_date)) > 90 THEN e.remaining_amount + e.penalty_amount ELSE 0 END), 0)::numeric as par_90_plus_amount
       ${baseSql}
     `;
     const summaryRes = await queryPostgres(summarySql, params);
@@ -1377,8 +1379,8 @@ export class ReportService {
         e.remaining_amount::numeric,
         e.penalty_amount::numeric,
         (e.remaining_amount + e.penalty_amount)::numeric as total_overdue_amount,
-        e.days_overdue,
-        e.status as emi_status,
+        GREATEST(e.days_overdue, GREATEST(0, ('${businessToday}'::date - e.due_date)))::int as days_overdue,
+        CASE WHEN e.status = 'PAID' THEN 'PAID' WHEN e.due_date < '${businessToday}'::date THEN 'OVERDUE' ELSE e.status END as emi_status,
         e.last_payment_date,
         l.id as loan_id,
         l.loan_account_no,
@@ -1393,13 +1395,13 @@ export class ReportService {
     `;
 
     if (filters.bucket === '1-30') {
-      itemizedSql += ` AND e.days_overdue BETWEEN 1 AND 30`;
+      itemizedSql += ` AND GREATEST(e.days_overdue, ('${businessToday}'::date - e.due_date)) BETWEEN 1 AND 30`;
     } else if (filters.bucket === '31-60') {
-      itemizedSql += ` AND e.days_overdue BETWEEN 31 AND 60`;
+      itemizedSql += ` AND GREATEST(e.days_overdue, ('${businessToday}'::date - e.due_date)) BETWEEN 31 AND 60`;
     } else if (filters.bucket === '61-90') {
-      itemizedSql += ` AND e.days_overdue BETWEEN 61 AND 90`;
+      itemizedSql += ` AND GREATEST(e.days_overdue, ('${businessToday}'::date - e.due_date)) BETWEEN 61 AND 90`;
     } else if (filters.bucket === '90+') {
-      itemizedSql += ` AND e.days_overdue > 90`;
+      itemizedSql += ` AND GREATEST(e.days_overdue, ('${businessToday}'::date - e.due_date)) > 90`;
     }
 
     const countSql = `SELECT COUNT(*) as total FROM (${itemizedSql}) sub`;
@@ -1410,7 +1412,7 @@ export class ReportService {
     const limit = Math.min(100, Math.max(1, Number(filters.limit) || 20));
     const offset = (page - 1) * limit;
 
-    itemizedSql += ` ORDER BY e.days_overdue DESC, e.due_date ASC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
+    itemizedSql += ` ORDER BY GREATEST(e.days_overdue, ('${businessToday}'::date - e.due_date)) DESC, e.due_date ASC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
     params.push(limit, offset);
 
     const recordsRes = await queryPostgres(itemizedSql, params);
@@ -1492,7 +1494,7 @@ export class ReportService {
          FROM emi_installments e 
          JOIN loans l ON e.loan_id = l.id 
          JOIN customers c ON e.customer_id = c.id
-         WHERE l.status = 'ACTIVE' AND e.status != 'PAID' AND (e.status = 'OVERDUE' OR e.days_overdue > 0)
+         WHERE l.status = 'ACTIVE' AND e.status != 'PAID' AND (e.status = 'OVERDUE' OR e.days_overdue > 0 OR e.due_date < $1::date)
            AND (l.assigned_agent_id = u.id OR c.id IN (SELECT customer_id FROM collection_assignments WHERE agent_id = u.id AND is_active = TRUE))
         ) as active_overdue_emis_count
       FROM users u
