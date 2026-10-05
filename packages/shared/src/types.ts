@@ -17,6 +17,7 @@ import {
   CollectionSource,
   SettlementStatus,
   SettlementPaymentMethod,
+  PenaltyStatus,
 } from './enums';
 
 export interface IDealer {
@@ -203,7 +204,29 @@ export interface IEMIInstallment {
   lastPaymentDate?: string | null;
   createdAt: string;
   updatedAt: string;
+  penalties?: IEmiPenalty[];
 }
+
+export interface IEmiPenalty {
+  id: string;
+  emiInstallmentId: string;
+  loanId: string;
+  amount: number;
+  paidAmount: number;
+  status: PenaltyStatus;
+  reason: string;
+  createdBy: string;
+  createdByName?: string;
+  createdAt: string;
+  reversedBy?: string | null;
+  reversedByName?: string | null;
+  reversedAt?: string | null;
+  reversalReason?: string | null;
+}
+
+export const SYSTEM_SETTING_KEYS = {
+  ALLOW_DEALER_PENALTY: 'ALLOW_DEALER_PENALTY',
+} as const;
 
 export interface IPayment {
   id: string;

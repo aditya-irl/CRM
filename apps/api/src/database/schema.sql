@@ -132,6 +132,25 @@ CREATE INDEX IF NOT EXISTS idx_emi_customer_status ON emi_installments(customer_
 CREATE INDEX IF NOT EXISTS idx_emi_due_date_status ON emi_installments(due_date, status);
 CREATE INDEX IF NOT EXISTS idx_emi_status ON emi_installments(status);
 
+CREATE TABLE IF NOT EXISTS emi_penalties (
+    id TEXT PRIMARY KEY,
+    emi_installment_id TEXT NOT NULL REFERENCES emi_installments(id) ON DELETE RESTRICT,
+    loan_id TEXT NOT NULL REFERENCES loans(id) ON DELETE RESTRICT,
+    amount REAL NOT NULL CHECK (amount > 0),
+    paid_amount REAL NOT NULL DEFAULT 0.0 CHECK (paid_amount >= 0),
+    status TEXT NOT NULL DEFAULT 'ACTIVE',
+    reason TEXT NOT NULL,
+    created_by TEXT NOT NULL REFERENCES users(id),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    reversed_by TEXT REFERENCES users(id),
+    reversed_at TEXT,
+    reversal_reason TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_emi_penalties_emi ON emi_penalties(emi_installment_id);
+CREATE INDEX IF NOT EXISTS idx_emi_penalties_loan ON emi_penalties(loan_id);
+CREATE INDEX IF NOT EXISTS idx_emi_penalties_status ON emi_penalties(status);
+
 CREATE TABLE IF NOT EXISTS payments (
     id TEXT PRIMARY KEY,
     receipt_number TEXT UNIQUE NOT NULL,

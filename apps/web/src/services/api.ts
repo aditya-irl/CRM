@@ -60,6 +60,7 @@ export interface ICustomerPortalLoanData {
   nextDueDate: string | null;
   outstandingBalance: number;
   totalPaid: number;
+  totalPenaltyAmount?: number;
   status: string;
   disbursementDate: string;
   maturityDate: string;
@@ -77,6 +78,8 @@ export interface ICustomerPortalLoanData {
     paidAmount: number;
     remainingAmount: number;
     penaltyAmount: number;
+    totalDue?: number;
+    daysOverdue?: number;
     status: string;
   }>;
 }
@@ -1028,6 +1031,85 @@ export class ApiClient {
         type: typeOrCategory,
         ...filters,
       }),
+    });
+  }
+
+  // ─── Settings Endpoints ──────────────────────────────────────────
+  public static async getDealerPenaltySetting(): Promise<{ allowDealerPenalty: boolean }> {
+    return this.request<{ allowDealerPenalty: boolean }>('/settings/dealer-penalty');
+  }
+
+  public static async updateDealerPenaltySetting(
+    allowDealerPenalty: boolean
+  ): Promise<{ allowDealerPenalty: boolean }> {
+    return this.request<{ allowDealerPenalty: boolean }>('/settings/dealer-penalty', {
+      method: 'PATCH',
+      body: JSON.stringify({ allowDealerPenalty }),
+    });
+  }
+
+  // ─── EMI Penalty Endpoints ───────────────────────────────────────
+  public static async addEmiPenalty(
+    emiId: string,
+    amount: number,
+    reason: string
+  ): Promise<{
+    penalty: any;
+    installment: any;
+    loan: any;
+  }> {
+    return this.request<{
+      penalty: any;
+      installment: any;
+      loan: any;
+    }>(`/emi/${emiId}/penalties`, {
+      method: 'POST',
+      body: JSON.stringify({ amount, reason }),
+    });
+  }
+
+  public static async getEmiPenalties(emiId: string): Promise<{
+    emiId: string;
+    installmentNumber: number;
+    penaltyAmount: number;
+    activePenaltyTotal: number;
+    penalties: Array<{
+      id: string;
+      emiInstallmentId: string;
+      loanId: string;
+      amount: number;
+      paidAmount: number;
+      status: string;
+      reason: string;
+      createdBy: string;
+      createdByName?: string;
+      createdAt: string;
+      reversedBy?: string;
+      reversedByName?: string;
+      reversedAt?: string;
+      reversalReason?: string;
+    }>;
+  }> {
+    return this.request(`/emi/${emiId}/penalties`);
+  }
+
+  public static async reversePenalty(
+    penaltyId: string,
+    reason: string
+  ): Promise<any> {
+    return this.request(`/emi/penalties/${penaltyId}/reverse`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  public static async waivePenalty(
+    penaltyId: string,
+    reason: string
+  ): Promise<any> {
+    return this.request(`/emi/penalties/${penaltyId}/waive`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
     });
   }
 }

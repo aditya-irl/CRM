@@ -800,8 +800,9 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole }) => {
                                 <th>#</th>
                                 <th>Due Date</th>
                                 <th>Expected</th>
+                                <th>Penalty</th>
                                 <th>Paid</th>
-                                <th>Remaining</th>
+                                <th>Total Due</th>
                                 <th>Status</th>
                               </tr>
                             </thead>
@@ -811,8 +812,25 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole }) => {
                                   <td className="mono">{inst.installmentNumber}</td>
                                   <td className="mono">{inst.dueDate}</td>
                                   <td className="mono">{formatINR(inst.expectedAmount)}</td>
+                                  <td
+                                    className="mono"
+                                    style={{
+                                      color: Number(inst.penaltyAmount || 0) > 0 ? 'var(--danger-text)' : 'inherit',
+                                      fontWeight: Number(inst.penaltyAmount || 0) > 0 ? 700 : 400,
+                                    }}
+                                  >
+                                    {formatINR(inst.penaltyAmount || 0)}
+                                  </td>
                                   <td className="mono" style={{ color: 'var(--success-text)' }}>{formatINR(inst.paidAmount)}</td>
-                                  <td className="mono" style={{ fontWeight: 700 }}>{formatINR(inst.remainingAmount)}</td>
+                                  <td
+                                    className="mono"
+                                    style={{
+                                      fontWeight: 700,
+                                      color: (Number(inst.remainingAmount) + Number(inst.penaltyAmount || 0)) > 0 ? 'var(--danger-text)' : 'inherit',
+                                    }}
+                                  >
+                                    {formatINR(Number(inst.remainingAmount) + Number(inst.penaltyAmount || 0))}
+                                  </td>
                                   <td>
                                     <span
                                       className={`badge ${

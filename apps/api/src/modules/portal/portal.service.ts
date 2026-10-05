@@ -51,6 +51,7 @@ export interface CustomerPortalLoanData {
   nextDueDate: string | null;
   outstandingBalance: number;
   totalPaid: number;
+  totalPenaltyAmount: number;
   status: string;
   disbursementDate: string;
   maturityDate: string;
@@ -68,6 +69,8 @@ export interface CustomerPortalLoanData {
     paidAmount: number;
     remainingAmount: number;
     penaltyAmount: number;
+    totalDue: number;
+    daysOverdue: number;
     status: string;
   }>;
 }
@@ -340,6 +343,11 @@ export class PortalService {
       [row.loan_id]
     );
 
+    const totalPenaltyAmount = installmentsRes.rows.reduce(
+      (sum, i) => sum + Number(i.penalty_amount || 0),
+      0
+    );
+
     // 8. Return strictly sanitized, customer-safe payload
     return {
       customerName: row.customer_name,
@@ -355,6 +363,7 @@ export class PortalService {
       nextDueDate,
       outstandingBalance: Number(row.outstanding_balance),
       totalPaid: Number(row.total_paid),
+      totalPenaltyAmount: Math.round(totalPenaltyAmount * 100) / 100,
       status: row.loan_status,
       disbursementDate: formatDateOnly(row.disbursement_date),
       maturityDate: formatDateOnly(row.maturity_date),
@@ -368,15 +377,24 @@ export class PortalService {
         paymentMode: p.payment_mode,
         status: p.status,
       })),
-      installments: installmentsRes.rows.map((i) => ({
-        installmentNumber: Number(i.installment_number),
-        dueDate: formatDateOnly(i.due_date),
-        expectedAmount: Number(i.expected_amount),
-        paidAmount: Number(i.paid_amount),
-        remainingAmount: Number(i.remaining_amount),
-        penaltyAmount: Number(i.penalty_amount),
-        status: i.status,
-      })),
+      installments: installmentsRes.rows.map((i) => {
+        const expected = Number(i.expected_amount);
+        const paid = Number(i.paid_amount);
+        const remaining = Number(i.remaining_amount);
+        const penalty = Number(i.penalty_amount || 0);
+        const totalDue = remaining + penalty;
+        return {
+          installmentNumber: Number(i.installment_number),
+          dueDate: formatDateOnly(i.due_date),
+          expectedAmount: expected,
+          paidAmount: paid,
+          remainingAmount: remaining,
+          penaltyAmount: penalty,
+          totalDue: Math.max(0, Math.round(totalDue * 100) / 100),
+          daysOverdue: Number(i.days_overdue || 0),
+          status: i.status,
+        };
+      }),
     };
   }
 }

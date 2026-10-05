@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { IDealer, DealerStatus } from '@crm/shared';
+import { IDealer, DealerStatus, UserRole } from '@crm/shared';
 import { ApiClient } from '../services/api';
 import {
   Store,
@@ -61,6 +61,31 @@ export const DealersView: React.FC<DealersViewProps> = ({
   const [search, setSearch] = useState('');
   const [areaFilter, setAreaFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
+
+  // Super Admin Settings State
+  const currentUser = ApiClient.getUser();
+  const [allowDealerPenalty, setAllowDealerPenalty] = useState(false);
+  const [settingLoading, setSettingLoading] = useState(false);
+
+  useEffect(() => {
+    if (currentUser?.role === UserRole.SUPER_ADMIN) {
+      ApiClient.getDealerPenaltySetting()
+        .then((res) => setAllowDealerPenalty(res.allowDealerPenalty))
+        .catch((err) => console.error('Failed to load dealer penalty setting', err));
+    }
+  }, [currentUser?.role]);
+
+  const handleToggleDealerPenalty = async () => {
+    setSettingLoading(true);
+    try {
+      const res = await ApiClient.updateDealerPenaltySetting(!allowDealerPenalty);
+      setAllowDealerPenalty(res.allowDealerPenalty);
+    } catch (err: any) {
+      alert(err.message || 'Failed to update setting');
+    } finally {
+      setSettingLoading(false);
+    }
+  };
 
   // Drawer / Modal states
   const [selectedDealerId, setSelectedDealerId] = useState<string | null>(null);
@@ -348,6 +373,69 @@ export const DealersView: React.FC<DealersViewProps> = ({
           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Suspended / Closed outlets</div>
         </div>
       </div>
+
+      {/* Super Admin Late Payment Penalty Permission Control */}
+      {currentUser?.role === UserRole.SUPER_ADMIN && (
+        <div
+          className="crm-card"
+          style={{
+            padding: '16px 20px',
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 'var(--radius-lg)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: 16,
+          }}
+        >
+          <div style={{ maxWidth: 640 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Shield size={18} color="var(--primary)" />
+              <h4 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>
+                Late Payment Penalty: Allow Dealers to Add Penalty
+              </h4>
+            </div>
+            <p style={{ margin: '4px 0 0 0', fontSize: 13, color: 'var(--text-secondary)' }}>
+              When enabled, dealer users can manually add late-payment penalties to overdue EMIs belonging to their own customers.
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={{ textAlign: 'right' }}>
+              <span
+                style={{
+                  display: 'inline-block',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  padding: '3px 10px',
+                  borderRadius: 'var(--radius-full)',
+                  background: allowDealerPenalty ? 'var(--success-bg, rgba(34, 197, 94, 0.1))' : 'var(--bg-surface-secondary)',
+                  color: allowDealerPenalty ? 'var(--success-text)' : 'var(--text-muted)',
+                  border: `1px solid ${allowDealerPenalty ? 'var(--success-border, rgba(34, 197, 94, 0.3))' : 'var(--border-subtle)'}`,
+                }}
+              >
+                {allowDealerPenalty ? 'PERMISSION: ON' : 'PERMISSION: OFF'}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleToggleDealerPenalty}
+              disabled={settingLoading}
+              className={`btn btn-sm ${allowDealerPenalty ? 'btn-danger' : 'btn-primary'}`}
+              style={{ minWidth: 120 }}
+            >
+              {settingLoading
+                ? 'Saving...'
+                : allowDealerPenalty
+                ? 'Turn OFF'
+                : 'Turn ON'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Search & Filter Bar */}
       <div className="crm-card" style={{ padding: 14 }}>

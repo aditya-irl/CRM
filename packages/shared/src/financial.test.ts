@@ -224,4 +224,67 @@ describe('Financial Calculation Engine', () => {
       expect(loan12.schedule.length).not.toBe(6);
     });
   });
+
+  describe('Late-Payment Penalty Waterfall Allocation', () => {
+    const overdueEmi = {
+      id: 'emi-overdue-1',
+      installmentNumber: 1,
+      expectedAmount: 8791.59,
+      paidAmount: 0,
+      remainingAmount: 8791.59,
+      penaltyAmount: 500,
+      status: EMIStatus.OVERDUE,
+      dueDate: '2026-09-10',
+    };
+
+    test('Customer pays full amount (₹9,291.59): Penalty is fully allocated, EMI is fully allocated and PAID', () => {
+      const result = allocatePaymentWaterfall(9291.59, [overdueEmi], 9291.59, '2026-10-04');
+
+      expect(result.totalAllocated).toBe(9291.59);
+      expect(result.totalAllocatedToPenalty).toBe(500);
+      expect(result.totalAllocatedToPrincipalInterest).toBe(8791.59);
+      expect(result.unallocatedExcess).toBe(0);
+      expect(result.newLoanOutstanding).toBe(0);
+
+      const alloc = result.allocatedPayments[0];
+      expect(alloc.allocatedToPenalty).toBe(500);
+      expect(alloc.allocatedToPrincipalInterest).toBe(8791.59);
+      expect(alloc.remainingPenalty).toBe(0);
+      expect(alloc.newPaidAmount).toBe(8791.59);
+      expect(alloc.newRemainingAmount).toBe(0);
+      expect(alloc.newStatus).toBe(EMIStatus.PAID);
+    });
+
+    test('Customer pays only original EMI (₹8,791.59): Penalty paid first (₹500), ₹8,291.59 to EMI, EMI is NOT fully paid', () => {
+      const result = allocatePaymentWaterfall(8791.59, [overdueEmi], 9291.59, '2026-10-04');
+
+      expect(result.totalAllocated).toBe(8791.59);
+      expect(result.totalAllocatedToPenalty).toBe(500);
+      expect(result.totalAllocatedToPrincipalInterest).toBe(8291.59);
+
+      const alloc = result.allocatedPayments[0];
+      expect(alloc.allocatedToPenalty).toBe(500);
+      expect(alloc.allocatedToPrincipalInterest).toBe(8291.59);
+      expect(alloc.remainingPenalty).toBe(0);
+      expect(alloc.newPaidAmount).toBe(8291.59);
+      expect(alloc.newRemainingAmount).toBe(500);
+      expect(alloc.newStatus).not.toBe(EMIStatus.PAID);
+    });
+
+    test('Customer pays partial penalty amount (₹300): ₹300 to penalty, ₹0 to EMI, remaining penalty ₹200', () => {
+      const result = allocatePaymentWaterfall(300, [overdueEmi], 9291.59, '2026-10-04');
+
+      expect(result.totalAllocated).toBe(300);
+      expect(result.totalAllocatedToPenalty).toBe(300);
+      expect(result.totalAllocatedToPrincipalInterest).toBe(0);
+
+      const alloc = result.allocatedPayments[0];
+      expect(alloc.allocatedToPenalty).toBe(300);
+      expect(alloc.allocatedToPrincipalInterest).toBe(0);
+      expect(alloc.remainingPenalty).toBe(200);
+      expect(alloc.newPaidAmount).toBe(0);
+      expect(alloc.newRemainingAmount).toBe(8791.59);
+      expect(alloc.newStatus).not.toBe(EMIStatus.PAID);
+    });
+  });
 });

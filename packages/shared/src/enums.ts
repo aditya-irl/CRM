@@ -135,4 +135,11 @@ export enum SettlementPaymentMethod {
   OTHER = 'OTHER',
 }
 
+export enum PenaltyStatus {
+  ACTIVE = 'ACTIVE',
+  PAID = 'PAID',
+  WAIVED = 'WAIVED',
+  REVERSED = 'REVERSED',
+}
+
 

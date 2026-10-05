@@ -263,11 +263,16 @@ export interface WaterfallAllocationResult {
     emiId: string;
     installmentNumber: number;
     allocatedAmount: number;
+    allocatedToPenalty: number;
+    allocatedToPrincipalInterest: number;
+    remainingPenalty: number;
     newPaidAmount: number;
     newRemainingAmount: number;
     newStatus: EMIStatus;
   }>;
   totalAllocated: number;
+  totalAllocatedToPenalty: number;
+  totalAllocatedToPrincipalInterest: number;
   unallocatedExcess: number;
   newLoanOutstanding: number;
 }
@@ -297,6 +302,8 @@ export function allocatePaymentWaterfall(
 
   const allocatedPayments: WaterfallAllocationResult['allocatedPayments'] = [];
   let totalAllocated = new Decimal(0);
+  let totalAllocatedToPenalty = new Decimal(0);
+  let totalAllocatedToPrincipalInterest = new Decimal(0);
 
   // Sort installments chronologically by installment number
   const sorted = [...unpaidInstallments].sort((a, b) => a.installmentNumber - b.installmentNumber);
@@ -316,19 +323,27 @@ export function allocatePaymentWaterfall(
       unallocated = new Decimal(0);
     }
 
-    const newPaidAmount = new Decimal(emi.paidAmount).plus(allocateToEmi);
-    const totalDue = new Decimal(emi.expectedAmount).plus(emi.penaltyAmount);
-    const newRemainingAmount = totalDue.minus(newPaidAmount);
+    // Breakdown allocation: Late-payment penalty first, then principal/interest
+    const penaltyTotal = new Decimal(emi.penaltyAmount || 0);
+    const allocPenalty = Decimal.min(allocateToEmi, penaltyTotal);
+    const allocPI = allocateToEmi.minus(allocPenalty);
+    const remainingPenalty = penaltyTotal.minus(allocPenalty);
+
+    // emi.paidAmount and emi.remainingAmount track the principal/interest component
+    const currentPaid = new Decimal(emi.paidAmount || 0);
+    const currentRemaining = new Decimal(emi.remainingAmount || 0);
+    const newPaidAmount = currentPaid.plus(allocPI);
+    const newRemainingAmount = Decimal.max(0, currentRemaining.minus(allocPI));
 
     let newStatus: EMIStatus;
-    if (newRemainingAmount.lessThanOrEqualTo(0)) {
+    if (newRemainingAmount.lessThanOrEqualTo(0) && remainingPenalty.lessThanOrEqualTo(0)) {
       newStatus = EMIStatus.PAID;
     } else if (emi.dueDate && businessToday) {
       newStatus = computeEmiStatus({
         dueDate: emi.dueDate,
         expectedAmount: emi.expectedAmount,
         paidAmount: newPaidAmount.toNumber(),
-        penaltyAmount: emi.penaltyAmount,
+        penaltyAmount: remainingPenalty.toNumber(),
         businessToday,
       }).status;
     } else {
@@ -339,12 +354,17 @@ export function allocatePaymentWaterfall(
       emiId: emi.id,
       installmentNumber: emi.installmentNumber,
       allocatedAmount: toFixed2(allocateToEmi),
+      allocatedToPenalty: toFixed2(allocPenalty),
+      allocatedToPrincipalInterest: toFixed2(allocPI),
+      remainingPenalty: toFixed2(remainingPenalty),
       newPaidAmount: toFixed2(newPaidAmount),
       newRemainingAmount: toFixed2(newRemainingAmount),
       newStatus,
     });
 
     totalAllocated = totalAllocated.plus(allocateToEmi);
+    totalAllocatedToPenalty = totalAllocatedToPenalty.plus(allocPenalty);
+    totalAllocatedToPrincipalInterest = totalAllocatedToPrincipalInterest.plus(allocPI);
   }
 
   const loanOutstanding = new Decimal(currentLoanOutstanding);
@@ -353,6 +373,8 @@ export function allocatePaymentWaterfall(
   return {
     allocatedPayments,
     totalAllocated: toFixed2(totalAllocated),
+    totalAllocatedToPenalty: toFixed2(totalAllocatedToPenalty),
+    totalAllocatedToPrincipalInterest: toFixed2(totalAllocatedToPrincipalInterest),
     unallocatedExcess: toFixed2(unallocated),
     newLoanOutstanding: Math.max(0, newLoanOutstanding.toNumber()),
   };

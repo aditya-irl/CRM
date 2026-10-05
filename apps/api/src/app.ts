@@ -22,6 +22,7 @@ import dealerSettlementsRoutes from './modules/dealer-settlements/dealer-settlem
 import agentCollectionsRoutes from './modules/agent-collections/agent-collections.routes';
 import directCollectionsRoutes from './modules/direct-collections/direct-collections.routes';
 import portalRoutes from './modules/portal/portal.routes';
+import settingsRoutes from './modules/settings/settings.routes';
 import { EMIStateEngineJob } from './jobs/emi-state-engine.job';
 import { ReminderDispatcherJob } from './jobs/reminder-dispatcher.job';
 import { authenticate, requireRole } from './middlewares/auth.middleware';
@@ -97,6 +98,7 @@ app.use('/api/v1/assignments', assignmentRoutes);
 app.use('/api/v1/reports', reportRoutes);
 app.use('/api/v1/audit-logs', auditRoutes);
 app.use('/api/v1/portal', portalRoutes);
+app.use('/api/v1/settings', settingsRoutes);
 
 // Admin trigger endpoint for manual execution of background jobs
 app.post(

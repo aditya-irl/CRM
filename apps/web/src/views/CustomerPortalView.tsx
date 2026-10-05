@@ -68,23 +68,28 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
   }, [fetchPortalData]);
 
   // WhatsApp Pay Action
-  const handlePayViaWhatsApp = () => {
+  const handlePayViaWhatsApp = (customAmount?: number, instNumber?: number) => {
     if (!data) return;
 
     // Use customer's real phone number from backend (fallback to masked if not provided)
     const rawPhone = data.customerPhone || data.maskedPhone || '';
     const cleanPhone = rawPhone.replace(/\D/g, '');
 
-    const formattedAmount = formatINR(data.emiAmount);
+    const payAmount = customAmount !== undefined ? customAmount : data.emiAmount;
+    const formattedAmount = formatINR(payAmount);
     const dueDate = data.nextDueDate || 'Immediate';
-    const msg = [
+    const lines = [
       'Hello, I want to make my EMI payment.',
       '',
       `Loan Account: ${data.loanAccountNo}`,
-      `EMI Amount: ${formattedAmount}`,
-      `Due Date: ${dueDate}`,
-    ].join('\n');
+    ];
+    if (instNumber) {
+      lines.push(`EMI Installment: #${instNumber}`);
+    }
+    lines.push(`Amount: ${formattedAmount}`);
+    lines.push(`Due Date: ${dueDate}`);
 
+    const msg = lines.join('\n');
     const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
     window.open(waUrl, '_blank', 'noopener,noreferrer');
   };
@@ -413,7 +418,141 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                     </div>
                   </div>
                 )}
+
+                {data.totalPenaltyAmount !== undefined && data.totalPenaltyAmount > 0 && (
+                  <div
+                    style={{
+                      padding: '14px 16px',
+                      borderRadius: 'var(--radius-md)',
+                      background: 'rgba(239, 68, 68, 0.08)',
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--danger)' }}>
+                      <AlertCircle size={14} color="var(--danger)" />
+                      <span style={{ fontWeight: 600 }}>Penalty Total</span>
+                    </div>
+                    <div style={{ fontSize: 16, fontWeight: 800, marginTop: 4, color: 'var(--danger-text)' }}>
+                      {formatINR(data.totalPenaltyAmount)}
+                    </div>
+                  </div>
+                )}
               </div>
+
+              {/* ─── Overdue EMIs & Late Payment Penalty Breakdown ──────────── */}
+              {data.installments && data.installments.some((i) => i.status === 'OVERDUE' || (i.penaltyAmount && i.penaltyAmount > 0)) && (
+                <div
+                  style={{
+                    background: 'var(--bg-surface)',
+                    border: '1px solid var(--danger-border, #fca5a5)',
+                    borderRadius: 'var(--radius-lg)',
+                    padding: '20px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 16,
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <AlertCircle size={18} color="var(--danger)" />
+                        <h3 style={{ fontSize: 16, fontWeight: 800, color: 'var(--danger)', margin: 0 }}>
+                          Overdue Installment & Late Penalty Notice
+                        </h3>
+                      </div>
+                      <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
+                        Late payment penalties have been assessed according to financing terms. Please clear outstanding amounts promptly.
+                      </p>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 16, background: 'var(--bg-app)', padding: '10px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+                      <div>
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600 }}>Total Outstanding</div>
+                        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-primary)' }}>{formatINR(data.outstandingBalance)}</div>
+                      </div>
+                      {data.totalPenaltyAmount !== undefined && data.totalPenaltyAmount > 0 && (
+                        <div style={{ borderLeft: '1px solid var(--border-subtle)', paddingLeft: 16 }}>
+                          <div style={{ fontSize: 11, color: 'var(--danger)', fontWeight: 600 }}>Penalty Total</div>
+                          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--danger)' }}>{formatINR(data.totalPenaltyAmount)}</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {data.installments
+                      .filter((i) => i.status === 'OVERDUE' || (i.penaltyAmount && i.penaltyAmount > 0))
+                      .map((inst) => {
+                        const totalInstDue = inst.totalDue !== undefined ? inst.totalDue : (inst.remainingAmount + (inst.penaltyAmount || 0));
+                        return (
+                          <div
+                            key={inst.installmentNumber}
+                            style={{
+                              background: 'var(--bg-app)',
+                              border: '1px solid var(--border-subtle)',
+                              borderRadius: 'var(--radius-md)',
+                              padding: '16px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 12,
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ fontWeight: 800, fontSize: 15, color: 'var(--text-primary)' }}>
+                                  EMI #{inst.installmentNumber}
+                                </span>
+                                {getStatusBadge(inst.status)}
+                                {inst.daysOverdue !== undefined && inst.daysOverdue > 0 && (
+                                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--danger)', background: 'var(--danger-bg)', padding: '2px 8px', borderRadius: 4 }}>
+                                    {inst.daysOverdue} days overdue
+                                  </span>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handlePayViaWhatsApp(totalInstDue, inst.installmentNumber)}
+                                className="btn btn-sm btn-primary"
+                                style={{
+                                  background: '#25D366',
+                                  borderColor: '#1EBE5D',
+                                  color: '#fff',
+                                  fontWeight: 700,
+                                  fontSize: 13,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 6,
+                                }}
+                              >
+                                <MessageCircle size={14} />
+                                <span>Pay Now ({formatINR(totalInstDue)})</span>
+                              </button>
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, fontSize: 13 }}>
+                              <div>
+                                <span style={{ color: 'var(--text-secondary)', fontSize: 11, display: 'block' }}>Due Date</span>
+                                <span style={{ fontWeight: 600 }}>{inst.dueDate}</span>
+                              </div>
+                              <div>
+                                <span style={{ color: 'var(--text-secondary)', fontSize: 11, display: 'block' }}>Original EMI</span>
+                                <span style={{ fontWeight: 600 }}>{formatINR(inst.expectedAmount)}</span>
+                              </div>
+                              <div>
+                                <span style={{ color: 'var(--danger)', fontSize: 11, display: 'block' }}>Late Payment Penalty</span>
+                                <span style={{ fontWeight: 700, color: 'var(--danger)' }}>{formatINR(inst.penaltyAmount || 0)}</span>
+                              </div>
+                              <div>
+                                <span style={{ color: 'var(--text-secondary)', fontSize: 11, display: 'block' }}>Total Due</span>
+                                <span style={{ fontWeight: 800, color: 'var(--danger)' }}>{formatINR(totalInstDue)}</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
 
               {/* ─── Repayment Progress Bar ───────────────────────────────── */}
               <div>
@@ -468,7 +607,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                     </p>
                   </div>
                   <button
-                    onClick={handlePayViaWhatsApp}
+                    onClick={() => handlePayViaWhatsApp()}
                     className="btn btn-primary"
                     style={{
                       background: '#25D366',
@@ -566,37 +705,44 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                       <tr style={{ borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-secondary)' }}>
                         <th style={{ padding: '10px 12px' }}>#</th>
                         <th style={{ padding: '10px 12px' }}>Due Date</th>
-                        <th style={{ padding: '10px 12px', textAlign: 'right' }}>Expected</th>
+                        <th style={{ padding: '10px 12px', textAlign: 'right' }}>Original EMI</th>
+                        <th style={{ padding: '10px 12px', textAlign: 'right' }}>Penalty</th>
                         <th style={{ padding: '10px 12px', textAlign: 'right' }}>Paid</th>
-                        <th style={{ padding: '10px 12px', textAlign: 'right' }}>Remaining</th>
+                        <th style={{ padding: '10px 12px', textAlign: 'right' }}>Total Remaining</th>
                         <th style={{ padding: '10px 12px', textAlign: 'center' }}>Status</th>
                       </tr>
                     </thead>
                     <tbody>
                       {data.installments && data.installments.length > 0 ? (
-                        data.installments.map((inst) => (
-                          <tr
-                            key={inst.installmentNumber}
-                            style={{
-                              borderBottom: '1px solid var(--border-subtle)',
-                              background: inst.status === 'PAID' ? 'transparent' : 'var(--bg-surface-secondary)',
-                            }}
-                          >
-                            <td style={{ padding: '12px', fontWeight: 700 }}>{inst.installmentNumber}</td>
-                            <td style={{ padding: '12px' }}>{inst.dueDate}</td>
-                            <td style={{ padding: '12px', textAlign: 'right', fontWeight: 600 }}>{formatINR(inst.expectedAmount)}</td>
-                            <td style={{ padding: '12px', textAlign: 'right', color: inst.paidAmount > 0 ? 'var(--success-text)' : 'inherit' }}>
-                              {formatINR(inst.paidAmount)}
-                            </td>
-                            <td style={{ padding: '12px', textAlign: 'right', fontWeight: 600 }}>
-                              {formatINR(inst.remainingAmount)}
-                            </td>
-                            <td style={{ padding: '12px', textAlign: 'center' }}>{getStatusBadge(inst.status)}</td>
-                          </tr>
-                        ))
+                        data.installments.map((inst) => {
+                          const totalRemaining = inst.totalDue !== undefined ? inst.totalDue : (inst.remainingAmount + (inst.penaltyAmount || 0));
+                          return (
+                            <tr
+                              key={inst.installmentNumber}
+                              style={{
+                                borderBottom: '1px solid var(--border-subtle)',
+                                background: inst.status === 'PAID' ? 'transparent' : 'var(--bg-surface-secondary)',
+                              }}
+                            >
+                              <td style={{ padding: '12px', fontWeight: 700 }}>{inst.installmentNumber}</td>
+                              <td style={{ padding: '12px' }}>{inst.dueDate}</td>
+                              <td style={{ padding: '12px', textAlign: 'right', fontWeight: 600 }}>{formatINR(inst.expectedAmount)}</td>
+                              <td style={{ padding: '12px', textAlign: 'right', color: (inst.penaltyAmount || 0) > 0 ? 'var(--danger)' : 'var(--text-muted)', fontWeight: (inst.penaltyAmount || 0) > 0 ? 700 : 400 }}>
+                                {formatINR(inst.penaltyAmount || 0)}
+                              </td>
+                              <td style={{ padding: '12px', textAlign: 'right', color: inst.paidAmount > 0 ? 'var(--success-text)' : 'inherit' }}>
+                                {formatINR(inst.paidAmount)}
+                              </td>
+                              <td style={{ padding: '12px', textAlign: 'right', fontWeight: 600, color: totalRemaining > 0 ? 'var(--danger-text)' : 'inherit' }}>
+                                {formatINR(totalRemaining)}
+                              </td>
+                              <td style={{ padding: '12px', textAlign: 'center' }}>{getStatusBadge(inst.status)}</td>
+                            </tr>
+                          );
+                        })
                       ) : (
                         <tr>
-                          <td colSpan={6} style={{ padding: 24, textAlign: 'center', color: 'var(--text-secondary)' }}>
+                          <td colSpan={7} style={{ padding: 24, textAlign: 'center', color: 'var(--text-secondary)' }}>
                             No installments recorded.
                           </td>
                         </tr>

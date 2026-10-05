@@ -170,9 +170,8 @@ describe('PHASE 4: Real Integration & Concurrency Test Suite (PostgreSQL Financi
         annualInterestRate: 10.0,
         interestCalcMethod: 'FLAT_RATE',
         tenureMonths: 6,
-        installmentFrequency: 'MONTHLY',
-        disbursementDate: '2026-09-01',
-        firstEmiDate: '2026-10-01',
+        disbursementDate: '2026-10-01',
+        firstEmiDate: '2026-11-01',
         assignedAgentId: agent1Id,
       });
     loan1Id = l1Res.body.data.id;
@@ -188,8 +187,8 @@ describe('PHASE 4: Real Integration & Concurrency Test Suite (PostgreSQL Financi
         interestCalcMethod: 'FLAT_RATE',
         tenureMonths: 6,
         installmentFrequency: 'MONTHLY',
-        disbursementDate: '2026-09-01',
-        firstEmiDate: '2026-10-01',
+        disbursementDate: '2026-10-01',
+        firstEmiDate: '2026-11-01',
         assignedAgentId: agent2Id,
       });
     loan2Id = l2Res.body.data.id;
@@ -660,8 +659,8 @@ describe('PHASE 4: Real Integration & Concurrency Test Suite (PostgreSQL Financi
           interestCalcMethod: 'FLAT_RATE',
           tenureMonths: 6,
           installmentFrequency: 'MONTHLY',
-          disbursementDate: '2026-09-01',
-          firstEmiDate: '2026-10-01',
+          disbursementDate: '2026-10-01',
+          firstEmiDate: '2026-11-01',
           assignedAgentId: agent1Id,
         });
       multiRevLoanId = loanRes.body.data.id;

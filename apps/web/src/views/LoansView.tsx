@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ApiClient } from '../services/api';
-import { ILoan, ICustomer, formatINR, InterestMethod, RepaymentFrequency, LoanStatus } from '@crm/shared';
+import { ILoan, ICustomer, formatINR, InterestMethod, RepaymentFrequency, LoanStatus, UserRole } from '@crm/shared';
 import {
   Plus,
   Search,
@@ -17,6 +17,8 @@ import {
   Building2,
   Printer,
   Link as LinkIcon,
+  AlertTriangle,
+  History,
 } from 'lucide-react';
 import { PortalLinkManager } from '../components/PortalLinkManager';
 
@@ -47,6 +49,101 @@ export const LoansView: React.FC = () => {
   const [loanModalTab, setLoanModalTab] = useState<'schedule' | 'payments' | 'portal'>('schedule');
   const [selectedReceipt, setSelectedReceipt] = useState<any | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+
+  // Penalty Management States
+  const [allowDealerPenalty, setAllowDealerPenalty] = useState(false);
+  const [penaltyModalEmi, setPenaltyModalEmi] = useState<any | null>(null);
+  const [penaltyAmount, setPenaltyAmount] = useState<string>('');
+  const [penaltyReason, setPenaltyReason] = useState<string>('');
+  const [submittingPenalty, setSubmittingPenalty] = useState(false);
+  const [penaltyError, setPenaltyError] = useState<string | null>(null);
+  const [penaltySuccess, setPenaltySuccess] = useState<string | null>(null);
+
+  // Penalty History & Waiver States
+  const [historyModalEmi, setHistoryModalEmi] = useState<any | null>(null);
+  const [penaltyHistory, setPenaltyHistory] = useState<any | null>(null);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (currentUser?.role === UserRole.DEALER || currentUser?.role === UserRole.SUPER_ADMIN) {
+      ApiClient.getDealerPenaltySetting()
+        .then((res) => setAllowDealerPenalty(res.allowDealerPenalty))
+        .catch(() => setAllowDealerPenalty(false));
+    }
+  }, [currentUser?.role]);
+
+  const handleOpenAddPenalty = (inst: any) => {
+    setPenaltyModalEmi(inst);
+    setPenaltyAmount('');
+    setPenaltyReason('Late payment beyond grace period');
+    setPenaltyError(null);
+    setPenaltySuccess(null);
+  };
+
+  const handleSubmitPenalty = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!penaltyModalEmi || !selectedLoanDetail) return;
+    setSubmittingPenalty(true);
+    setPenaltyError(null);
+    setPenaltySuccess(null);
+
+    try {
+      await ApiClient.addEmiPenalty(
+        penaltyModalEmi.id,
+        Number(penaltyAmount),
+        penaltyReason
+      );
+      setPenaltySuccess('Penalty added successfully.');
+      // Refresh EMI/payment data from server
+      await handleViewLoan(selectedLoanDetail.loan.id, 'schedule');
+      setTimeout(() => {
+        setPenaltyModalEmi(null);
+      }, 1000);
+    } catch (err: any) {
+      setPenaltyError(err.message || 'Failed to add penalty');
+    } finally {
+      setSubmittingPenalty(false);
+    }
+  };
+
+  const handleOpenPenaltyHistory = async (inst: any) => {
+    setHistoryModalEmi(inst);
+    setLoadingHistory(true);
+    setHistoryError(null);
+    try {
+      const data = await ApiClient.getEmiPenalties(inst.id);
+      setPenaltyHistory(data);
+    } catch (err: any) {
+      setHistoryError(err.message || 'Failed to load penalty history');
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const handleReverseOrWaive = async (penaltyId: string, action: 'REVERSE' | 'WAIVE') => {
+    const promptMsg = action === 'WAIVE' ? 'Enter reason for waiving this penalty:' : 'Enter reason for reversing this penalty:';
+    const reason = window.prompt(promptMsg, 'Administrative correction');
+    if (!reason || !reason.trim()) return;
+
+    try {
+      if (action === 'WAIVE') {
+        await ApiClient.waivePenalty(penaltyId, reason.trim());
+      } else {
+        await ApiClient.reversePenalty(penaltyId, reason.trim());
+      }
+      alert(`Penalty ${action === 'WAIVE' ? 'waived' : 'reversed'} successfully.`);
+      if (historyModalEmi) {
+        const data = await ApiClient.getEmiPenalties(historyModalEmi.id);
+        setPenaltyHistory(data);
+      }
+      if (selectedLoanDetail) {
+        await handleViewLoan(selectedLoanDetail.loan.id, 'schedule');
+      }
+    } catch (err: any) {
+      alert(err.message || `Failed to ${action.toLowerCase()} penalty`);
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -467,28 +564,107 @@ export const LoansView: React.FC = () => {
                       <th>Inst #</th>
                       <th>Due Date</th>
                       <th>Expected</th>
+                      <th>Penalty</th>
                       <th>Paid</th>
-                      <th>Remaining</th>
+                      <th>Total Due</th>
                       <th>Status</th>
+                      <th style={{ textAlign: 'right' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {selectedLoanDetail.installments.map((inst) => (
-                      <tr key={inst.id}>
-                        <td className="mono">{inst.installment_number}</td>
-                        <td className="mono">{inst.due_date}</td>
-                        <td className="mono">{formatINR(inst.expected_amount)}</td>
-                        <td className="mono" style={{ color: 'var(--success-text)' }}>{formatINR(inst.paid_amount)}</td>
-                        <td className="mono" style={{ color: inst.remaining_amount > 0 ? 'var(--danger-text)' : 'inherit', fontWeight: 600 }}>
-                          {formatINR(inst.remaining_amount)}
-                        </td>
-                        <td>
-                          <span className={`badge ${inst.status === 'PAID' ? 'badge-paid' : inst.status === 'DUE_TODAY' ? 'badge-due-today' : inst.status === 'OVERDUE' ? 'badge-overdue' : 'badge-upcoming'}`}>
-                            {inst.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                    {selectedLoanDetail.installments.map((inst) => {
+                      const totalDue = Number(inst.remaining_amount) + Number(inst.penalty_amount || 0);
+                      const isOverdue = inst.status === 'OVERDUE' || (inst.days_overdue && inst.days_overdue > 0);
+                      const canAddPenaltyRole =
+                        currentUser?.role === UserRole.SUPER_ADMIN ||
+                        currentUser?.role === UserRole.ADMIN ||
+                        (currentUser?.role === UserRole.DEALER &&
+                          selectedLoanDetail.loan.dealer_id === currentUser.dealerId);
+
+                      return (
+                        <tr key={inst.id}>
+                          <td className="mono">{inst.installment_number}</td>
+                          <td className="mono">{inst.due_date}</td>
+                          <td className="mono">{formatINR(inst.expected_amount)}</td>
+                          <td
+                            className="mono"
+                            style={{
+                              color: Number(inst.penalty_amount || 0) > 0 ? 'var(--danger-text)' : 'inherit',
+                              fontWeight: Number(inst.penalty_amount || 0) > 0 ? 700 : 400,
+                            }}
+                          >
+                            {formatINR(inst.penalty_amount || 0)}
+                          </td>
+                          <td className="mono" style={{ color: 'var(--success-text)' }}>
+                            {formatINR(inst.paid_amount)}
+                          </td>
+                          <td
+                            className="mono"
+                            style={{
+                              color: totalDue > 0 ? 'var(--danger-text)' : 'inherit',
+                              fontWeight: 600,
+                            }}
+                          >
+                            {formatINR(totalDue)}
+                          </td>
+                          <td>
+                            <span
+                              className={`badge ${
+                                inst.status === 'PAID'
+                                  ? 'badge-paid'
+                                  : inst.status === 'DUE_TODAY'
+                                  ? 'badge-due-today'
+                                  : inst.status === 'OVERDUE'
+                                  ? 'badge-overdue'
+                                  : 'badge-upcoming'
+                              }`}
+                            >
+                              {inst.status}
+                            </span>
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                              {isOverdue && inst.status !== 'PAID' && Number(inst.remaining_amount) > 0 && canAddPenaltyRole && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenAddPenalty(inst)}
+                                  disabled={currentUser?.role === UserRole.DEALER && !allowDealerPenalty}
+                                  className="btn btn-xs btn-outline-danger"
+                                  title={
+                                    currentUser?.role === UserRole.DEALER && !allowDealerPenalty
+                                      ? 'Dealer penalty creation is disabled by Super Admin'
+                                      : 'Add Late Payment Penalty'
+                                  }
+                                  style={{
+                                    fontSize: 11,
+                                    padding: '2px 8px',
+                                    opacity: currentUser?.role === UserRole.DEALER && !allowDealerPenalty ? 0.5 : 1,
+                                    cursor:
+                                      currentUser?.role === UserRole.DEALER && !allowDealerPenalty
+                                        ? 'not-allowed'
+                                        : 'pointer',
+                                  }}
+                                >
+                                  + Penalty
+                                </button>
+                              )}
+
+                              {Number(inst.penalty_amount || 0) > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenPenaltyHistory(inst)}
+                                  className="btn btn-xs btn-secondary"
+                                  style={{ fontSize: 11, padding: '2px 8px' }}
+                                  title="View Penalty History & Adjustments"
+                                >
+                                  History
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -660,6 +836,243 @@ export const LoansView: React.FC = () => {
                 <span>Print</span>
               </button>
               <button onClick={() => setSelectedReceipt(null)} className="btn btn-secondary btn-sm" style={{ flex: 1 }}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── ADD LATE PAYMENT PENALTY MODAL ───────────────────────── */}
+      {penaltyModalEmi && (
+        <div className="modal-backdrop">
+          <div className="modal-content" style={{ maxWidth: 440 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ fontSize: 17, fontWeight: 700, margin: 0 }}>Add Late Payment Penalty</h3>
+              <button type="button" onClick={() => setPenaltyModalEmi(null)} className="btn-icon">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10,
+                fontSize: 13,
+                background: 'var(--bg-app)',
+                padding: 14,
+                borderRadius: 'var(--radius-md)',
+                marginBottom: 16,
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>EMI:</span>
+                <span style={{ fontWeight: 700 }}>#{penaltyModalEmi.installment_number}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Original EMI:</span>
+                <span style={{ fontWeight: 600 }}>{formatINR(penaltyModalEmi.expected_amount)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Outstanding:</span>
+                <span style={{ fontWeight: 700, color: 'var(--danger-text)' }}>
+                  {formatINR(penaltyModalEmi.remaining_amount)}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Days Overdue:</span>
+                <span style={{ fontWeight: 700, color: 'var(--danger)' }}>
+                  {penaltyModalEmi.days_overdue || Math.max(1, Math.round((new Date().getTime() - new Date(penaltyModalEmi.due_date).getTime()) / (1000 * 3600 * 24)))} days
+                </span>
+              </div>
+            </div>
+
+            {penaltyError && (
+              <div
+                style={{
+                  color: 'var(--danger)',
+                  background: 'var(--danger-bg)',
+                  padding: '10px 14px',
+                  borderRadius: 'var(--radius-md)',
+                  fontSize: 13,
+                  marginBottom: 14,
+                }}
+              >
+                {penaltyError}
+              </div>
+            )}
+
+            {penaltySuccess && (
+              <div
+                style={{
+                  color: 'var(--success)',
+                  background: 'rgba(34, 197, 94, 0.1)',
+                  padding: '10px 14px',
+                  borderRadius: 'var(--radius-md)',
+                  fontSize: 13,
+                  marginBottom: 14,
+                }}
+              >
+                {penaltySuccess}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmitPenalty} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+                  Penalty Amount (₹) *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="1"
+                  required
+                  className="form-input"
+                  value={penaltyAmount}
+                  onChange={(e) => setPenaltyAmount(e.target.value)}
+                  placeholder="e.g. 500"
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+                  Reason *
+                </label>
+                <input
+                  type="text"
+                  required
+                  className="form-input"
+                  value={penaltyReason}
+                  onChange={(e) => setPenaltyReason(e.target.value)}
+                  placeholder="e.g. Late payment beyond grace period"
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => setPenaltyModalEmi(null)}
+                  className="btn btn-secondary"
+                  disabled={submittingPenalty}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={submittingPenalty}
+                >
+                  {submittingPenalty ? 'Adding...' : 'Add Penalty'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── PENALTY HISTORY & WAIVER MODAL ───────────────────────── */}
+      {historyModalEmi && (
+        <div className="modal-backdrop">
+          <div className="modal-content" style={{ maxWidth: 640 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div>
+                <h3 style={{ fontSize: 17, fontWeight: 700, margin: 0 }}>
+                  Penalty History — EMI #{historyModalEmi.installment_number}
+                </h3>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                  Total Active Penalties: {formatINR(penaltyHistory?.activePenaltyTotal || historyModalEmi.penalty_amount || 0)}
+                </span>
+              </div>
+              <button type="button" onClick={() => setHistoryModalEmi(null)} className="btn-icon">
+                <X size={18} />
+              </button>
+            </div>
+
+            {loadingHistory ? (
+              <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-secondary)' }}>
+                Loading penalty records...
+              </div>
+            ) : historyError ? (
+              <div style={{ color: 'var(--danger)', padding: 16 }}>{historyError}</div>
+            ) : !penaltyHistory?.penalties || penaltyHistory.penalties.length === 0 ? (
+              <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-secondary)' }}>
+                No penalties recorded for this installment.
+              </div>
+            ) : (
+              <div className="table-container" style={{ maxHeight: 280, overflowY: 'auto' }}>
+                <table className="crm-table" style={{ fontSize: 12 }}>
+                  <thead>
+                    <tr>
+                      <th>Amount</th>
+                      <th>Paid</th>
+                      <th>Status</th>
+                      <th>Reason</th>
+                      <th>Created By</th>
+                      <th>Date</th>
+                      {(currentUser?.role === UserRole.SUPER_ADMIN || currentUser?.role === UserRole.ADMIN) && (
+                        <th style={{ textAlign: 'right' }}>Actions</th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {penaltyHistory.penalties.map((pen: any) => (
+                      <tr key={pen.id}>
+                        <td className="mono" style={{ fontWeight: 700 }}>{formatINR(pen.amount)}</td>
+                        <td className="mono" style={{ color: 'var(--success-text)' }}>{formatINR(pen.paidAmount)}</td>
+                        <td>
+                          <span
+                            className={`badge ${
+                              pen.status === 'PAID'
+                                ? 'badge-paid'
+                                : pen.status === 'ACTIVE'
+                                ? 'badge-overdue'
+                                : 'badge-upcoming'
+                            }`}
+                          >
+                            {pen.status}
+                          </span>
+                        </td>
+                        <td>{pen.reason}</td>
+                        <td>{pen.createdByName || pen.createdBy || 'Staff'}</td>
+                        <td className="mono">{pen.createdAt?.slice(0, 10)}</td>
+                        {(currentUser?.role === UserRole.SUPER_ADMIN || currentUser?.role === UserRole.ADMIN) && (
+                          <td style={{ textAlign: 'right' }}>
+                            {pen.status === 'ACTIVE' && (
+                              <div style={{ display: 'inline-flex', gap: 6 }}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleReverseOrWaive(pen.id, 'WAIVE')}
+                                  className="btn btn-xs btn-outline-warning"
+                                  title="Waive penalty"
+                                >
+                                  Waive
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleReverseOrWaive(pen.id, 'REVERSE')}
+                                  className="btn btn-xs btn-outline-danger"
+                                  title="Reverse penalty"
+                                >
+                                  Reverse
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+              <button
+                type="button"
+                onClick={() => setHistoryModalEmi(null)}
+                className="btn btn-secondary"
+              >
                 Close
               </button>
             </div>

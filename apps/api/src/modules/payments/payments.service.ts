@@ -281,21 +281,56 @@ export class PaymentService {
           data.idempotencyKey || null,
         ]);
 
-        // 9. Update each allocated installment
+        // 9. Update each allocated installment and penalties
         for (const alloc of allocation.allocatedPayments) {
           await client.query(
             `UPDATE emi_installments
-             SET paid_amount = $1, remaining_amount = $2, status = $3,
-                 last_payment_date = $4, updated_at = NOW()
-             WHERE id = $5`,
+             SET paid_amount = $1, remaining_amount = $2, penalty_amount = $3, status = $4,
+                 last_payment_date = $5, updated_at = NOW()
+             WHERE id = $6`,
             [
               alloc.newPaidAmount,
               alloc.newRemainingAmount,
+              alloc.remainingPenalty,
               alloc.newStatus,
               businessToday,
               alloc.emiId,
             ]
           );
+
+          // Update individual active penalties in emi_penalties table
+          if (alloc.allocatedToPenalty > 0) {
+            let remPenaltyToApply = new Decimal(alloc.allocatedToPenalty);
+            const pensRes = await client.query(
+              `SELECT id, amount, paid_amount, status
+               FROM emi_penalties
+               WHERE emi_installment_id = $1 AND status = 'ACTIVE'
+               ORDER BY created_at ASC
+               FOR UPDATE`,
+              [alloc.emiId]
+            );
+
+            for (const pen of pensRes.rows) {
+              if (remPenaltyToApply.lessThanOrEqualTo(0)) break;
+              const pAmt = new Decimal(pen.amount);
+              const pPaid = new Decimal(pen.paid_amount || 0);
+              const pUnpaid = pAmt.minus(pPaid);
+              if (pUnpaid.lessThanOrEqualTo(0)) continue;
+
+              const applyAmt = Decimal.min(remPenaltyToApply, pUnpaid);
+              const newPaid = pPaid.plus(applyAmt);
+              const newStatus = newPaid.greaterThanOrEqualTo(pAmt) ? 'PAID' : 'ACTIVE';
+
+              await client.query(
+                `UPDATE emi_penalties
+                 SET paid_amount = $1, status = $2, updated_at = NOW()
+                 WHERE id = $3`,
+                [newPaid.toNumber(), newStatus, pen.id]
+              );
+
+              remPenaltyToApply = remPenaltyToApply.minus(applyAmt);
+            }
+          }
         }
 
         // 10. Update Loan Balances
@@ -473,7 +508,35 @@ export class PaymentService {
       );
       const totalActivePaid = new Decimal(activePaysRes.rows[0].total_active_paid);
 
-      // 6. Fetch and Lock all Installments of the Loan
+      // 6. Fetch and Lock all emi_penalties on this loan (ACTIVE or PAID)
+      const pensRes = await client.query(
+        `SELECT id, emi_installment_id, amount, paid_amount, status
+         FROM emi_penalties
+         WHERE loan_id = $1 AND status IN ('ACTIVE', 'PAID')
+         ORDER BY created_at ASC
+         FOR UPDATE`,
+        [loan.id]
+      );
+
+      // Reset all active/paid penalties to unpaid (0 paid, ACTIVE)
+      if (pensRes.rows.length > 0) {
+        await client.query(
+          `UPDATE emi_penalties
+           SET paid_amount = 0, status = 'ACTIVE', updated_at = NOW()
+           WHERE loan_id = $1 AND status IN ('ACTIVE', 'PAID')`,
+          [loan.id]
+        );
+      }
+
+      const totalPenByEmi = new Map<string, Decimal>();
+      let totalLoanPenalties = new Decimal(0);
+      for (const pen of pensRes.rows) {
+        const cur = totalPenByEmi.get(pen.emi_installment_id) || new Decimal(0);
+        totalPenByEmi.set(pen.emi_installment_id, cur.plus(pen.amount));
+        totalLoanPenalties = totalLoanPenalties.plus(pen.amount);
+      }
+
+      // 7. Fetch and Lock all Installments of the Loan
       const instRes = await client.query(
         `SELECT id, installment_number, due_date, expected_amount, paid_amount,
                 remaining_amount, penalty_amount, status
@@ -484,26 +547,30 @@ export class PaymentService {
         [loan.id]
       );
 
-      const allInstallments = instRes.rows.map((r) => ({
-        id: r.id,
-        installmentNumber: Number(r.installment_number),
-        dueDate: getBusinessDate(r.due_date, 'Asia/Kolkata'),
-        expectedAmount: Number(r.expected_amount),
-        paidAmount: 0,
-        remainingAmount: Number(r.expected_amount) + Number(r.penalty_amount || 0),
-        penaltyAmount: Number(r.penalty_amount || 0),
-        status: EMIStatus.UPCOMING,
-      }));
+      const allInstallments = instRes.rows.map((r) => {
+        const fullPen = (totalPenByEmi.get(r.id) || new Decimal(r.penalty_amount || 0)).toNumber();
+        return {
+          id: r.id,
+          installmentNumber: Number(r.installment_number),
+          dueDate: getBusinessDate(r.due_date, 'Asia/Kolkata'),
+          expectedAmount: Number(r.expected_amount),
+          paidAmount: 0,
+          remainingAmount: Number(r.expected_amount),
+          penaltyAmount: fullPen,
+          status: EMIStatus.UPCOMING,
+        };
+      });
 
-      // 7. Re-reconcile active payments across installments
+      // 8. Re-reconcile active payments across installments
+      const basePayableWithPenalties = new Decimal(loan.total_payable).plus(totalLoanPenalties);
       let reallocatedPayments: any[] = [];
-      let newLoanOutstanding = new Decimal(loan.total_payable);
+      let newLoanOutstanding = basePayableWithPenalties;
 
       if (totalActivePaid.greaterThan(0)) {
         const reallocResult = allocatePaymentWaterfall(
           totalActivePaid.toNumber(),
           allInstallments,
-          loan.total_payable,
+          basePayableWithPenalties.toNumber(),
           businessToday
         );
         reallocatedPayments = reallocResult.allocatedPayments;
@@ -523,6 +590,10 @@ export class PaymentService {
             reallocatedPayments.push({
               emiId: inst.id,
               installmentNumber: inst.installmentNumber,
+              allocatedAmount: 0,
+              allocatedToPenalty: 0,
+              allocatedToPrincipalInterest: 0,
+              remainingPenalty: inst.penaltyAmount,
               newPaidAmount: 0,
               newRemainingAmount: inst.remainingAmount,
               newStatus: evalResult.status,
@@ -541,6 +612,10 @@ export class PaymentService {
           return {
             emiId: inst.id,
             installmentNumber: inst.installmentNumber,
+            allocatedAmount: 0,
+            allocatedToPenalty: 0,
+            allocatedToPrincipalInterest: 0,
+            remainingPenalty: inst.penaltyAmount,
             newPaidAmount: 0,
             newRemainingAmount: inst.remainingAmount,
             newStatus: evalResult.status,
@@ -548,19 +623,54 @@ export class PaymentService {
         });
       }
 
-      // 8. Update all installments in PostgreSQL
+      // 9. Update all installments and re-apply penalty allocations in PostgreSQL
       for (const inst of reallocatedPayments) {
+        const penAmt = inst.remainingPenalty !== undefined ? inst.remainingPenalty : 0;
         await client.query(
           `UPDATE emi_installments
-           SET paid_amount = $1, remaining_amount = $2, status = $3, updated_at = NOW()
-           WHERE id = $4`,
+           SET paid_amount = $1, remaining_amount = $2, penalty_amount = $3, status = $4, updated_at = NOW()
+           WHERE id = $5`,
           [
             inst.newPaidAmount,
             inst.newRemainingAmount,
+            penAmt,
             inst.newStatus,
             inst.emiId,
           ]
         );
+
+        if (inst.allocatedToPenalty && inst.allocatedToPenalty > 0) {
+          let remPenaltyToApply = new Decimal(inst.allocatedToPenalty);
+          const activePensRes = await client.query(
+            `SELECT id, amount, paid_amount, status
+             FROM emi_penalties
+             WHERE emi_installment_id = $1 AND status = 'ACTIVE'
+             ORDER BY created_at ASC
+             FOR UPDATE`,
+            [inst.emiId]
+          );
+
+          for (const pen of activePensRes.rows) {
+            if (remPenaltyToApply.lessThanOrEqualTo(0)) break;
+            const pAmt = new Decimal(pen.amount);
+            const pPaid = new Decimal(pen.paid_amount || 0);
+            const pUnpaid = pAmt.minus(pPaid);
+            if (pUnpaid.lessThanOrEqualTo(0)) continue;
+
+            const applyAmt = Decimal.min(remPenaltyToApply, pUnpaid);
+            const newPaid = pPaid.plus(applyAmt);
+            const newStatus = newPaid.greaterThanOrEqualTo(pAmt) ? 'PAID' : 'ACTIVE';
+
+            await client.query(
+              `UPDATE emi_penalties
+               SET paid_amount = $1, status = $2, updated_at = NOW()
+               WHERE id = $3`,
+              [newPaid.toNumber(), newStatus, pen.id]
+            );
+
+            remPenaltyToApply = remPenaltyToApply.minus(applyAmt);
+          }
+        }
       }
 
       // 9. Update Loan Balances
