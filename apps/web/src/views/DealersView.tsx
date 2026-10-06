@@ -25,6 +25,8 @@ import {
   Copy,
   Check,
   MessageSquare,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 
 const formatINR = (amount: number) => {
@@ -124,6 +126,7 @@ export const DealersView: React.FC<DealersViewProps> = ({
     temporaryPassword: string;
     isReset?: boolean;
   } | null>(null);
+  const [showPassword, setShowPassword] = useState(true);
   const [copiedPass, setCopiedPass] = useState(false);
   const [copiedLoginId, setCopiedLoginId] = useState(false);
   const [copiedCredentials, setCopiedCredentials] = useState(false);
@@ -133,6 +136,9 @@ export const DealersView: React.FC<DealersViewProps> = ({
     setAuthActionNotice(null);
     try {
       const res = await ApiClient.createDealerLogin(dealer.id);
+      if (!res?.temporaryPassword) {
+        throw new Error('Server response did not include temporary password.');
+      }
       setAuthModalCredentials({
         storeName: dealer.storeName,
         dealerCode: dealer.dealerCode,
@@ -141,24 +147,34 @@ export const DealersView: React.FC<DealersViewProps> = ({
         temporaryPassword: res.temporaryPassword,
         isReset: false,
       });
-      const updated = await ApiClient.getDealerDetail(dealer.id);
-      setDealerDetail(updated);
-      fetchDealers();
+      setShowPassword(true);
+      try {
+        const updated = await ApiClient.getDealerDetail(dealer.id);
+        setDealerDetail(updated);
+        fetchDealers();
+      } catch (refreshErr) {
+        console.warn('Background dealer refresh error:', refreshErr);
+      }
     } catch (err: any) {
-      alert(err.message || 'Failed to create dealer login');
+      const msg = err.message || 'Failed to create dealer login';
+      setAuthActionNotice(`Error: ${msg}`);
+      alert(`Error creating dealer login: ${msg}`);
     } finally {
       setAuthActionLoading(false);
     }
   };
 
   const handleResetDealerPassword = async (dealer: IDealer) => {
-    if (!window.confirm(`Reset temporary password for ${dealer.storeName}?`)) {
+    if (!window.confirm(`Reset temporary password for ${dealer.storeName} (${dealer.dealerCode})?`)) {
       return;
     }
     setAuthActionLoading(true);
     setAuthActionNotice(null);
     try {
       const res = await ApiClient.resetDealerPassword(dealer.id);
+      if (!res?.temporaryPassword) {
+        throw new Error('Server response did not include temporary password.');
+      }
       setAuthModalCredentials({
         storeName: dealer.storeName,
         dealerCode: dealer.dealerCode,
@@ -167,10 +183,18 @@ export const DealersView: React.FC<DealersViewProps> = ({
         temporaryPassword: res.temporaryPassword,
         isReset: true,
       });
-      const updated = await ApiClient.getDealerDetail(dealer.id);
-      setDealerDetail(updated);
+      setShowPassword(true);
+      try {
+        const updated = await ApiClient.getDealerDetail(dealer.id);
+        setDealerDetail(updated);
+        fetchDealers();
+      } catch (refreshErr) {
+        console.warn('Background dealer refresh error:', refreshErr);
+      }
     } catch (err: any) {
-      alert(err.message || 'Failed to reset password');
+      const msg = err.message || 'Failed to reset password';
+      setAuthActionNotice(`Error: ${msg}`);
+      alert(`Error resetting password: ${msg}`);
     } finally {
       setAuthActionLoading(false);
     }
@@ -576,7 +600,32 @@ export const DealersView: React.FC<DealersViewProps> = ({
                       </span>
                     </td>
                     <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                        {!dealer.userId ? (
+                          <button
+                            type="button"
+                            onClick={() => handleCreateDealerLogin(dealer)}
+                            disabled={authActionLoading}
+                            className="btn btn-primary btn-sm"
+                            title="Create Dealer Login Account"
+                            style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                          >
+                            <KeyRound size={12} />
+                            <span>Create Login</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleResetDealerPassword(dealer)}
+                            disabled={authActionLoading}
+                            className="btn btn-secondary btn-sm"
+                            title="Reset Temporary Password"
+                            style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                          >
+                            <KeyRound size={12} />
+                            <span>Reset Pass</span>
+                          </button>
+                        )}
                         <button
                           onClick={() => handleOpenDetail(dealer.id)}
                           className="btn btn-secondary btn-sm"
@@ -1420,48 +1469,82 @@ export const DealersView: React.FC<DealersViewProps> = ({
 
       {/* Temporary Password Display Modal */}
       {authModalCredentials && (
-        <div className="crm-modal-backdrop" style={{ zIndex: 100 }}>
-          <div className="crm-modal" style={{ maxWidth: 480 }}>
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.65)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2500,
+            padding: 16,
+          }}
+          onClick={() => setAuthModalCredentials(null)}
+        >
+          <div
+            className="crm-card"
+            style={{
+              width: '100%',
+              maxWidth: 520,
+              background: '#ffffff',
+              borderRadius: 'var(--radius-lg, 12px)',
+              boxShadow: '0 20px 45px rgba(0, 0, 0, 0.3)',
+              padding: 24,
+              border: '1px solid var(--border-subtle)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div
                   style={{
-                    width: 34,
-                    height: 34,
-                    borderRadius: 'var(--radius-sm)',
-                    background: 'var(--primary-subtle)',
-                    color: 'var(--primary)',
+                    width: 38,
+                    height: 38,
+                    borderRadius: 'var(--radius-md, 8px)',
+                    background: 'var(--primary-subtle, #e0f2fe)',
+                    color: 'var(--primary, #0284c7)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}
                 >
-                  <KeyRound size={18} />
+                  <KeyRound size={20} />
                 </div>
                 <div>
-                  <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>
-                    {authModalCredentials.isReset ? 'Dealer Password Reset' : 'Dealer Login Created'}
+                  <h3 style={{ fontSize: 17, fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
+                    {authModalCredentials.isReset ? 'Dealer Password Reset' : 'Dealer Password Created'}
                   </h3>
-                  <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{authModalCredentials.storeName}</div>
+                  <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{authModalCredentials.storeName}</div>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setAuthModalCredentials(null)}
-                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: 4,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
                 aria-label="Close credentials modal"
               >
-                <X size={18} />
+                <X size={20} />
               </button>
             </div>
 
             <div
               style={{
-                background: 'rgba(245, 158, 11, 0.08)',
-                border: '1px solid rgba(245, 158, 11, 0.3)',
+                background: 'rgba(245, 158, 11, 0.1)',
+                border: '1px solid rgba(245, 158, 11, 0.35)',
                 padding: '12px 14px',
-                borderRadius: 'var(--radius-sm)',
-                fontSize: 12,
+                borderRadius: 'var(--radius-md, 8px)',
+                fontSize: 12.5,
                 color: 'var(--warning-text, #b45309)',
                 marginBottom: 18,
                 display: 'flex',
@@ -1470,7 +1553,7 @@ export const DealersView: React.FC<DealersViewProps> = ({
                 lineHeight: 1.5,
               }}
             >
-              <AlertCircle size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+              <AlertCircle size={18} style={{ flexShrink: 0, marginTop: 1 }} />
               <div>
                 <strong>Notice:</strong> This temporary password is shown only once. Save/share it securely. The dealer will be required to change it after first login.
               </div>
@@ -1481,7 +1564,7 @@ export const DealersView: React.FC<DealersViewProps> = ({
               <div
                 style={{
                   background: 'var(--bg-surface-secondary)',
-                  padding: '10px 14px',
+                  padding: '12px 14px',
                   borderRadius: 'var(--radius-sm)',
                   border: '1px solid var(--border-subtle)',
                   display: 'flex',
@@ -1490,8 +1573,10 @@ export const DealersView: React.FC<DealersViewProps> = ({
                 }}
               >
                 <div>
-                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 2, fontWeight: 500 }}>Dealer ID</div>
-                  <div className="mono font-bold" style={{ fontSize: 14, color: 'var(--text-primary)' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 2, fontWeight: 600, textTransform: 'uppercase' }}>
+                    Dealer ID
+                  </div>
+                  <div className="mono font-bold" style={{ fontSize: 15, color: 'var(--text-primary)' }}>
                     {authModalCredentials.dealerCode}
                   </div>
                 </div>
@@ -1500,7 +1585,7 @@ export const DealersView: React.FC<DealersViewProps> = ({
               <div
                 style={{
                   background: 'var(--bg-surface-secondary)',
-                  padding: '10px 14px',
+                  padding: '12px 14px',
                   borderRadius: 'var(--radius-sm)',
                   border: '1px solid var(--border-subtle)',
                   display: 'flex',
@@ -1509,8 +1594,10 @@ export const DealersView: React.FC<DealersViewProps> = ({
                 }}
               >
                 <div>
-                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 2, fontWeight: 500 }}>Login ID</div>
-                  <div className="mono font-bold" style={{ fontSize: 14, color: 'var(--text-primary)' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 2, fontWeight: 600, textTransform: 'uppercase' }}>
+                    Login ID
+                  </div>
+                  <div className="mono font-bold" style={{ fontSize: 15, color: 'var(--text-primary)' }}>
                     {authModalCredentials.loginId}
                   </div>
                 </div>
@@ -1524,7 +1611,7 @@ export const DealersView: React.FC<DealersViewProps> = ({
                   className="btn btn-secondary btn-sm"
                   style={{ display: 'flex', alignItems: 'center', gap: 4 }}
                 >
-                  {copiedLoginId ? <Check size={12} color="var(--success)" /> : <Copy size={12} />}
+                  {copiedLoginId ? <Check size={13} color="var(--success)" /> : <Copy size={13} />}
                   <span>{copiedLoginId ? 'Copied' : 'Copy'}</span>
                 </button>
               </div>
@@ -1536,42 +1623,72 @@ export const DealersView: React.FC<DealersViewProps> = ({
                   borderRadius: 'var(--radius-sm)',
                   border: '1px solid var(--border-subtle)',
                   display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  gap: 12,
+                  flexDirection: 'column',
+                  gap: 8,
                 }}
               >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 3, fontWeight: 500 }}>Temporary Password</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>
+                    Temporary Password
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-secondary)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      fontSize: 12,
+                    }}
+                    title={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                    <span>{showPassword ? 'Hide' : 'Show'}</span>
+                  </button>
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 10,
+                  }}
+                >
                   <div
                     className="mono font-bold"
                     style={{
-                      fontSize: 15,
+                      fontSize: 16,
                       color: 'var(--primary)',
                       wordBreak: 'break-all',
                       userSelect: 'all',
-                      background: 'var(--bg-canvas, rgba(0,0,0,0.03))',
-                      padding: '4px 8px',
-                      borderRadius: 4,
+                      background: 'var(--bg-canvas, #f8fafc)',
+                      padding: '8px 12px',
+                      borderRadius: 6,
                       border: '1px dashed var(--border-subtle)',
+                      flex: 1,
+                      letterSpacing: showPassword ? 'normal' : '0.2em',
                     }}
                   >
-                    {authModalCredentials.temporaryPassword}
+                    {showPassword ? authModalCredentials.temporaryPassword : '••••••••••••••••••••••'}
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(authModalCredentials.temporaryPassword);
+                      setCopiedPass(true);
+                      setTimeout(() => setCopiedPass(false), 2500);
+                    }}
+                    className="btn btn-secondary btn-sm"
+                    style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, height: 38 }}
+                  >
+                    {copiedPass ? <Check size={13} color="var(--success)" /> : <Copy size={13} />}
+                    <span>{copiedPass ? 'Copied' : 'Copy'}</span>
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(authModalCredentials.temporaryPassword);
-                    setCopiedPass(true);
-                    setTimeout(() => setCopiedPass(false), 2500);
-                  }}
-                  className="btn btn-secondary btn-sm"
-                  style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}
-                >
-                  {copiedPass ? <Check size={12} color="var(--success)" /> : <Copy size={12} />}
-                  <span>{copiedPass ? 'Copied' : 'Copy'}</span>
-                </button>
               </div>
             </div>
 
@@ -1611,7 +1728,8 @@ export const DealersView: React.FC<DealersViewProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    const fullCreds = `Dealer Login Credentials\nDealer ID: ${authModalCredentials.dealerCode}\nStore: ${authModalCredentials.storeName}\nLogin ID: ${authModalCredentials.loginId}\nTemporary Password: ${authModalCredentials.temporaryPassword}\n\nNote: This temporary password is shown only once. You will be required to change it after first login.`;
+                    const loginUrl = 'https://crm-two-orcin-18.vercel.app/login';
+                    const fullCreds = `Dealer Login Credentials\n\nStore: ${authModalCredentials.storeName}\nDealer ID: ${authModalCredentials.dealerCode}\nLogin ID: ${authModalCredentials.loginId}\nTemporary Password: ${authModalCredentials.temporaryPassword}\nLogin URL: ${loginUrl}\n\nInstruction: Please login using the temporary password above. You will be required to change your password immediately after first login.`;
                     navigator.clipboard.writeText(fullCreds);
                     setCopiedCredentials(true);
                     setTimeout(() => setCopiedCredentials(false), 2500);
@@ -1628,7 +1746,8 @@ export const DealersView: React.FC<DealersViewProps> = ({
                   onClick={() => {
                     const rawPhone = (authModalCredentials.dealerPhone || '').replace(/\D/g, '');
                     const cleanPhone = rawPhone.length === 10 ? `91${rawPhone}` : rawPhone;
-                    const msg = `Hello ${authModalCredentials.storeName}, your dealer portal credentials for Alpha Mobile Gallery CRM:\n\nDealer ID: ${authModalCredentials.dealerCode}\nLogin ID: ${authModalCredentials.loginId}\nTemporary Password: ${authModalCredentials.temporaryPassword}\n\nPlease login and change your password upon first access.`;
+                    const loginUrl = 'https://crm-two-orcin-18.vercel.app/login';
+                    const msg = `Dealer Portal Credentials\n\nStore: ${authModalCredentials.storeName}\nDealer ID: ${authModalCredentials.dealerCode}\nLogin ID: ${authModalCredentials.loginId}\nTemporary Password: ${authModalCredentials.temporaryPassword}\nLogin URL: ${loginUrl}\n\nInstruction: Please login using the temporary password above. You will be required to change your password immediately after first login.`;
                     const waUrl = cleanPhone
                       ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`
                       : `https://wa.me/?text=${encodeURIComponent(msg)}`;
@@ -1658,7 +1777,7 @@ export const DealersView: React.FC<DealersViewProps> = ({
                   className="btn btn-primary"
                   style={{ minWidth: 100 }}
                 >
-                  Done
+                  Close
                 </button>
               </div>
             </div>

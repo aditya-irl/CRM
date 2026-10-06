@@ -142,10 +142,10 @@ describe('Production Dealer Authentication & Backend RLAC Integration Tests', ()
     expect(resA.body.data.loginId).toBe(dealerACode);
     expect(typeof resA.body.data.temporaryPassword).toBe('string');
     expect(resA.body.data.temporaryPassword.length).toBeGreaterThanOrEqual(20);
-    expect(resA.body.temporaryPassword).toBe(resA.body.data.temporaryPassword);
-    expect(resA.body.user).toBeDefined();
-    expect(resA.body.user.role).toBe(UserRole.DEALER);
-    expect(resA.body.user.dealerId).toBe(dealerAId);
+    expect(resA.body.temporaryPassword).toBeUndefined();
+    expect(resA.body.data.user).toBeDefined();
+    expect(resA.body.data.user.role).toBe(UserRole.DEALER);
+    expect(resA.body.data.user.dealerId).toBe(dealerAId);
     expect(resA.body.data.mustChangePassword).toBe(true);
     dealerATempPassword = resA.body.data.temporaryPassword;
 
@@ -489,9 +489,9 @@ describe('Production Dealer Authentication & Backend RLAC Integration Tests', ()
     expect(resetRes.body.data.loginId).toBe(dealerACode);
     expect(typeof resetRes.body.data.temporaryPassword).toBe('string');
     expect(resetRes.body.data.temporaryPassword.length).toBeGreaterThanOrEqual(20);
-    expect(resetRes.body.temporaryPassword).toBe(resetRes.body.data.temporaryPassword);
-    expect(resetRes.body.user).toBeDefined();
-    expect(resetRes.body.user.dealerId).toBe(dealerAId);
+    expect(resetRes.body.temporaryPassword).toBeUndefined();
+    expect(resetRes.body.data.user).toBeDefined();
+    expect(resetRes.body.data.user.dealerId).toBe(dealerAId);
     expect(resetRes.body.data.mustChangePassword).toBe(true);
 
     const newResetPassword = resetRes.body.data.temporaryPassword;

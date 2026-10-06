@@ -60,7 +60,7 @@ describe('Dealer Credential Provisioning Flow & UI Verification', () => {
     expect(html).toContain('Add New Partner Store');
   });
 
-  test('3. WhatsApp message formatter correctly encodes dealer credentials and phone number', () => {
+  test('3. WhatsApp message formatter correctly encodes dealer credentials, login URL, and instructions', () => {
     const dealerPhone = '9876543210';
     const cleanPhone = dealerPhone.replace(/\D/g, '');
     const targetPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
@@ -68,13 +68,34 @@ describe('Dealer Credential Provisioning Flow & UI Verification', () => {
     const dealerCode = 'DLR-000101';
     const loginId = 'DLR-000101';
     const temporaryPassword = 'xK9$mP2#vL8*qR5^wN3!';
+    const loginUrl = 'https://crm-two-orcin-18.vercel.app/login';
 
-    const msg = `Hello ${storeName}, your dealer portal credentials for Alpha Mobile Gallery CRM:\n\nDealer ID: ${dealerCode}\nLogin ID: ${loginId}\nTemporary Password: ${temporaryPassword}\n\nPlease login and change your password upon first access.`;
+    const msg = `Dealer Portal Credentials\n\nStore: ${storeName}\nDealer ID: ${dealerCode}\nLogin ID: ${loginId}\nTemporary Password: ${temporaryPassword}\nLogin URL: ${loginUrl}\n\nInstruction: Please login using the temporary password above. You will be required to change your password immediately after first login.`;
     const waUrl = `https://wa.me/${targetPhone}?text=${encodeURIComponent(msg)}`;
 
     expect(waUrl).toContain('https://wa.me/919876543210?text=');
-    expect(decodeURIComponent(waUrl)).toContain(temporaryPassword);
-    expect(decodeURIComponent(waUrl)).toContain(dealerCode);
-    expect(decodeURIComponent(waUrl)).toContain(loginId);
+    const decoded = decodeURIComponent(waUrl);
+    expect(decoded).toContain(temporaryPassword);
+    expect(decoded).toContain(dealerCode);
+    expect(decoded).toContain(loginId);
+    expect(decoded).toContain(loginUrl);
+    expect(decoded).toContain('Instruction: Please login using the temporary password above');
+  });
+
+  test('4. Full credentials copy text contains required metadata and notice', () => {
+    const storeName = 'Alpha Mobile Dadri';
+    const dealerCode = 'DLR-000101';
+    const loginId = 'DLR-000101';
+    const temporaryPassword = 'xK9$mP2#vL8*qR5^wN3!';
+    const loginUrl = 'https://crm-two-orcin-18.vercel.app/login';
+
+    const fullCreds = `Dealer Login Credentials\n\nStore: ${storeName}\nDealer ID: ${dealerCode}\nLogin ID: ${loginId}\nTemporary Password: ${temporaryPassword}\nLogin URL: ${loginUrl}\n\nInstruction: Please login using the temporary password above. You will be required to change your password immediately after first login.`;
+
+    expect(fullCreds).toContain(`Store: ${storeName}`);
+    expect(fullCreds).toContain(`Dealer ID: ${dealerCode}`);
+    expect(fullCreds).toContain(`Login ID: ${loginId}`);
+    expect(fullCreds).toContain(`Temporary Password: ${temporaryPassword}`);
+    expect(fullCreds).toContain(`Login URL: ${loginUrl}`);
+    expect(fullCreds).toContain('You will be required to change your password immediately');
   });
 });
