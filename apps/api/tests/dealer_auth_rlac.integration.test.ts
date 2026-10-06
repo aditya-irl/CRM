@@ -141,13 +141,24 @@ describe('Production Dealer Authentication & Backend RLAC Integration Tests', ()
     expect(resA.body.data.dealerId).toBe(dealerAId);
     expect(resA.body.data.loginId).toBe(dealerACode);
     expect(typeof resA.body.data.temporaryPassword).toBe('string');
-    expect(resA.body.data.temporaryPassword.length).toBeGreaterThan(8);
+    expect(resA.body.data.temporaryPassword.length).toBeGreaterThanOrEqual(20);
+    expect(resA.body.temporaryPassword).toBe(resA.body.data.temporaryPassword);
+    expect(resA.body.user).toBeDefined();
+    expect(resA.body.user.role).toBe(UserRole.DEALER);
+    expect(resA.body.user.dealerId).toBe(dealerAId);
+    expect(resA.body.data.mustChangePassword).toBe(true);
     dealerATempPassword = resA.body.data.temporaryPassword;
 
-    // Verify linked user account
-    const userRes = await queryPostgres('SELECT id, role, dealer_id FROM users WHERE dealer_id = $1', [dealerAId]);
+    // Verify linked user account and hash in database
+    const userRes = await queryPostgres(
+      'SELECT id, role, dealer_id, password_hash, must_change_password FROM users WHERE dealer_id = $1',
+      [dealerAId]
+    );
     expect(userRes.rows.length).toBe(1);
     expect(userRes.rows[0].role).toBe(UserRole.DEALER);
+    expect(userRes.rows[0].must_change_password).toBe(true);
+    expect(userRes.rows[0].password_hash).toMatch(/^\$2[aby]\$\d{2}\$/);
+    expect(userRes.rows[0].password_hash).not.toContain(dealerATempPassword);
     dealerAUserId = userRes.rows[0].id;
 
     // Create Dealer B account
@@ -157,8 +168,11 @@ describe('Production Dealer Authentication & Backend RLAC Integration Tests', ()
 
     expect(resB.status).toBe(201);
     expect(resB.body.success).toBe(true);
+    expect(resB.body.data.temporaryPassword.length).toBeGreaterThanOrEqual(20);
+    expect(resB.body.data.mustChangePassword).toBe(true);
     dealerBTempPassword = resB.body.data.temporaryPassword;
     const userBRes = await queryPostgres('SELECT id FROM users WHERE dealer_id = $1', [dealerBId]);
+    expect(userBRes.rows.length).toBe(1);
     dealerBUserId = userBRes.rows[0].id;
   });
 
@@ -411,5 +425,162 @@ describe('Production Dealer Authentication & Backend RLAC Integration Tests', ()
       expect(stateStr).not.toContain(dealerATempPassword);
       expect(stateStr).not.toContain('password');
     }
+  });
+
+  // Test 19: Forced password change on first login
+  it('19. Dealer first login requires password change and successful change clears must_change_password', async () => {
+    // 1. Initial login indicates mustChangePassword: true
+    const loginRes = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: dealerACode, password: dealerATempPassword });
+    expect(loginRes.status).toBe(200);
+    expect(loginRes.body.data.user.mustChangePassword).toBe(true);
+
+    const token = loginRes.body.data.tokens.accessToken;
+
+    // 2. Dealer changes password via /api/v1/auth/change-password
+    const newPermanentPassword = 'DealerPermanent@2026#Secure';
+    const changeRes = await request(app)
+      .post('/api/v1/auth/change-password')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        currentPassword: dealerATempPassword,
+        newPassword: newPermanentPassword,
+      });
+
+    expect(changeRes.status).toBe(200);
+    expect(changeRes.body.success).toBe(true);
+
+    // 3. Database state: must_change_password is now false
+    const userDb = await queryPostgres(
+      'SELECT must_change_password, password_hash FROM users WHERE id = $1',
+      [dealerAUserId]
+    );
+    expect(userDb.rows[0].must_change_password).toBe(false);
+    expect(userDb.rows[0].password_hash).not.toContain(newPermanentPassword);
+
+    // 4. /api/v1/auth/me profile reflects mustChangePassword: false
+    const meRes = await request(app)
+      .get('/api/v1/auth/me')
+      .set('Authorization', `Bearer ${token}`);
+    expect(meRes.status).toBe(200);
+    expect(meRes.body.data.mustChangePassword).toBe(false);
+
+    // 5. Subsequent login with new password succeeds and mustChangePassword is false
+    const reloginRes = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: dealerACode, password: newPermanentPassword });
+    expect(reloginRes.status).toBe(200);
+    expect(reloginRes.body.data.user.mustChangePassword).toBe(false);
+
+    dealerATempPassword = newPermanentPassword;
+  });
+
+  // Test 20: Admin can reset dealer password
+  it('20. Admin can reset dealer password: creates new 20+ char password, sets must_change_password=true, invalidates old', async () => {
+    // 1. Trigger password reset by Admin
+    const resetRes = await request(app)
+      .post(`/api/v1/dealers/${dealerAId}/reset-password`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(resetRes.status).toBe(200);
+    expect(resetRes.body.success).toBe(true);
+    expect(resetRes.body.data.dealerId).toBe(dealerAId);
+    expect(resetRes.body.data.loginId).toBe(dealerACode);
+    expect(typeof resetRes.body.data.temporaryPassword).toBe('string');
+    expect(resetRes.body.data.temporaryPassword.length).toBeGreaterThanOrEqual(20);
+    expect(resetRes.body.temporaryPassword).toBe(resetRes.body.data.temporaryPassword);
+    expect(resetRes.body.user).toBeDefined();
+    expect(resetRes.body.user.dealerId).toBe(dealerAId);
+    expect(resetRes.body.data.mustChangePassword).toBe(true);
+
+    const newResetPassword = resetRes.body.data.temporaryPassword;
+    expect(newResetPassword).not.toBe(dealerATempPassword);
+
+    // 2. Database state: must_change_password is true again
+    const userDb = await queryPostgres(
+      'SELECT must_change_password, password_hash FROM users WHERE id = $1',
+      [dealerAUserId]
+    );
+    expect(userDb.rows[0].must_change_password).toBe(true);
+    expect(userDb.rows[0].password_hash).toMatch(/^\$2[aby]\$\d{2}\$/);
+    expect(userDb.rows[0].password_hash).not.toContain(newResetPassword);
+
+    // 3. Old password stops working
+    const oldLogin = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: dealerACode, password: dealerATempPassword });
+    expect(oldLogin.status).toBe(401);
+
+    // 4. New temporary password works and prompts for password change
+    const newLogin = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: dealerACode, password: newResetPassword });
+    expect(newLogin.status).toBe(200);
+    expect(newLogin.body.data.user.mustChangePassword).toBe(true);
+
+    dealerATempPassword = newResetPassword;
+  });
+
+  // Test 21: RBAC: Dealer and Collection Agent cannot create dealer accounts or reset dealer passwords
+  it('21. Dealer and Collection Agent cannot create dealer login accounts or reset dealer passwords (403)', async () => {
+    // Login as collection agent
+    const agentLogin = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: 'agent.rahul@financecrm.com', password: 'Agent@123456' });
+    expect(agentLogin.status).toBe(200);
+    const agentToken = agentLogin.body.data.tokens.accessToken;
+
+    // Agent attempts create login account -> 403
+    const agentCreate = await request(app)
+      .post(`/api/v1/dealers/${dealerAId}/login-account`)
+      .set('Authorization', `Bearer ${agentToken}`);
+    expect(agentCreate.status).toBe(403);
+
+    // Agent attempts reset dealer password -> 403
+    const agentReset = await request(app)
+      .post(`/api/v1/dealers/${dealerAId}/reset-password`)
+      .set('Authorization', `Bearer ${agentToken}`);
+    expect(agentReset.status).toBe(403);
+
+    // Dealer attempts create login account -> 403
+    const dealerCreate = await request(app)
+      .post(`/api/v1/dealers/${dealerBId}/login-account`)
+      .set('Authorization', `Bearer ${dealerBToken}`);
+    expect(dealerCreate.status).toBe(403);
+
+    // Dealer attempts reset own or other dealer password -> 403
+    const dealerResetOwn = await request(app)
+      .post(`/api/v1/dealers/${dealerAId}/reset-password`)
+      .set('Authorization', `Bearer ${dealerBToken}`);
+    expect(dealerResetOwn.status).toBe(403);
+
+    const dealerResetOther = await request(app)
+      .post(`/api/v1/dealers/${dealerBId}/reset-password`)
+      .set('Authorization', `Bearer ${dealerBToken}`);
+    expect(dealerResetOther.status).toBe(403);
+  });
+
+  // Test 22: Plaintext password security & data integrity
+  it('22. Plaintext password is not stored anywhere in DB and business data remains intact', async () => {
+    // Verify no plaintext password column exists in users table
+    const columnsRes = await queryPostgres(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_name = 'users' AND column_name IN ('password', 'plaintext_password', 'temp_password', 'raw_password')
+    `);
+    expect(columnsRes.rows.length).toBe(0);
+
+    // Verify exactly one active user exists for dealer A
+    const countRes = await queryPostgres('SELECT COUNT(*) as count FROM users WHERE dealer_id = $1', [dealerAId]);
+    expect(Number(countRes.rows[0].count)).toBe(1);
+
+    // Verify loan and customer data untouched
+    const loanRes = await queryPostgres('SELECT id, principal_amount, status FROM loans WHERE id = $1', [loanAId]);
+    expect(loanRes.rows.length).toBe(1);
+    expect(loanRes.rows[0].status).toBe('ACTIVE');
+
+    const custRes = await queryPostgres('SELECT id, customer_code FROM customers WHERE id = $1', [customerAId]);
+    expect(custRes.rows.length).toBe(1);
   });
 });

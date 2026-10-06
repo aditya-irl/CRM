@@ -93,6 +93,12 @@ export interface IDealerLoginAccountResponse {
   loginId: string;
   temporaryPassword: string;
   mustChangePassword: boolean;
+  user?: {
+    id: string;
+    email: string;
+    role: UserRole;
+    dealerId: string;
+  };
 }
 
 export interface IUser {

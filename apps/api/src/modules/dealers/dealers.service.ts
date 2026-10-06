@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
 import { queryPostgres, runPostgresTransaction } from '../../database/postgres';
@@ -462,20 +463,39 @@ export class DealerService {
   }
 
   /**
-   * Helper to generate human-readable, high-entropy temporary passwords.
-   * e.g. TMS@2026#4817
+   * Helper to generate cryptographically secure, high-entropy temporary passwords (22+ characters).
+   * Uses crypto.randomInt and avoids visually ambiguous characters (O, 0, I, l, 1).
    */
-  public static generateTempPassword(storeName: string): string {
-    const words = storeName.trim().split(/\s+/);
-    let prefix = words
-      .map((w) => w[0]?.toUpperCase() || '')
-      .join('')
-      .replace(/[^A-Z]/g, '')
-      .slice(0, 4);
-    if (prefix.length < 2) prefix = 'DLR';
-    const year = new Date().getFullYear();
-    const randomDigits = Math.floor(1000 + Math.random() * 9000);
-    return `${prefix}@${year}#${randomDigits}`;
+  public static generateTempPassword(_storeName?: string): string {
+    const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // 24 chars (excluding I, O)
+    const lower = 'abcdefghijkmnopqrstuvwxyz'; // 25 chars (excluding l)
+    const digits = '23456789';                 // 8 chars (excluding 0, 1)
+    const special = '!@#$%^&*()_+-=';          // 14 chars
+    const all = upper + lower + digits + special; // 71 chars
+
+    const chars: string[] = [
+      upper[crypto.randomInt(upper.length)],
+      upper[crypto.randomInt(upper.length)],
+      lower[crypto.randomInt(lower.length)],
+      lower[crypto.randomInt(lower.length)],
+      digits[crypto.randomInt(digits.length)],
+      digits[crypto.randomInt(digits.length)],
+      special[crypto.randomInt(special.length)],
+      special[crypto.randomInt(special.length)],
+    ];
+
+    // Total 22 characters: fill remaining 14 chars from 'all'
+    for (let i = 0; i < 14; i++) {
+      chars.push(all[crypto.randomInt(all.length)]);
+    }
+
+    // Durstenfeld/Fisher-Yates shuffle using crypto.randomInt
+    for (let i = chars.length - 1; i > 0; i--) {
+      const j = crypto.randomInt(i + 1);
+      [chars[i], chars[j]] = [chars[j], chars[i]];
+    }
+
+    return chars.join('');
   }
 
   /**
@@ -541,6 +561,12 @@ export class DealerService {
       loginId: dealer.dealer_code,
       temporaryPassword: tempPassword,
       mustChangePassword: true,
+      user: {
+        id: userId,
+        email: dealer.dealer_code,
+        role: UserRole.DEALER,
+        dealerId: dealer.id,
+      },
     };
   }
 
@@ -586,6 +612,12 @@ export class DealerService {
       loginId: dealer.dealer_code,
       temporaryPassword: tempPassword,
       mustChangePassword: true,
+      user: {
+        id: targetUserId,
+        email: dealer.dealer_code,
+        role: UserRole.DEALER,
+        dealerId: dealer.id,
+      },
     };
   }
 

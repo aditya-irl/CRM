@@ -147,6 +147,8 @@ export class DealerController {
       res.status(201).json({
         success: true,
         data: result,
+        user: result.user,
+        temporaryPassword: result.temporaryPassword,
         message: 'Dealer login credentials generated successfully. Share the temporary password securely.',
         timestamp: new Date().toISOString(),
       });
@@ -164,6 +166,8 @@ export class DealerController {
       res.json({
         success: true,
         data: result,
+        user: result.user,
+        temporaryPassword: result.temporaryPassword,
         message: 'Dealer temporary password reset successfully.',
         timestamp: new Date().toISOString(),
       });

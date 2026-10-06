@@ -24,6 +24,7 @@ import {
   KeyRound,
   Copy,
   Check,
+  MessageSquare,
 } from 'lucide-react';
 
 const formatINR = (amount: number) => {
@@ -117,10 +118,15 @@ export const DealersView: React.FC<DealersViewProps> = ({
   const [authActionNotice, setAuthActionNotice] = useState<string | null>(null);
   const [authModalCredentials, setAuthModalCredentials] = useState<{
     storeName: string;
+    dealerCode: string;
+    dealerPhone?: string | null;
     loginId: string;
     temporaryPassword: string;
+    isReset?: boolean;
   } | null>(null);
   const [copiedPass, setCopiedPass] = useState(false);
+  const [copiedLoginId, setCopiedLoginId] = useState(false);
+  const [copiedCredentials, setCopiedCredentials] = useState(false);
 
   const handleCreateDealerLogin = async (dealer: IDealer) => {
     setAuthActionLoading(true);
@@ -129,8 +135,11 @@ export const DealersView: React.FC<DealersViewProps> = ({
       const res = await ApiClient.createDealerLogin(dealer.id);
       setAuthModalCredentials({
         storeName: dealer.storeName,
+        dealerCode: dealer.dealerCode,
+        dealerPhone: dealer.phone,
         loginId: res.loginId,
         temporaryPassword: res.temporaryPassword,
+        isReset: false,
       });
       const updated = await ApiClient.getDealerDetail(dealer.id);
       setDealerDetail(updated);
@@ -152,8 +161,11 @@ export const DealersView: React.FC<DealersViewProps> = ({
       const res = await ApiClient.resetDealerPassword(dealer.id);
       setAuthModalCredentials({
         storeName: dealer.storeName,
+        dealerCode: dealer.dealerCode,
+        dealerPhone: dealer.phone,
         loginId: res.loginId,
         temporaryPassword: res.temporaryPassword,
+        isReset: true,
       });
       const updated = await ApiClient.getDealerDetail(dealer.id);
       setDealerDetail(updated);
@@ -1409,13 +1421,13 @@ export const DealersView: React.FC<DealersViewProps> = ({
       {/* Temporary Password Display Modal */}
       {authModalCredentials && (
         <div className="crm-modal-backdrop" style={{ zIndex: 100 }}>
-          <div className="crm-modal" style={{ maxWidth: 460 }}>
+          <div className="crm-modal" style={{ maxWidth: 480 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <div
                   style={{
-                    width: 32,
-                    height: 32,
+                    width: 34,
+                    height: 34,
                     borderRadius: 'var(--radius-sm)',
                     background: 'var(--primary-subtle)',
                     color: 'var(--primary)',
@@ -1427,13 +1439,17 @@ export const DealersView: React.FC<DealersViewProps> = ({
                   <KeyRound size={18} />
                 </div>
                 <div>
-                  <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>Dealer Login Credentials</h3>
+                  <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>
+                    {authModalCredentials.isReset ? 'Dealer Password Reset' : 'Dealer Login Created'}
+                  </h3>
                   <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{authModalCredentials.storeName}</div>
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => setAuthModalCredentials(null)}
                 style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+                aria-label="Close credentials modal"
               >
                 <X size={18} />
               </button>
@@ -1443,41 +1459,29 @@ export const DealersView: React.FC<DealersViewProps> = ({
               style={{
                 background: 'rgba(245, 158, 11, 0.08)',
                 border: '1px solid rgba(245, 158, 11, 0.3)',
-                padding: '10px 14px',
+                padding: '12px 14px',
                 borderRadius: 'var(--radius-sm)',
                 fontSize: 12,
                 color: 'var(--warning-text, #b45309)',
-                marginBottom: 16,
+                marginBottom: 18,
                 display: 'flex',
                 alignItems: 'flex-start',
-                gap: 8,
+                gap: 10,
+                lineHeight: 1.5,
               }}
             >
-              <AlertCircle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+              <AlertCircle size={16} style={{ flexShrink: 0, marginTop: 2 }} />
               <div>
-                <strong>Secure Sharing Required:</strong> This temporary password is only displayed once and is securely hashed in the database. Share these credentials directly with the store partner.
+                <strong>Notice:</strong> This temporary password is shown only once. Save/share it securely. The dealer will be required to change it after first login.
               </div>
             </div>
 
+            {/* Credential Details Card */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
               <div
                 style={{
                   background: 'var(--bg-surface-secondary)',
-                  padding: 12,
-                  borderRadius: 'var(--radius-sm)',
-                  border: '1px solid var(--border-subtle)',
-                }}
-              >
-                <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 2 }}>Dealer Login ID</div>
-                <div className="mono font-bold" style={{ fontSize: 15, color: 'var(--text-primary)' }}>
-                  {authModalCredentials.loginId}
-                </div>
-              </div>
-
-              <div
-                style={{
-                  background: 'var(--bg-surface-secondary)',
-                  padding: 12,
+                  padding: '10px 14px',
                   borderRadius: 'var(--radius-sm)',
                   border: '1px solid var(--border-subtle)',
                   display: 'flex',
@@ -1486,37 +1490,177 @@ export const DealersView: React.FC<DealersViewProps> = ({
                 }}
               >
                 <div>
-                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 2 }}>Temporary Password</div>
-                  <div className="mono font-bold" style={{ fontSize: 16, color: 'var(--primary)' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 2, fontWeight: 500 }}>Dealer ID</div>
+                  <div className="mono font-bold" style={{ fontSize: 14, color: 'var(--text-primary)' }}>
+                    {authModalCredentials.dealerCode}
+                  </div>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  background: 'var(--bg-surface-secondary)',
+                  padding: '10px 14px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--border-subtle)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 2, fontWeight: 500 }}>Login ID</div>
+                  <div className="mono font-bold" style={{ fontSize: 14, color: 'var(--text-primary)' }}>
+                    {authModalCredentials.loginId}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(authModalCredentials.loginId);
+                    setCopiedLoginId(true);
+                    setTimeout(() => setCopiedLoginId(false), 2500);
+                  }}
+                  className="btn btn-secondary btn-sm"
+                  style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                >
+                  {copiedLoginId ? <Check size={12} color="var(--success)" /> : <Copy size={12} />}
+                  <span>{copiedLoginId ? 'Copied' : 'Copy'}</span>
+                </button>
+              </div>
+
+              <div
+                style={{
+                  background: 'var(--bg-surface-secondary)',
+                  padding: '12px 14px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--border-subtle)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: 12,
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 3, fontWeight: 500 }}>Temporary Password</div>
+                  <div
+                    className="mono font-bold"
+                    style={{
+                      fontSize: 15,
+                      color: 'var(--primary)',
+                      wordBreak: 'break-all',
+                      userSelect: 'all',
+                      background: 'var(--bg-canvas, rgba(0,0,0,0.03))',
+                      padding: '4px 8px',
+                      borderRadius: 4,
+                      border: '1px dashed var(--border-subtle)',
+                    }}
+                  >
                     {authModalCredentials.temporaryPassword}
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => {
-                    navigator.clipboard.writeText(
-                      `Store Partner Login\nStore: ${authModalCredentials.storeName}\nLogin ID: ${authModalCredentials.loginId}\nTemporary Password: ${authModalCredentials.temporaryPassword}`
-                    );
+                    navigator.clipboard.writeText(authModalCredentials.temporaryPassword);
                     setCopiedPass(true);
-                    setTimeout(() => setCopiedPass(false), 3000);
+                    setTimeout(() => setCopiedPass(false), 2500);
                   }}
                   className="btn btn-secondary btn-sm"
-                  style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}
                 >
-                  {copiedPass ? <Check size={13} color="var(--success)" /> : <Copy size={13} />}
-                  <span>{copiedPass ? 'Copied!' : 'Copy Info'}</span>
+                  {copiedPass ? <Check size={12} color="var(--success)" /> : <Copy size={12} />}
+                  <span>{copiedPass ? 'Copied' : 'Copy'}</span>
                 </button>
               </div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button
-                type="button"
-                onClick={() => setAuthModalCredentials(null)}
-                className="btn btn-primary"
-              >
-                Done
-              </button>
+            {/* Action Buttons */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(authModalCredentials.temporaryPassword);
+                    setCopiedPass(true);
+                    setTimeout(() => setCopiedPass(false), 2500);
+                  }}
+                  className="btn btn-secondary"
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 13 }}
+                >
+                  {copiedPass ? <Check size={14} color="var(--success)" /> : <Copy size={14} />}
+                  <span>{copiedPass ? 'Password Copied!' : 'Copy Password'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(authModalCredentials.loginId);
+                    setCopiedLoginId(true);
+                    setTimeout(() => setCopiedLoginId(false), 2500);
+                  }}
+                  className="btn btn-secondary"
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 13 }}
+                >
+                  {copiedLoginId ? <Check size={14} color="var(--success)" /> : <Copy size={14} />}
+                  <span>{copiedLoginId ? 'Login ID Copied!' : 'Copy Login ID'}</span>
+                </button>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const fullCreds = `Dealer Login Credentials\nDealer ID: ${authModalCredentials.dealerCode}\nStore: ${authModalCredentials.storeName}\nLogin ID: ${authModalCredentials.loginId}\nTemporary Password: ${authModalCredentials.temporaryPassword}\n\nNote: This temporary password is shown only once. You will be required to change it after first login.`;
+                    navigator.clipboard.writeText(fullCreds);
+                    setCopiedCredentials(true);
+                    setTimeout(() => setCopiedCredentials(false), 2500);
+                  }}
+                  className="btn btn-secondary"
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 13 }}
+                >
+                  {copiedCredentials ? <Check size={14} color="var(--success)" /> : <Copy size={14} />}
+                  <span>{copiedCredentials ? 'Credentials Copied!' : 'Copy Credentials'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const rawPhone = (authModalCredentials.dealerPhone || '').replace(/\D/g, '');
+                    const cleanPhone = rawPhone.length === 10 ? `91${rawPhone}` : rawPhone;
+                    const msg = `Hello ${authModalCredentials.storeName}, your dealer portal credentials for Alpha Mobile Gallery CRM:\n\nDealer ID: ${authModalCredentials.dealerCode}\nLogin ID: ${authModalCredentials.loginId}\nTemporary Password: ${authModalCredentials.temporaryPassword}\n\nPlease login and change your password upon first access.`;
+                    const waUrl = cleanPhone
+                      ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`
+                      : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+                    window.open(waUrl, '_blank', 'noopener,noreferrer');
+                  }}
+                  className="btn btn-secondary"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    fontSize: 13,
+                    color: '#16a34a',
+                    borderColor: 'rgba(22, 163, 74, 0.3)',
+                    background: 'rgba(22, 163, 74, 0.05)',
+                  }}
+                >
+                  <MessageSquare size={14} />
+                  <span>WhatsApp Dealer</span>
+                </button>
+              </div>
+
+              <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => setAuthModalCredentials(null)}
+                  className="btn btn-primary"
+                  style={{ minWidth: 100 }}
+                >
+                  Done
+                </button>
+              </div>
             </div>
           </div>
         </div>
