@@ -2058,5 +2058,149 @@ export class ReportService {
       recordCount: exportData.rows.length,
     };
   }
+
+  /**
+   * Dealer-Wise Financing Analytics
+   * Calculates Total Financed Principal (Retail Price - Down Payment = net_disbursed_amount),
+   * down payments, collections, outstanding, overdue, penalties, and loan volume by dealer.
+   */
+  public static async getDealerFinancingAnalytics(
+    user: AuthenticatedUser,
+    query: { dealerId?: string; preset?: string; startDate?: string; endDate?: string }
+  ) {
+    if (user.role === UserRole.COLLECTION_AGENT) {
+      throw new ForbiddenError('Collection agents cannot access dealer financing analytics');
+    }
+
+    let targetDealerId: string | undefined = query.dealerId;
+    if (user.role === UserRole.DEALER) {
+      if (!user.dealerId) throw new ForbiddenError('Dealer context missing');
+      if (query.dealerId && query.dealerId !== user.dealerId) {
+        targetDealerId = '00000000-0000-0000-0000-000000000000';
+      } else {
+        targetDealerId = user.dealerId;
+      }
+    }
+
+    const { startDate, endDate, preset } = resolveDateRange(query.preset, query.startDate, query.endDate);
+
+    const isAllTime = query.preset === 'all' || (!query.preset && !query.startDate && !query.endDate);
+    const dateFilterClause = isAllTime
+      ? ''
+      : `AND l.disbursement_date >= '${startDate}' AND l.disbursement_date <= '${endDate}'`;
+
+    let dealerFilterClause = '';
+    const dealerParams: any[] = [];
+    if (targetDealerId) {
+      dealerParams.push(targetDealerId);
+      dealerFilterClause = `WHERE d.id = $1`;
+    }
+
+    const sql = `
+      SELECT
+        d.id AS dealer_id,
+        d.store_name,
+        d.dealer_code,
+        d.owner_name AS contact_person,
+        d.phone,
+        d.status,
+        COUNT(DISTINCT l.customer_id) AS total_customers,
+        COUNT(l.id) AS total_loans,
+        COUNT(l.id) AS total_phones_financed,
+        COALESCE(SUM(l.net_disbursed_amount), 0) AS total_financed_principal,
+        COALESCE(SUM(l.down_payment), 0) AS total_down_payment,
+        COALESCE(SUM(l.total_paid), 0) AS total_collected,
+        COALESCE(SUM(l.outstanding_balance), 0) AS total_outstanding,
+        COALESCE(SUM(
+          (SELECT COALESCE(SUM(e.remaining_amount), 0)
+           FROM emi_installments e
+           WHERE e.loan_id = l.id AND e.status = 'OVERDUE')
+        ), 0) AS total_overdue,
+        COALESCE(SUM(
+          (SELECT COALESCE(SUM(e.penalty_amount), 0)
+           FROM emi_installments e
+           WHERE e.loan_id = l.id)
+        ), 0) AS total_penalty,
+        COUNT(CASE WHEN l.status = 'ACTIVE' THEN 1 END) AS active_loans,
+        COUNT(CASE WHEN l.status = 'CLOSED' THEN 1 END) AS completed_loans,
+        COUNT(CASE WHEN l.status = 'PENDING_APPROVAL' THEN 1 END) AS pending_loans,
+        COUNT(CASE WHEN l.status = 'REJECTED' THEN 1 END) AS rejected_loans,
+        COUNT(CASE WHEN EXISTS (
+          SELECT 1 FROM emi_installments e WHERE e.loan_id = l.id AND e.status = 'OVERDUE'
+        ) THEN 1 END) AS overdue_loans
+      FROM dealers d
+      LEFT JOIN loans l ON l.dealer_id = d.id ${dateFilterClause}
+      ${dealerFilterClause}
+      GROUP BY d.id, d.store_name, d.dealer_code, d.owner_name, d.phone, d.status
+      ORDER BY total_financed_principal DESC, d.store_name ASC
+    `;
+
+    const res = await queryPostgres(sql, dealerParams);
+    const dealers = res.rows.map((r: any) => ({
+      dealerId: r.dealer_id,
+      storeName: r.store_name,
+      dealerCode: r.dealer_code,
+      contactPerson: r.contact_person,
+      phone: r.phone,
+      status: r.status,
+      totalCustomers: parseInt(r.total_customers, 10),
+      totalLoans: parseInt(r.total_loans, 10),
+      totalPhonesFinanced: parseInt(r.total_phones_financed, 10),
+      totalFinancedPrincipal: Number(r.total_financed_principal),
+      totalDownPayment: Number(r.total_down_payment),
+      totalCollected: Number(r.total_collected),
+      totalOutstanding: Number(r.total_outstanding),
+      totalOverdue: Number(r.total_overdue),
+      totalPenalty: Number(r.total_penalty),
+      activeLoans: parseInt(r.active_loans, 10),
+      completedLoans: parseInt(r.completed_loans, 10),
+      pendingLoans: parseInt(r.pending_loans, 10),
+      rejectedLoans: parseInt(r.rejected_loans, 10),
+      overdueLoans: parseInt(r.overdue_loans, 10),
+    }));
+
+    const summary = dealers.reduce((acc, d) => ({
+      totalCustomers: acc.totalCustomers + d.totalCustomers,
+      totalLoans: acc.totalLoans + d.totalLoans,
+      totalPhonesFinanced: acc.totalPhonesFinanced + d.totalPhonesFinanced,
+      totalFinancedPrincipal: acc.totalFinancedPrincipal + d.totalFinancedPrincipal,
+      totalDownPayment: acc.totalDownPayment + d.totalDownPayment,
+      totalAmountCollected: acc.totalAmountCollected + d.totalCollected,
+      totalOutstanding: acc.totalOutstanding + d.totalOutstanding,
+      totalOverdue: acc.totalOverdue + d.totalOverdue,
+      totalPenalty: acc.totalPenalty + d.totalPenalty,
+      activeLoans: acc.activeLoans + d.activeLoans,
+      completedLoans: acc.completedLoans + d.completedLoans,
+      pendingLoans: acc.pendingLoans + d.pendingLoans,
+      rejectedLoans: acc.rejectedLoans + d.rejectedLoans,
+      overdueLoans: acc.overdueLoans + d.overdueLoans,
+    }), {
+      totalCustomers: 0,
+      totalLoans: 0,
+      totalPhonesFinanced: 0,
+      totalFinancedPrincipal: 0,
+      totalDownPayment: 0,
+      totalAmountCollected: 0,
+      totalOutstanding: 0,
+      totalOverdue: 0,
+      totalPenalty: 0,
+      activeLoans: 0,
+      completedLoans: 0,
+      pendingLoans: 0,
+      rejectedLoans: 0,
+      overdueLoans: 0,
+    });
+
+    return {
+      filter: {
+        preset: query.preset || 'all',
+        startDate: isAllTime ? null : startDate,
+        endDate: isAllTime ? null : endDate,
+        dealerId: targetDealerId || null,
+      },
+      summary,
+      dealers,
+    };
+  }
 }
 

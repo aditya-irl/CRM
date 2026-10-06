@@ -41,8 +41,8 @@ export class LocalStorageProvider implements StorageProvider {
   public async getSignedUrl(params: PresignedUrlParams): Promise<string> {
     const effectiveExpiry = Math.min(params.expiresInSeconds, MAX_KYC_URL_EXPIRY_SECONDS);
     const token = crypto.randomBytes(16).toString('hex');
-    // Clearly namespaced as a local dev URL — not routable externally
-    return `local://dev-storage/${params.key}?operation=${params.operation}&X-Dev-Expires=${effectiveExpiry}&X-Dev-Token=${token}`;
+    // Routable local-vault URL for development & testing
+    return `/api/v1/kyc/local-vault?key=${encodeURIComponent(params.key)}&operation=${params.operation}&X-Dev-Expires=${effectiveExpiry}&X-Dev-Token=${token}`;
   }
 
   public async exists(key: string): Promise<boolean> {

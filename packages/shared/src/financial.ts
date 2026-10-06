@@ -8,7 +8,9 @@ Decimal.set({ precision: 20, rounding: Decimal.ROUND_HALF_EVEN });
 export interface LoanCalculationInput {
   principalAmount: number | string;
   downPayment?: number | string;
-  annualInterestRate: number | string; // e.g., 0.12 (12%) or 12 for percentage input
+  annualInterestRate?: number | string; // Maintained for schema compatibility
+  monthlyInterestRate?: number | string; // Monthly Flat Simple Interest rate (e.g. 1 for 1%, 1.5 for 1.5%)
+  interestRate?: number | string;
   tenureMonths: number;
   installmentFrequency?: RepaymentFrequency;
   interestCalcMethod?: InterestMethod;
@@ -34,7 +36,8 @@ export interface LoanCalculationResult {
   principalAmount: number;
   downPayment: number;
   netDisbursedAmount: number;
-  annualInterestRate: number;
+  annualInterestRate: number; // Kept for schema compatibility
+  monthlyInterestRate: number; // Authoritative monthly rate
   interestCalcMethod: InterestMethod;
   tenureMonths: number;
   installmentFrequency: RepaymentFrequency;
@@ -69,8 +72,15 @@ export function getNextDueDate(startDate: Date | string, installmentIndex: numbe
 
 /**
  * Deterministic Financial Amortization Engine
- * Handles Flat Rate and Reducing Balance methods with Banker's Rounding
+ * Handles Monthly Flat Simple Interest with Banker's Rounding
  * and Last-Cent Discrepancy Adjustment.
+ *
+ * Authoritative Formula:
+ * Financed Principal = Retail Price - Down Payment
+ * Monthly Interest = Financed Principal × Monthly Interest Rate / 100
+ * Total Interest = Monthly Interest × Tenure
+ * Total Payable = Financed Principal + Total Interest
+ * Monthly EMI = Total Payable / Tenure
  */
 export function generateAmortizationSchedule(input: LoanCalculationInput): LoanCalculationResult {
   const principalRaw = new Decimal(input.principalAmount);
@@ -86,10 +96,14 @@ export function generateAmortizationSchedule(input: LoanCalculationInput): LoanC
     throw new Error('Tenure in months must be a positive integer.');
   }
 
-  // Normalize annual interest rate: if input is > 1 (e.g., 14 for 14%), convert to 0.14
-  let annualRate = new Decimal(input.annualInterestRate);
-  if (annualRate.greaterThan(1)) {
-    annualRate = annualRate.dividedBy(100);
+  // Monthly Interest Rate: accept monthlyInterestRate, interestRate, or annualInterestRate
+  const rawRateInput = input.monthlyInterestRate ?? input.interestRate ?? input.annualInterestRate ?? 1;
+  const rawRate = new Decimal(rawRateInput);
+
+  // Normalize rate: if passed as fraction (e.g. 0.01 for 1% or 0.015 for 1.5%), convert to percent
+  let monthlyRatePercent = rawRate;
+  if (monthlyRatePercent.greaterThan(0) && monthlyRatePercent.lessThan(0.05)) {
+    monthlyRatePercent = monthlyRatePercent.times(100);
   }
 
   const frequency = input.installmentFrequency || RepaymentFrequency.MONTHLY;
@@ -97,23 +111,14 @@ export function generateAmortizationSchedule(input: LoanCalculationInput): LoanC
 
   // Calculate total installments based on frequency
   let totalInstallments = tenureMonths;
-  let periodicRate: Decimal;
-
-  if (frequency === RepaymentFrequency.MONTHLY) {
-    totalInstallments = tenureMonths;
-    periodicRate = annualRate.dividedBy(12);
-  } else if (frequency === RepaymentFrequency.BI_WEEKLY) {
-    totalInstallments = Math.round(tenureMonths * 2.17); // ~26 periods/yr
-    periodicRate = annualRate.dividedBy(26);
+  if (frequency === RepaymentFrequency.BI_WEEKLY) {
+    totalInstallments = Math.round(tenureMonths * 2.17);
   } else if (frequency === RepaymentFrequency.WEEKLY) {
-    totalInstallments = Math.round(tenureMonths * 4.33); // ~52 periods/yr
-    periodicRate = annualRate.dividedBy(52);
+    totalInstallments = Math.round(tenureMonths * 4.33);
   } else if (frequency === RepaymentFrequency.DAILY) {
     totalInstallments = tenureMonths * 30;
-    periodicRate = annualRate.dividedBy(365);
   } else {
     totalInstallments = tenureMonths;
-    periodicRate = annualRate.dividedBy(12);
   }
 
   const disbDateStr = typeof input.disbursementDate === 'string'
@@ -135,104 +140,61 @@ export function generateAmortizationSchedule(input: LoanCalculationInput): LoanC
   let baseEmi: Decimal;
   const schedule: CalculatedInstallment[] = [];
 
-  if (method === InterestMethod.FLAT_RATE) {
-    // Flat Rate Formula: Total Interest = NetDisbursed * AnnualRate * (TenureMonths / 12)
-    const years = new Decimal(tenureMonths).dividedBy(12);
-    totalInterest = netDisbursed.times(annualRate).times(years).toDecimalPlaces(2, Decimal.ROUND_HALF_EVEN);
-    totalPayable = netDisbursed.plus(totalInterest);
+  // Monthly Flat Simple Interest Calculation:
+  // Monthly Interest = Financed Principal × Monthly Interest Rate / 100
+  const monthlyRateFraction = monthlyRatePercent.dividedBy(100);
+  const monthlyInterest = netDisbursed.times(monthlyRateFraction).toDecimalPlaces(2, Decimal.ROUND_HALF_EVEN);
 
-    baseEmi = totalPayable.dividedBy(totalInstallments).toDecimalPlaces(2, Decimal.ROUND_HALF_EVEN);
-    const basePrincipalComponent = netDisbursed.dividedBy(totalInstallments).toDecimalPlaces(2, Decimal.ROUND_HALF_EVEN);
-    const baseInterestComponent = totalInterest.dividedBy(totalInstallments).toDecimalPlaces(2, Decimal.ROUND_HALF_EVEN);
+  // Total Interest = Monthly Interest × Tenure
+  totalInterest = monthlyInterest.times(tenureMonths).toDecimalPlaces(2, Decimal.ROUND_HALF_EVEN);
 
-    let accruedPrincipal = new Decimal(0);
-    let accruedInterest = new Decimal(0);
-    let accruedTotal = new Decimal(0);
+  // Total Payable = Financed Principal + Total Interest
+  totalPayable = netDisbursed.plus(totalInterest);
 
-    for (let i = 1; i <= totalInstallments; i++) {
-      const isLast = i === totalInstallments;
-      const dueDate = getNextDueDate(firstEmiDateStr, i - 1, frequency);
+  // Monthly EMI = Total Payable / Tenure
+  baseEmi = totalPayable.dividedBy(totalInstallments).toDecimalPlaces(2, Decimal.ROUND_HALF_EVEN);
+  const basePrincipalComponent = netDisbursed.dividedBy(totalInstallments).toDecimalPlaces(2, Decimal.ROUND_HALF_EVEN);
+  const baseInterestComponent = totalInterest.dividedBy(totalInstallments).toDecimalPlaces(2, Decimal.ROUND_HALF_EVEN);
 
-      let pComp: Decimal;
-      let iComp: Decimal;
-      let emiAmount: Decimal;
+  let accruedPrincipal = new Decimal(0);
+  let accruedInterest = new Decimal(0);
+  let accruedTotal = new Decimal(0);
 
-      if (!isLast) {
-        pComp = basePrincipalComponent;
-        iComp = baseInterestComponent;
-        emiAmount = pComp.plus(iComp);
+  for (let i = 1; i <= totalInstallments; i++) {
+    const isLast = i === totalInstallments;
+    const dueDate = getNextDueDate(firstEmiDateStr, i - 1, frequency);
 
-        accruedPrincipal = accruedPrincipal.plus(pComp);
-        accruedInterest = accruedInterest.plus(iComp);
-        accruedTotal = accruedTotal.plus(emiAmount);
-      } else {
-        // Last installment delta adjustment to guarantee exact conservation
-        pComp = netDisbursed.minus(accruedPrincipal);
-        iComp = totalInterest.minus(accruedInterest);
-        emiAmount = totalPayable.minus(accruedTotal);
-      }
+    let pComp: Decimal;
+    let iComp: Decimal;
+    let emiAmount: Decimal;
 
-      schedule.push({
-        installmentNumber: i,
-        dueDate,
-        principalComponent: toFixed2(pComp),
-        interestComponent: toFixed2(iComp),
-        expectedAmount: toFixed2(emiAmount),
-        paidAmount: 0.0,
-        remainingAmount: toFixed2(emiAmount),
-        penaltyAmount: 0.0,
-        status: EMIStatus.UPCOMING,
-        daysOverdue: 0,
-      });
-    }
-  } else {
-    // Reducing Balance Formula: E = P * r * (1+r)^n / ((1+r)^n - 1)
-    if (periodicRate.isZero()) {
-      baseEmi = netDisbursed.dividedBy(totalInstallments).toDecimalPlaces(2, Decimal.ROUND_HALF_EVEN);
-    } else {
-      const onePlusRPowN = periodicRate.plus(1).pow(totalInstallments);
-      const numerator = netDisbursed.times(periodicRate).times(onePlusRPowN);
-      const denominator = onePlusRPowN.minus(1);
-      baseEmi = numerator.dividedBy(denominator).toDecimalPlaces(2, Decimal.ROUND_HALF_EVEN);
-    }
+    if (!isLast) {
+      pComp = basePrincipalComponent;
+      iComp = baseInterestComponent;
+      emiAmount = pComp.plus(iComp);
 
-    let remainingPrincipal = new Decimal(netDisbursed);
-    let accruedInterest = new Decimal(0);
-    let accruedTotal = new Decimal(0);
-
-    for (let i = 1; i <= totalInstallments; i++) {
-      const isLast = i === totalInstallments;
-      const dueDate = getNextDueDate(firstEmiDateStr, i - 1, frequency);
-
-      let iComp = remainingPrincipal.times(periodicRate).toDecimalPlaces(2, Decimal.ROUND_HALF_EVEN);
-      let pComp = baseEmi.minus(iComp);
-      let emiAmount = baseEmi;
-
-      if (isLast || pComp.greaterThan(remainingPrincipal)) {
-        pComp = remainingPrincipal;
-        emiAmount = pComp.plus(iComp);
-      }
-
-      remainingPrincipal = remainingPrincipal.minus(pComp);
+      accruedPrincipal = accruedPrincipal.plus(pComp);
       accruedInterest = accruedInterest.plus(iComp);
       accruedTotal = accruedTotal.plus(emiAmount);
-
-      schedule.push({
-        installmentNumber: i,
-        dueDate,
-        principalComponent: toFixed2(pComp),
-        interestComponent: toFixed2(iComp),
-        expectedAmount: toFixed2(emiAmount),
-        paidAmount: 0.0,
-        remainingAmount: toFixed2(emiAmount),
-        penaltyAmount: 0.0,
-        status: EMIStatus.UPCOMING,
-        daysOverdue: 0,
-      });
+    } else {
+      // Last installment delta adjustment to guarantee exact conservation
+      pComp = netDisbursed.minus(accruedPrincipal);
+      iComp = totalInterest.minus(accruedInterest);
+      emiAmount = totalPayable.minus(accruedTotal);
     }
 
-    totalInterest = accruedInterest;
-    totalPayable = netDisbursed.plus(totalInterest);
+    schedule.push({
+      installmentNumber: i,
+      dueDate,
+      principalComponent: toFixed2(pComp),
+      interestComponent: toFixed2(iComp),
+      expectedAmount: toFixed2(emiAmount),
+      paidAmount: 0.0,
+      remainingAmount: toFixed2(emiAmount),
+      penaltyAmount: 0.0,
+      status: EMIStatus.UPCOMING,
+      daysOverdue: 0,
+    });
   }
 
   const maturityDate = schedule[schedule.length - 1]?.dueDate || firstEmiDateStr;
@@ -241,7 +203,8 @@ export function generateAmortizationSchedule(input: LoanCalculationInput): LoanC
     principalAmount: toFixed2(principalRaw),
     downPayment: toFixed2(downPayment),
     netDisbursedAmount: toFixed2(netDisbursed),
-    annualInterestRate: annualRate.toNumber(),
+    annualInterestRate: monthlyRatePercent.toNumber(),
+    monthlyInterestRate: monthlyRatePercent.toNumber(),
     interestCalcMethod: method,
     tenureMonths,
     installmentFrequency: frequency,

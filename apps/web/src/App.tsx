@@ -42,6 +42,7 @@ export const App: React.FC = () => {
   const [selectedDealerIdForSettlements, setSelectedDealerIdForSettlements] = useState<string | null>(null);
   const [selectedAgentIdForCollections, setSelectedAgentIdForCollections] = useState<string | null>(null);
   const [showAddCustomerWizard, setShowAddCustomerWizard] = useState(false);
+  const [customersRefreshTrigger, setCustomersRefreshTrigger] = useState(0);
 
   useEffect(() => {
     if (user) {
@@ -169,7 +170,7 @@ export const App: React.FC = () => {
       case 'direct-collections':
         return <DirectCollectionsView />;
       case 'customers':
-        return <CustomersView />;
+        return <CustomersView refreshTrigger={customersRefreshTrigger} />;
       case 'queue':
         return <QueueView />;
       case 'loans':
@@ -205,6 +206,7 @@ export const App: React.FC = () => {
         onClose={() => setShowAddCustomerWizard(false)}
         onSuccess={() => {
           setShowAddCustomerWizard(false);
+          setCustomersRefreshTrigger((prev) => prev + 1);
           setActiveTab('customers');
         }}
       />

@@ -125,7 +125,8 @@ export class LoanService {
     });
 
     const loanId = uuidv4();
-    const targetStatus = data.status || LoanStatus.ACTIVE;
+    // Rule: Dealer-originated loans MUST require Super Admin approval and cannot start ACTIVE or APPROVED
+    const targetStatus = user.role === UserRole.DEALER ? LoanStatus.PENDING_APPROVAL : (data.status || LoanStatus.ACTIVE);
 
     // 5. Generate unique loan account number
     const countRes = await queryPostgres<{ count: string }>('SELECT COUNT(*) as count FROM loans');
@@ -317,6 +318,10 @@ export class LoanService {
    * Approve a pending loan application.
    */
   public static async approveLoan(id: string, user: AuthenticatedUser, data?: { notes?: string }) {
+    if (user.role === UserRole.DEALER) {
+      throw new ForbiddenError('Dealers cannot approve loans. Super Admin approval is required.');
+    }
+
     const loanRes = await queryPostgres('SELECT * FROM loans WHERE id = $1', [id]);
     if (loanRes.rows.length === 0) {
       throw new NotFoundError('Loan not found');
@@ -327,10 +332,51 @@ export class LoanService {
       throw new AppError(`Cannot approve loan with current status '${loan.status}'`);
     }
 
-    await queryPostgres(
-      'UPDATE loans SET status = $1, updated_at = NOW() WHERE id = $2',
-      [LoanStatus.APPROVED, id]
-    );
+    await runPostgresTransaction(async (client) => {
+      await client.query(
+        'UPDATE loans SET status = $1, approval_notes = $2, updated_at = NOW() WHERE id = $3',
+        [LoanStatus.APPROVED, data?.notes || null, id]
+      );
+
+      // Check if installments already exist; if not, generate them atomically upon approval
+      const emiCheck = await client.query('SELECT COUNT(*) as count FROM emi_installments WHERE loan_id = $1', [id]);
+      const existingCount = parseInt(emiCheck.rows[0]?.count || '0', 10);
+      if (existingCount === 0) {
+        const calc = generateAmortizationSchedule({
+          principalAmount: Number(loan.principal_amount),
+          downPayment: Number(loan.down_payment),
+          annualInterestRate: Number(loan.annual_interest_rate),
+          tenureMonths: Number(loan.tenure_months),
+          installmentFrequency: loan.installment_frequency as RepaymentFrequency,
+          interestCalcMethod: loan.interest_calc_method as InterestMethod,
+          disbursementDate: loan.disbursement_date,
+          firstEmiDate: loan.first_emi_date,
+        });
+
+        const insertEmiSql = `
+          INSERT INTO emi_installments (
+            id, loan_id, customer_id, installment_number, due_date, principal_component,
+            interest_component, expected_amount, paid_amount, remaining_amount, penalty_amount,
+            status, days_overdue, created_at, updated_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0.00, $9, 0.00, $10, 0, NOW(), NOW())
+        `;
+
+        for (const emi of calc.schedule) {
+          await client.query(insertEmiSql, [
+            uuidv4(),
+            id,
+            loan.customer_id,
+            emi.installmentNumber,
+            emi.dueDate,
+            emi.principalComponent,
+            emi.interestComponent,
+            emi.expectedAmount,
+            emi.remainingAmount,
+            emi.status,
+          ]);
+        }
+      }
+    });
 
     // Sync to SQLite
     try {
@@ -360,6 +406,10 @@ export class LoanService {
    * Reject a pending loan application.
    */
   public static async rejectLoan(id: string, user: AuthenticatedUser, data: { reason: string }) {
+    if (user.role === UserRole.DEALER) {
+      throw new ForbiddenError('Dealers cannot reject loans. Super Admin approval is required.');
+    }
+
     const loanRes = await queryPostgres('SELECT * FROM loans WHERE id = $1', [id]);
     if (loanRes.rows.length === 0) {
       throw new NotFoundError('Loan not found');
@@ -371,8 +421,8 @@ export class LoanService {
     }
 
     await queryPostgres(
-      'UPDATE loans SET status = $1, updated_at = NOW() WHERE id = $2',
-      [LoanStatus.REJECTED, id]
+      'UPDATE loans SET status = $1, rejection_reason = $2, updated_at = NOW() WHERE id = $3',
+      [LoanStatus.REJECTED, data.reason, id]
     );
 
     // Sync to SQLite
@@ -400,6 +450,96 @@ export class LoanService {
   }
 
   /**
+   * Fetch all dealer-originated loans pending Super Admin approval.
+   */
+  public static async getPendingApprovals(user: AuthenticatedUser) {
+    if (user.role === UserRole.DEALER || user.role === UserRole.COLLECTION_AGENT) {
+      throw new ForbiddenError('Only administrators can access the loan approval queue');
+    }
+
+    const sql = `
+      SELECT
+        l.id,
+        l.loan_account_no,
+        l.customer_id,
+        c.full_name AS customer_name,
+        c.customer_code,
+        c.primary_phone AS customer_phone,
+        l.dealer_id,
+        d.store_name AS dealer_store_name,
+        d.dealer_code,
+        d.owner_name AS dealer_contact,
+        d.phone AS dealer_phone,
+        l.principal_amount,
+        l.down_payment,
+        l.net_disbursed_amount,
+        l.annual_interest_rate,
+        l.interest_calc_method,
+        l.tenure_months,
+        l.installment_frequency,
+        l.emi_amount,
+        l.total_interest,
+        l.total_payable,
+        l.disbursement_date,
+        l.first_emi_date,
+        l.status,
+        l.created_at,
+        u.full_name AS submitted_by_name,
+        u.role AS submitted_by_role,
+        (
+          SELECT COUNT(*)
+          FROM kyc_documents kd
+          WHERE kd.customer_id = l.customer_id
+        ) AS kyc_doc_count,
+        (
+          SELECT status
+          FROM kyc_documents kd
+          WHERE kd.customer_id = l.customer_id
+          ORDER BY kd.created_at DESC
+          LIMIT 1
+        ) AS latest_kyc_status
+      FROM loans l
+      JOIN customers c ON l.customer_id = c.id
+      LEFT JOIN dealers d ON l.dealer_id = d.id
+      LEFT JOIN users u ON l.created_by = u.id
+      WHERE l.status = 'PENDING_APPROVAL'
+      ORDER BY l.created_at DESC
+    `;
+
+    const res = await queryPostgres(sql);
+    return res.rows.map((row: any) => ({
+      id: row.id,
+      loanAccountNo: row.loan_account_no,
+      customerId: row.customer_id,
+      customerName: row.customer_name,
+      customerCode: row.customer_code,
+      customerPhone: row.customer_phone,
+      dealerId: row.dealer_id,
+      dealerStoreName: row.dealer_store_name || 'Direct / Head Office',
+      dealerCode: row.dealer_code,
+      dealerContact: row.dealer_contact,
+      dealerPhone: row.dealer_phone,
+      principalAmount: Number(row.principal_amount),
+      downPayment: Number(row.down_payment),
+      netDisbursedAmount: Number(row.net_disbursed_amount),
+      annualInterestRate: Number(row.annual_interest_rate),
+      monthlyInterestRate: Number(row.annual_interest_rate),
+      tenureMonths: Number(row.tenure_months),
+      installmentFrequency: row.installment_frequency,
+      emiAmount: Number(row.emi_amount),
+      totalInterest: Number(row.total_interest),
+      totalPayable: Number(row.total_payable),
+      disbursementDate: row.disbursement_date,
+      firstEmiDate: row.first_emi_date,
+      status: row.status,
+      createdAt: row.created_at,
+      submittedByName: row.submitted_by_name,
+      submittedByRole: row.submitted_by_role,
+      kycStatus: row.latest_kyc_status || (Number(row.kyc_doc_count) > 0 ? 'SUBMITTED' : 'PENDING'),
+    }));
+  }
+
+  /**
    * Disburse an approved loan and activate its repayment schedule.
    */
   public static async disburseLoan(
@@ -413,7 +553,10 @@ export class LoanService {
     }
 
     const loan = loanRes.rows[0];
-    if (loan.status !== LoanStatus.APPROVED && loan.status !== LoanStatus.PENDING_APPROVAL) {
+    if (loan.status === LoanStatus.PENDING_APPROVAL) {
+      throw new AppError('Dealer-originated loan is pending Super Admin approval and cannot be disbursed yet. Please approve the loan first.');
+    }
+    if (loan.status !== LoanStatus.APPROVED && loan.status !== LoanStatus.ACTIVE) {
       throw new AppError(`Cannot disburse loan with current status '${loan.status}'`);
     }
 

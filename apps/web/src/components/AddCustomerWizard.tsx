@@ -35,6 +35,52 @@ interface AddCustomerWizardProps {
   onSuccess: (customer: ICustomer, loan?: ILoan) => void;
 }
 
+const initialKycAttachments: AttachmentItem[] = [
+  {
+    id: 'kyc_aadhaar_front',
+    category: 'Aadhaar Front',
+    title: '',
+    file: null,
+    previewUrl: null,
+    mimeType: '',
+    fileSizeBytes: 0,
+    status: 'READY',
+  },
+  {
+    id: 'kyc_aadhaar_back',
+    category: 'Aadhaar Back',
+    title: '',
+    file: null,
+    previewUrl: null,
+    mimeType: '',
+    fileSizeBytes: 0,
+    status: 'READY',
+  },
+];
+
+const initialProductAttachments: AttachmentItem[] = [
+  {
+    id: 'prod_front',
+    category: 'Product Front View',
+    title: '',
+    file: null,
+    previewUrl: null,
+    mimeType: '',
+    fileSizeBytes: 0,
+    status: 'READY',
+  },
+  {
+    id: 'prod_invoice',
+    category: 'Invoice Proof Photo',
+    title: '',
+    file: null,
+    previewUrl: null,
+    mimeType: '',
+    fileSizeBytes: 0,
+    status: 'READY',
+  },
+];
+
 export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, onClose, onSuccess }) => {
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [dealers, setDealers] = useState<IDealer[]>([]);
@@ -43,21 +89,6 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
   const currentUser = ApiClient.getUser();
   const isDealer = currentUser?.role === UserRole.DEALER;
 
-  useEffect(() => {
-    if (isOpen) {
-      if (isDealer && currentUser?.dealerId) {
-        setSelectedDealerId(currentUser.dealerId);
-      }
-      ApiClient.getDealers(undefined, 'ACTIVE')
-        .then((data) => {
-          setDealers(data);
-          if (isDealer && currentUser?.dealerId) {
-            setSelectedDealerId(currentUser.dealerId);
-          }
-        })
-        .catch((err) => console.error('Failed to load active dealers', err));
-    }
-  }, [isOpen, isDealer, currentUser?.dealerId]);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -75,28 +106,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
   const [customerPhoto, setCustomerPhoto] = useState<MediaUploadResult | null>(null);
 
   // STEP 2: Dynamic KYC Documents (NO artificial limits)
-  const [kycAttachments, setKycAttachments] = useState<AttachmentItem[]>([
-    {
-      id: 'kyc_aadhaar_front',
-      category: 'Aadhaar Front',
-      title: '',
-      file: null,
-      previewUrl: null,
-      mimeType: '',
-      fileSizeBytes: 0,
-      status: 'READY',
-    },
-    {
-      id: 'kyc_aadhaar_back',
-      category: 'Aadhaar Back',
-      title: '',
-      file: null,
-      previewUrl: null,
-      mimeType: '',
-      fileSizeBytes: 0,
-      status: 'READY',
-    },
-  ]);
+  const [kycAttachments, setKycAttachments] = useState<AttachmentItem[]>([...initialKycAttachments]);
 
   // STEP 3: Product / Device Information & Dynamic Device Photos (NO artificial limits)
   const [productType, setProductType] = useState('Mobile Phone');
@@ -108,32 +118,11 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
 
-  const [productAttachments, setProductAttachments] = useState<AttachmentItem[]>([
-    {
-      id: 'prod_front',
-      category: 'Product Front View',
-      title: '',
-      file: null,
-      previewUrl: null,
-      mimeType: '',
-      fileSizeBytes: 0,
-      status: 'READY',
-    },
-    {
-      id: 'prod_invoice',
-      category: 'Invoice Proof Photo',
-      title: '',
-      file: null,
-      previewUrl: null,
-      mimeType: '',
-      fileSizeBytes: 0,
-      status: 'READY',
-    },
-  ]);
+  const [productAttachments, setProductAttachments] = useState<AttachmentItem[]>([...initialProductAttachments]);
 
   // STEP 4: EMI / Finance Configuration
   const [downPayment, setDownPayment] = useState<number>(5000);
-  const [annualRate, setAnnualRate] = useState<number>(14.0);
+  const [annualRate, setAnnualRate] = useState<number>(1.0);
   const [calcMethod, setCalcMethod] = useState<InterestMethod>(InterestMethod.FLAT_RATE);
   const [tenureMonths, setTenureMonths] = useState<number>(6);
   const [frequency, setFrequency] = useState<RepaymentFrequency>(RepaymentFrequency.MONTHLY);
@@ -146,6 +135,65 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
 
   // Final Success Summary State
   const [createdResult, setCreatedResult] = useState<{ customer: ICustomer; loan: ILoan } | null>(null);
+
+  const resetWizard = () => {
+    setCurrentStep(1);
+    setSubmitting(false);
+    setErrorMsg(null);
+    setCreatedResult(null);
+    setPreviewSchedule(null);
+    setSelectedDealerId(isDealer && currentUser?.dealerId ? currentUser.dealerId : '');
+    setFullName('');
+    setPrimaryPhone('');
+    setAlternatePhone('');
+    setAddressLine1('');
+    setAddressLine2('');
+    setLandmark('');
+    setCity('Delhi');
+    setState('Delhi');
+    setPincode('110001');
+    setAreaRoute('');
+    setCustomerPhoto(null);
+    setKycAttachments([...initialKycAttachments]);
+    setProductAttachments([...initialProductAttachments]);
+    setProductType('Mobile Phone');
+    setProductBrand('');
+    setProductModel('');
+    setImeiNumber('');
+    setSerialNumber('');
+    setProductPrice(30000);
+    setInvoiceNumber('');
+    setInvoiceDate(new Date().toISOString().split('T')[0]);
+    setDownPayment(5000);
+    setAnnualRate(1.0);
+    setCalcMethod(InterestMethod.FLAT_RATE);
+    setTenureMonths(6);
+    setFrequency(RepaymentFrequency.MONTHLY);
+    setDisbursementDate(new Date().toISOString().split('T')[0]);
+    setFirstEmiDate('');
+  };
+
+  const handleClose = () => {
+    resetWizard();
+    onClose();
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      resetWizard();
+      if (isDealer && currentUser?.dealerId) {
+        setSelectedDealerId(currentUser.dealerId);
+      }
+      ApiClient.getDealers(undefined, 'ACTIVE')
+        .then((data) => {
+          setDealers(data);
+          if (isDealer && currentUser?.dealerId) {
+            setSelectedDealerId(currentUser.dealerId);
+          }
+        })
+        .catch((err) => console.error('Failed to load active dealers', err));
+    }
+  }, [isOpen]);
 
   // Trigger server-authoritative preview calculation
   const handleFetchPreview = async () => {
@@ -333,7 +381,6 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
       }
 
       setCreatedResult({ customer: newCustomer, loan: newLoan! });
-      onSuccess(newCustomer, newLoan);
     } catch (err: any) {
       setErrorMsg(err.message || 'Error creating customer & loan agreement.');
     } finally {
@@ -372,7 +419,12 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={() => {
+              if (createdResult) {
+                onSuccess(createdResult.customer, createdResult.loan);
+              }
+              handleClose();
+            }}
             style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
           >
             <X size={20} />
@@ -461,7 +513,13 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
             )}
 
             <div style={{ marginTop: 24, display: 'flex', gap: 12 }}>
-              <button onClick={onClose} className="btn btn-primary btn-lg">
+              <button
+                onClick={() => {
+                  onSuccess(createdResult.customer, createdResult.loan);
+                  handleClose();
+                }}
+                className="btn btn-primary btn-lg"
+              >
                 Done & View Directory
               </button>
             </div>
@@ -915,15 +973,18 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
 
                     <div>
                       <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
-                        Interest Rate (% p.a.)
+                        Interest Rate (% per month)
                       </label>
                       <input
                         type="number"
-                        step="0.5"
+                        step="0.1"
                         className="form-input mono"
                         value={annualRate}
                         onChange={(e) => setAnnualRate(Number(e.target.value))}
                       />
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                        Monthly flat simple rate (e.g. 1.0% or 1.5% per month)
+                      </div>
                     </div>
 
                     <div>

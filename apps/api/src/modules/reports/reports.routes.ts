@@ -52,6 +52,27 @@ router.get(
 );
 
 /**
+ * Dealer-Wise Financing Analytics
+ * Total financed principal, down payment, collections, outstanding, overdue & volume
+ */
+router.get(
+  '/dealer-financing-analytics',
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER, UserRole.DEALER),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const stats = await ReportService.getDealerFinancingAnalytics(req.user!, req.query as any);
+      return res.json({
+        success: true,
+        data: stats,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
  * Dashboard stats: Organization-wide for Admins; Scoped portfolio for Agents.
  */
 router.get(

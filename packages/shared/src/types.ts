@@ -187,6 +187,7 @@ export interface ILoan {
   dealerStoreName?: string | null;
   dealerCode?: string | null;
   status: LoanStatus;
+  rejectionReason?: string | null;
   createdBy?: string | null;
   createdAt: string;
   updatedAt: string;

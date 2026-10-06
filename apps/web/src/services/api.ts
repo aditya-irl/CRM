@@ -513,6 +513,10 @@ export class ApiClient {
     return Array.isArray(res) ? res : res?.loans || [];
   }
 
+  public static async getPendingApprovals() {
+    return this.request<any[]>('/loans/pending-approvals');
+  }
+
   public static async getLoanDetail(id: string) {
     return this.request<{ loan: ILoan; installments: any[]; payments: any[] }>(`/loans/${id}`);
   }
@@ -1081,6 +1085,20 @@ export class ApiClient {
       }
     });
     return this.request<IFinanceReportResponse>(`/reports/custom?${params.toString()}`);
+  }
+
+  public static async getDealerFinancingAnalytics(paramsQuery: {
+    dealerId?: string;
+    preset?: string;
+    startDate?: string;
+    endDate?: string;
+  } = {}) {
+    const params = new URLSearchParams();
+    if (paramsQuery.dealerId) params.append('dealerId', paramsQuery.dealerId);
+    if (paramsQuery.preset) params.append('preset', paramsQuery.preset);
+    if (paramsQuery.startDate) params.append('startDate', paramsQuery.startDate);
+    if (paramsQuery.endDate) params.append('endDate', paramsQuery.endDate);
+    return this.request<any>(`/reports/dealer-financing-analytics?${params.toString()}`);
   }
 
   public static async downloadFinanceReportCsv(type: string, paramsQuery: Record<string, string> = {}) {

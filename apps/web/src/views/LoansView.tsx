@@ -29,12 +29,20 @@ export const LoansView: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 
+  // Portfolio Filtering & Approval Queue States
+  const [activeStatusTab, setActiveStatusTab] = useState<'ALL' | 'PENDING_APPROVAL' | 'ACTIVE' | 'CLOSED' | 'REJECTED'>('ALL');
+  const [pendingApprovalsList, setPendingApprovalsList] = useState<any[]>([]);
+  const [rejectingLoan, setRejectingLoan] = useState<any | null>(null);
+  const [rejectionReason, setRejectionReason] = useState<string>('');
+  const [submittingDecision, setSubmittingDecision] = useState(false);
+  const [decisionError, setDecisionError] = useState<string | null>(null);
+
   // Origination Modal State
   const [showOriginationModal, setShowOriginationModal] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [principalAmount, setPrincipalAmount] = useState<number>(50000);
   const [downPayment, setDownPayment] = useState<number>(0);
-  const [annualRate, setAnnualRate] = useState<number>(14.0);
+  const [annualRate, setAnnualRate] = useState<number>(1.0);
   const [calcMethod, setCalcMethod] = useState<InterestMethod>(InterestMethod.FLAT_RATE);
   const [tenureMonths, setTenureMonths] = useState<number>(12);
   const [frequency, setFrequency] = useState<RepaymentFrequency>(RepaymentFrequency.MONTHLY);
@@ -150,12 +158,16 @@ export const LoansView: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [loansData, custData] = await Promise.all([
+      const [loansData, custData, pendingData] = await Promise.all([
         ApiClient.getLoans(search || undefined),
         ApiClient.getCustomers(),
+        (currentUser?.role === UserRole.SUPER_ADMIN || currentUser?.role === UserRole.ADMIN || currentUser?.role === UserRole.BRANCH_MANAGER)
+          ? ApiClient.getPendingApprovals().catch(() => [])
+          : Promise.resolve([]),
       ]);
       setLoans(loansData);
       setCustomers(custData);
+      setPendingApprovalsList(pendingData || []);
       if (custData.length > 0 && !selectedCustomerId) {
         setSelectedCustomerId(custData[0].id);
       }
@@ -163,6 +175,45 @@ export const LoansView: React.FC = () => {
       console.error('Failed to load loans', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleApproveLoan = async (loanId: string) => {
+    if (!window.confirm('Are you sure you want to approve this dealer-originated loan? It will become approved and eligible for disbursement.')) {
+      return;
+    }
+    setSubmittingDecision(true);
+    try {
+      await ApiClient.approveLoan(loanId);
+      alert('Loan approved successfully.');
+      loadData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to approve loan');
+    } finally {
+      setSubmittingDecision(false);
+    }
+  };
+
+  const handleOpenRejectModal = (loan: any) => {
+    setRejectingLoan(loan);
+    setRejectionReason('');
+    setDecisionError(null);
+  };
+
+  const handleConfirmReject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rejectingLoan || !rejectionReason.trim()) return;
+    setSubmittingDecision(true);
+    setDecisionError(null);
+    try {
+      await ApiClient.rejectLoan(rejectingLoan.id, rejectionReason.trim());
+      alert('Loan rejected.');
+      setRejectingLoan(null);
+      loadData();
+    } catch (err: any) {
+      setDecisionError(err.message || 'Failed to reject loan');
+    } finally {
+      setSubmittingDecision(false);
     }
   };
 
@@ -254,12 +305,13 @@ export const LoansView: React.FC = () => {
         principalAmount: Number(principalAmount),
         downPayment: Number(downPayment),
         annualInterestRate: Number(annualRate),
+        monthlyInterestRate: Number(annualRate),
         interestCalcMethod: calcMethod,
         tenureMonths: Number(tenureMonths),
         installmentFrequency: frequency,
         disbursementDate: disbDate,
         firstEmiDate: emiStartDate,
-      });
+      } as any);
       setShowOriginationModal(false);
       setPreviewSchedule(null);
       setEmiStartDate('');
@@ -310,87 +362,248 @@ export const LoansView: React.FC = () => {
         </button>
       </div>
 
+      {/* Portfolio Status Filter Tabs */}
+      <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid var(--border-subtle)', paddingBottom: 10, flexWrap: 'wrap' }}>
+        <button
+          onClick={() => setActiveStatusTab('ALL')}
+          className={`btn btn-sm ${activeStatusTab === 'ALL' ? 'btn-primary' : 'btn-secondary'}`}
+        >
+          All Loans ({loans.length})
+        </button>
+        {(currentUser?.role === UserRole.SUPER_ADMIN || currentUser?.role === UserRole.ADMIN || currentUser?.role === UserRole.BRANCH_MANAGER) && (
+          <button
+            onClick={() => setActiveStatusTab('PENDING_APPROVAL')}
+            className={`btn btn-sm ${activeStatusTab === 'PENDING_APPROVAL' ? 'btn-primary' : 'btn-secondary'}`}
+            style={pendingApprovalsList.length > 0 ? { border: '1px solid var(--warning)', color: activeStatusTab === 'PENDING_APPROVAL' ? '#fff' : 'var(--warning-text)' } : {}}
+          >
+            Pending Approvals {pendingApprovalsList.length > 0 && <span className="badge badge-warning" style={{ marginLeft: 6 }}>{pendingApprovalsList.length}</span>}
+          </button>
+        )}
+        <button
+          onClick={() => setActiveStatusTab('ACTIVE')}
+          className={`btn btn-sm ${activeStatusTab === 'ACTIVE' ? 'btn-primary' : 'btn-secondary'}`}
+        >
+          Active Loans ({loans.filter((l) => (l.status || (l as any).status) === 'ACTIVE').length})
+        </button>
+        <button
+          onClick={() => setActiveStatusTab('CLOSED')}
+          className={`btn btn-sm ${activeStatusTab === 'CLOSED' ? 'btn-primary' : 'btn-secondary'}`}
+        >
+          Closed ({loans.filter((l) => (l.status || (l as any).status) === 'CLOSED').length})
+        </button>
+        <button
+          onClick={() => setActiveStatusTab('REJECTED')}
+          className={`btn btn-sm ${activeStatusTab === 'REJECTED' ? 'btn-primary' : 'btn-secondary'}`}
+        >
+          Rejected ({loans.filter((l) => (l.status || (l as any).status) === 'REJECTED').length})
+        </button>
+      </div>
+
       {/* Loans Table */}
       <div className="table-container">
-        <table className="crm-table">
-          <thead>
-            <tr>
-              <th>Loan Account</th>
-              <th>Borrower</th>
-              <th>Principal</th>
-              <th>Tenure</th>
-              <th>EMI</th>
-              <th>Total Payable</th>
-              <th>Total Paid</th>
-              <th>Outstanding</th>
-              <th>Status</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
+        {activeStatusTab === 'PENDING_APPROVAL' ? (
+          <table className="crm-table">
+            <thead>
               <tr>
-                <td colSpan={10} style={{ textAlign: 'center', padding: 32, color: 'var(--text-secondary)' }}>
-                  Loading loan accounts...
-                </td>
+                <th>Loan Account</th>
+                <th>Borrower</th>
+                <th>Partner Store / Dealer</th>
+                <th>Financed Principal</th>
+                <th>Down Payment</th>
+                <th>Monthly Rate</th>
+                <th>Tenure</th>
+                <th>EMI Amount</th>
+                <th>Start Date</th>
+                <th>KYC Status</th>
+                <th>Super Admin Approval</th>
               </tr>
-            ) : loans.length === 0 ? (
-              <tr>
-                <td colSpan={10} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
-                  No loan accounts found.
-                </td>
-              </tr>
-            ) : (
-              loans.map((loan) => (
-                <tr key={loan.id}>
-                  <td className="mono" style={{ fontWeight: 700, color: 'var(--primary)' }}>
-                    {loan.loanAccountNo || (loan as any).loan_account_no}
-                  </td>
-                  <td style={{ fontWeight: 600 }}>
-                    {(loan as any).customer_name || loan.customer?.fullName}
-                  </td>
-                  <td className="mono">{formatINR(loan.principalAmount || (loan as any).principal_amount)}</td>
-                  <td className="mono">{loan.tenureMonths || (loan as any).tenure_months} M</td>
-                  <td className="mono" style={{ fontWeight: 700, color: 'var(--warning-text)' }}>
-                    {formatINR(loan.emiAmount || (loan as any).emi_amount)}
-                  </td>
-                  <td className="mono">{formatINR(loan.totalPayable || (loan as any).total_payable)}</td>
-                  <td className="mono" style={{ color: 'var(--success-text)', fontWeight: 600 }}>
-                    {formatINR(loan.totalPaid || (loan as any).total_paid)}
-                  </td>
-                  <td className="mono" style={{ color: 'var(--danger-text)', fontWeight: 700 }}>
-                    {formatINR(loan.outstandingBalance || (loan as any).outstanding_balance)}
-                  </td>
-                  <td>
-                    <span className="badge badge-paid">
-                      {loan.status}
-                    </span>
-                  </td>
-                  <td>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button
-                        onClick={() => handleViewLoan(loan.id, 'schedule')}
-                        className="btn btn-secondary btn-sm"
-                        title="View complete EMI schedule"
-                      >
-                        <Eye size={13} />
-                        <span>Schedule</span>
-                      </button>
-                      <button
-                        onClick={() => handleViewLoan(loan.id, 'portal')}
-                        className="btn btn-secondary btn-sm"
-                        title="Manage Customer Portal Link"
-                      >
-                        <LinkIcon size={13} />
-                        <span>Portal</span>
-                      </button>
-                    </div>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={11} style={{ textAlign: 'center', padding: 32, color: 'var(--text-secondary)' }}>
+                    Loading pending approval queue...
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : pendingApprovalsList.length === 0 ? (
+                <tr>
+                  <td colSpan={11} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
+                    No dealer-originated loans pending approval. All applications are up to date.
+                  </td>
+                </tr>
+              ) : (
+                pendingApprovalsList.map((loan) => (
+                  <tr key={loan.id}>
+                    <td className="mono" style={{ fontWeight: 700, color: 'var(--primary)' }}>
+                      {loan.loanAccountNo}
+                    </td>
+                    <td>
+                      <div style={{ fontWeight: 600 }}>{loan.customerName}</div>
+                      <div className="mono" style={{ fontSize: 11, color: 'var(--text-muted)' }}>{loan.customerPhone}</div>
+                    </td>
+                    <td>
+                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{loan.dealerStoreName}</div>
+                      {loan.dealerCode && <div className="mono" style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{loan.dealerCode}</div>}
+                    </td>
+                    <td className="mono font-bold" style={{ color: 'var(--primary)' }}>
+                      {formatINR(loan.netDisbursedAmount || loan.principalAmount - loan.downPayment)}
+                    </td>
+                    <td className="mono">{formatINR(loan.downPayment)}</td>
+                    <td className="mono font-semibold">{loan.monthlyInterestRate || loan.annualInterestRate}% /mo</td>
+                    <td className="mono">{loan.tenureMonths} M</td>
+                    <td className="mono font-bold" style={{ color: 'var(--warning-text)' }}>
+                      {formatINR(loan.emiAmount)}
+                    </td>
+                    <td className="mono">{loan.firstEmiDate || 'Next month'}</td>
+                    <td>
+                      <span className={`badge ${loan.kycStatus === 'VERIFIED' ? 'badge-paid' : 'badge-warning'}`}>
+                        {loan.kycStatus || 'SUBMITTED'}
+                      </span>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button
+                          onClick={() => handleApproveLoan(loan.id)}
+                          className="btn btn-sm"
+                          style={{ background: 'var(--success)', color: '#fff', border: 'none' }}
+                          title="Approve loan application"
+                          disabled={submittingDecision}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          onClick={() => handleOpenRejectModal(loan)}
+                          className="btn btn-danger btn-sm"
+                          title="Reject loan with reason"
+                          disabled={submittingDecision}
+                        >
+                          Reject
+                        </button>
+                        <button
+                          onClick={() => handleViewLoan(loan.id, 'schedule')}
+                          className="btn btn-secondary btn-sm"
+                          title="View loan schedule details"
+                        >
+                          <Eye size={12} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        ) : (
+          <table className="crm-table">
+            <thead>
+              <tr>
+                <th>Loan Account</th>
+                <th>Borrower</th>
+                <th>Principal</th>
+                <th>Tenure</th>
+                <th>EMI</th>
+                <th>Total Payable</th>
+                <th>Total Paid</th>
+                <th>Outstanding</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={10} style={{ textAlign: 'center', padding: 32, color: 'var(--text-secondary)' }}>
+                    Loading loan accounts...
+                  </td>
+                </tr>
+              ) : (activeStatusTab === 'ALL' ? loans : loans.filter((l) => (l.status || (l as any).status) === activeStatusTab)).length === 0 ? (
+                <tr>
+                  <td colSpan={10} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
+                    No {activeStatusTab.toLowerCase()} loans found.
+                  </td>
+                </tr>
+              ) : (
+                (activeStatusTab === 'ALL' ? loans : loans.filter((l) => (l.status || (l as any).status) === activeStatusTab)).map((loan) => {
+                  const statusStr = loan.status || (loan as any).status;
+                  const isPending = statusStr === 'PENDING_APPROVAL';
+                  const isRejected = statusStr === 'REJECTED';
+                  const reason = loan.rejectionReason || (loan as any).rejection_reason;
+                  return (
+                    <tr key={loan.id}>
+                      <td className="mono" style={{ fontWeight: 700, color: 'var(--primary)' }}>
+                        {loan.loanAccountNo || (loan as any).loan_account_no}
+                      </td>
+                      <td style={{ fontWeight: 600 }}>
+                        {(loan as any).customer_name || loan.customer?.fullName}
+                      </td>
+                      <td className="mono">{formatINR(loan.principalAmount || (loan as any).principal_amount)}</td>
+                      <td className="mono">{loan.tenureMonths || (loan as any).tenure_months} M</td>
+                      <td className="mono" style={{ fontWeight: 700, color: 'var(--warning-text)' }}>
+                        {formatINR(loan.emiAmount || (loan as any).emi_amount)}
+                      </td>
+                      <td className="mono">{formatINR(loan.totalPayable || (loan as any).total_payable)}</td>
+                      <td className="mono" style={{ color: 'var(--success-text)', fontWeight: 600 }}>
+                        {formatINR(loan.totalPaid || (loan as any).total_paid)}
+                      </td>
+                      <td className="mono" style={{ color: 'var(--danger-text)', fontWeight: 700 }}>
+                        {formatINR(loan.outstandingBalance || (loan as any).outstanding_balance)}
+                      </td>
+                      <td>
+                        <span className={`badge ${isPending ? 'badge-warning' : isRejected ? 'badge-danger' : statusStr === 'APPROVED' ? 'badge-terracotta' : statusStr === 'CLOSED' ? 'badge-primary' : 'badge-paid'}`}>
+                          {statusStr}
+                        </span>
+                        {isRejected && reason && (
+                          <div style={{ fontSize: 11, color: 'var(--danger-text)', marginTop: 2, maxWidth: 160 }} title={reason}>
+                            {reason}
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          {isPending && (currentUser?.role === UserRole.SUPER_ADMIN || currentUser?.role === UserRole.ADMIN || currentUser?.role === UserRole.BRANCH_MANAGER) ? (
+                            <>
+                              <button
+                                onClick={() => handleApproveLoan(loan.id)}
+                                className="btn btn-sm"
+                                style={{ background: 'var(--success)', color: '#fff', border: 'none' }}
+                                title="Approve loan"
+                              >
+                                Approve
+                              </button>
+                              <button
+                                onClick={() => handleOpenRejectModal(loan)}
+                                className="btn btn-danger btn-sm"
+                                title="Reject loan"
+                              >
+                                Reject
+                              </button>
+                            </>
+                          ) : null}
+                          <button
+                            onClick={() => handleViewLoan(loan.id, 'schedule')}
+                            className="btn btn-secondary btn-sm"
+                            title="View complete EMI schedule"
+                          >
+                            <Eye size={13} />
+                            <span>Schedule</span>
+                          </button>
+                          <button
+                            onClick={() => handleViewLoan(loan.id, 'portal')}
+                            className="btn btn-secondary btn-sm"
+                            title="Manage Customer Portal Link"
+                          >
+                            <LinkIcon size={13} />
+                            <span>Portal</span>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        )}
       </div>
 
       {/* Modal 1: Loan Origination & Amortization Calculator */}
@@ -447,7 +660,9 @@ export const LoansView: React.FC = () => {
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>Annual Interest Rate (%)</label>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                    Interest Rate (% per month)
+                  </label>
                   <input
                     type="number"
                     step="0.1"
@@ -456,6 +671,9 @@ export const LoansView: React.FC = () => {
                     onChange={(e) => setAnnualRate(Number(e.target.value))}
                     required
                   />
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                    Monthly flat simple interest rate (e.g. 1.0% or 1.5%)
+                  </div>
                 </div>
 
                 <div>
@@ -1185,6 +1403,59 @@ export const LoansView: React.FC = () => {
                 Close
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Super Admin Rejection Reason Modal */}
+      {rejectingLoan && (
+        <div className="modal-overlay" style={{ zIndex: 3100 }} onClick={() => setRejectingLoan(null)}>
+          <div className="modal-content" style={{ width: '100%', maxWidth: 480, padding: 24 }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <AlertCircle size={20} color="var(--danger)" />
+                <h3 style={{ fontSize: 17, fontWeight: 800 }}>Reject Loan Application</h3>
+              </div>
+              <button onClick={() => setRejectingLoan(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
+              Rejecting loan <strong className="mono">{rejectingLoan.loanAccountNo || rejectingLoan.loan_account_no}</strong> for customer <strong>{rejectingLoan.customerName || rejectingLoan.customer_name}</strong>.
+              Please provide the mandatory rejection reason for regulatory compliance and partner store visibility.
+            </p>
+
+            {decisionError && (
+              <div style={{ padding: 10, background: 'var(--danger-bg)', border: '1px solid var(--danger-border)', borderRadius: 6, color: 'var(--danger-text)', fontSize: 12, marginBottom: 14 }}>
+                {decisionError}
+              </div>
+            )}
+
+            <form onSubmit={handleConfirmReject} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
+                  Rejection Reason <span style={{ color: 'var(--danger)' }}>*</span>
+                </label>
+                <textarea
+                  className="form-input"
+                  rows={3}
+                  placeholder="e.g. Incomplete KYC documentation, insufficient down payment, or customer credit risk"
+                  value={rejectionReason}
+                  onChange={(e) => setRejectionReason(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                <button type="button" onClick={() => setRejectingLoan(null)} className="btn btn-secondary btn-sm" disabled={submittingDecision}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-danger btn-sm" disabled={submittingDecision || !rejectionReason.trim()}>
+                  {submittingDecision ? 'Rejecting...' : 'Confirm Rejection'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

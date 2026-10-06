@@ -61,6 +61,27 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
 });
 
 /**
+ * GET /api/v1/loans/pending-approvals
+ * Fetch all loans pending Super Admin / Admin approval.
+ */
+router.get(
+  '/pending-approvals',
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await LoanService.getPendingApprovals(req.user!);
+      return res.json({
+        success: true,
+        data: result,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
  * GET /api/v1/loans/:id
  * Fetch loan details and full EMI amortization schedule (with IDOR protection).
  */

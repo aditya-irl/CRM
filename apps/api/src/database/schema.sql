@@ -97,7 +97,9 @@ CREATE TABLE IF NOT EXISTS loans (
     first_emi_date TEXT NOT NULL,
     maturity_date TEXT NOT NULL,
     assigned_agent_id TEXT REFERENCES users(id),
-    status TEXT NOT NULL DEFAULT 'ACTIVE', -- 'DRAFT', 'PENDING_APPROVAL', 'ACTIVE', 'CLOSED', 'DEFAULTED'
+    status TEXT NOT NULL DEFAULT 'ACTIVE', -- 'DRAFT', 'PENDING_APPROVAL', 'ACTIVE', 'CLOSED', 'DEFAULTED', 'APPROVED', 'REJECTED'
+    rejection_reason TEXT,
+    approval_notes TEXT,
     created_by TEXT REFERENCES users(id),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL

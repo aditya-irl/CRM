@@ -450,7 +450,7 @@ export class CustomerService {
         });
 
         const loanId = uuidv4();
-        const targetStatus = data.loan.status || LoanStatus.ACTIVE;
+        const targetStatus = user.role === UserRole.DEALER ? LoanStatus.PENDING_APPROVAL : (data.loan.status || LoanStatus.ACTIVE);
 
         const countLoanRes = await client.query<{ count: string }>('SELECT COUNT(*) as count FROM loans');
         const totalLoanCount = parseInt(countLoanRes.rows[0]?.count || '0', 10);

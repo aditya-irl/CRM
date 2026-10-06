@@ -65,6 +65,40 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [receiptData, setReceiptData] = useState<any | null>(null);
   const [receiptLoading, setReceiptLoading] = useState(false);
 
+  // Pending Approvals Alert State
+  const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(0);
+
+  // Dealer-Wise Financing Analytics State
+  const [dealersList, setDealersList] = useState<any[]>([]);
+  const [selectedDealerId, setSelectedDealerId] = useState<string>('');
+  const [dealerAnalyticsPreset, setDealerAnalyticsPreset] = useState<string>('this-month');
+  const [dealerStartDate, setDealerStartDate] = useState<string>('');
+  const [dealerEndDate, setDealerEndDate] = useState<string>('');
+  const [dealerAnalytics, setDealerAnalytics] = useState<any | null>(null);
+  const [loadingDealerAnalytics, setLoadingDealerAnalytics] = useState<boolean>(false);
+
+  const fetchDealerAnalytics = async (
+    targetDealerId = selectedDealerId,
+    targetPreset = dealerAnalyticsPreset,
+    start = dealerStartDate,
+    end = dealerEndDate
+  ) => {
+    setLoadingDealerAnalytics(true);
+    try {
+      const res = await ApiClient.getDealerFinancingAnalytics({
+        dealerId: targetDealerId || undefined,
+        preset: targetPreset,
+        startDate: targetPreset === 'custom' ? start : undefined,
+        endDate: targetPreset === 'custom' ? end : undefined,
+      });
+      setDealerAnalytics(res);
+    } catch (err) {
+      console.error('Failed to load dealer financing analytics', err);
+    } finally {
+      setLoadingDealerAnalytics(false);
+    }
+  };
+
   const fetchDashboardData = async (
     targetPreset = preset,
     start = customStartDate,
@@ -98,6 +132,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   useEffect(() => {
     fetchDashboardData(preset);
+
+    // Load pending approvals count for alert banner
+    ApiClient.getPendingApprovals()
+      .then((data) => setPendingApprovalsCount(Array.isArray(data) ? data.length : 0))
+      .catch(() => setPendingApprovalsCount(0));
+
+    // Load active dealers for analytics dropdown
+    ApiClient.getDealers(undefined, 'ACTIVE')
+      .then((data) => setDealersList(Array.isArray(data) ? data : []))
+      .catch(() => setDealersList([]));
+
+    fetchDealerAnalytics(selectedDealerId, dealerAnalyticsPreset);
   }, [preset]);
 
   const handlePresetChange = (newPreset: string) => {
@@ -202,6 +248,37 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           )}
         </div>
       </div>
+
+      {/* Pending Approvals Alert Banner */}
+      {pendingApprovalsCount > 0 && (
+        <div
+          style={{
+            padding: '12px 18px',
+            background: 'rgba(245, 158, 11, 0.1)',
+            border: '1px solid var(--warning)',
+            borderRadius: 'var(--radius-md, 8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <AlertCircle size={20} color="var(--warning-text, #b45309)" />
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--warning-text, #92400e)' }}>
+              Action Required: {pendingApprovalsCount} dealer-originated loan{pendingApprovalsCount > 1 ? 's are' : ' is'} pending Super Admin approval.
+            </span>
+          </div>
+          <button
+            onClick={() => onNavigateToTab?.('loans')}
+            className="btn btn-sm"
+            style={{ background: 'var(--warning, #f59e0b)', color: '#fff', border: 'none', fontWeight: 700 }}
+          >
+            Review Approval Queue →
+          </button>
+        </div>
+      )}
 
       {/* 2. Global Date Filter Bar */}
       <div
@@ -558,6 +635,199 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               {stats.agingBuckets.dpd90Plus.count} Overdue
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* 5.5 Dealer-Wise Financing Analytics (Requirements 23, 24, 25) */}
+      <div className="crm-card" style={{ padding: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Building2 size={18} color="var(--primary)" />
+              <h3 style={{ fontSize: 16, fontWeight: 800 }}>Partner Store Financing Analytics</h3>
+              <span className="badge badge-terracotta">CORE FINANCING</span>
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+              Aggregated loan origination, financed principal (Retail Price − Down Payment), down payments, and recovery performance per dealer.
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            {/* Dealer Selector */}
+            <select
+              className="form-select"
+              style={{ fontSize: 13, minWidth: 200 }}
+              value={selectedDealerId}
+              onChange={(e) => {
+                setSelectedDealerId(e.target.value);
+                fetchDealerAnalytics(e.target.value, dealerAnalyticsPreset);
+              }}
+            >
+              <option value="">All Partner Stores ({dealersList.length})</option>
+              {dealersList.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.storeName} ({d.dealerCode})
+                </option>
+              ))}
+            </select>
+
+            {/* Date Preset Buttons */}
+            <div style={{ display: 'flex', gap: 4 }}>
+              {[
+                { id: 'today', label: 'Today' },
+                { id: 'this-month', label: 'This Month' },
+                { id: 'this-year', label: 'This Year' },
+                { id: 'all', label: 'All Time' },
+              ].map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => {
+                    setDealerAnalyticsPreset(p.id);
+                    fetchDealerAnalytics(selectedDealerId, p.id);
+                  }}
+                  className={`btn btn-xs ${dealerAnalyticsPreset === p.id ? 'btn-primary' : 'btn-secondary'}`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => fetchDealerAnalytics(selectedDealerId, dealerAnalyticsPreset)}
+              className="btn btn-secondary btn-xs"
+              title="Refresh dealer financing statistics"
+            >
+              <RefreshCw size={12} className={loadingDealerAnalytics ? 'animate-spin' : ''} />
+            </button>
+          </div>
+        </div>
+
+        {/* Aggregated KPI Cards */}
+        {dealerAnalytics?.summary && (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+              gap: 12,
+              marginBottom: 16,
+            }}
+          >
+            <div style={{ padding: 12, borderRadius: 'var(--radius-md)', background: 'var(--bg-subtle)' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>TOTAL FINANCED PRINCIPAL</div>
+              <div className="mono font-bold" style={{ fontSize: 18, color: 'var(--primary)', marginTop: 4 }}>
+                {formatINR(dealerAnalytics.summary.totalFinancedPrincipal)}
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>Retail Price − Down Payment</div>
+            </div>
+
+            <div style={{ padding: 12, borderRadius: 'var(--radius-md)', background: 'var(--bg-subtle)' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>DOWN PAYMENTS</div>
+              <div className="mono font-bold" style={{ fontSize: 18, marginTop: 4 }}>
+                {formatINR(dealerAnalytics.summary.totalDownPayment)}
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>Collected at store</div>
+            </div>
+
+            <div style={{ padding: 12, borderRadius: 'var(--radius-md)', background: 'var(--bg-subtle)' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>TOTAL COLLECTED</div>
+              <div className="mono font-bold" style={{ fontSize: 18, color: 'var(--success-text)', marginTop: 4 }}>
+                {formatINR(dealerAnalytics.summary.totalAmountCollected)}
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>Repayments recovered</div>
+            </div>
+
+            <div style={{ padding: 12, borderRadius: 'var(--radius-md)', background: 'var(--bg-subtle)' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>TOTAL OUTSTANDING</div>
+              <div className="mono font-bold" style={{ fontSize: 18, marginTop: 4 }}>
+                {formatINR(dealerAnalytics.summary.totalOutstanding)}
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>Remaining balance</div>
+            </div>
+
+            <div style={{ padding: 12, borderRadius: 'var(--radius-md)', background: 'var(--bg-subtle)' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>TOTAL OVERDUE</div>
+              <div className="mono font-bold" style={{ fontSize: 18, color: dealerAnalytics.summary.totalOverdue > 0 ? 'var(--danger-text)' : 'var(--text-primary)', marginTop: 4 }}>
+                {formatINR(dealerAnalytics.summary.totalOverdue)}
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>Overdue installments</div>
+            </div>
+
+            <div style={{ padding: 12, borderRadius: 'var(--radius-md)', background: 'var(--bg-subtle)' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>VOLUME METRICS</div>
+              <div style={{ fontSize: 13, fontWeight: 700, marginTop: 4 }}>
+                {dealerAnalytics.summary.totalCustomers} Borrowers • {dealerAnalytics.summary.totalPhonesFinanced} Phones
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
+                {dealerAnalytics.summary.activeLoans} Active • {dealerAnalytics.summary.overdueLoans} Overdue
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Dealer Breakdown Table */}
+        <div className="crm-table-container">
+          <table className="crm-table">
+            <thead>
+              <tr>
+                <th>Partner Store</th>
+                <th>Customers</th>
+                <th>Loans / Phones</th>
+                <th>Financed Principal</th>
+                <th>Down Payment</th>
+                <th>Collected</th>
+                <th>Outstanding</th>
+                <th>Overdue</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loadingDealerAnalytics ? (
+                <tr>
+                  <td colSpan={9} style={{ textAlign: 'center', padding: 24, color: 'var(--text-secondary)' }}>
+                    Loading partner financing metrics...
+                  </td>
+                </tr>
+              ) : !dealerAnalytics?.dealers || dealerAnalytics.dealers.length === 0 ? (
+                <tr>
+                  <td colSpan={9} style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>
+                    No dealer financing records found for the selected period.
+                  </td>
+                </tr>
+              ) : (
+                dealerAnalytics.dealers.map((dealer: any) => (
+                  <tr
+                    key={dealer.dealerId}
+                    style={selectedDealerId === dealer.dealerId ? { background: 'rgba(234, 88, 12, 0.05)' } : {}}
+                  >
+                    <td>
+                      <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{dealer.storeName}</div>
+                      <div className="mono" style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                        {dealer.dealerCode} • {dealer.contactPerson} ({dealer.phone})
+                      </div>
+                    </td>
+                    <td className="mono">{dealer.totalCustomers}</td>
+                    <td className="mono">{dealer.totalLoans}</td>
+                    <td className="mono font-bold" style={{ color: 'var(--primary)' }}>
+                      {formatINR(dealer.totalFinancedPrincipal)}
+                    </td>
+                    <td className="mono">{formatINR(dealer.totalDownPayment)}</td>
+                    <td className="mono font-semibold" style={{ color: 'var(--success-text)' }}>
+                      {formatINR(dealer.totalCollected)}
+                    </td>
+                    <td className="mono">{formatINR(dealer.totalOutstanding)}</td>
+                    <td className="mono" style={{ color: dealer.totalOverdue > 0 ? 'var(--danger-text)' : 'inherit', fontWeight: dealer.totalOverdue > 0 ? 700 : 400 }}>
+                      {formatINR(dealer.totalOverdue)}
+                    </td>
+                    <td>
+                      <span className={`badge ${dealer.status === 'ACTIVE' ? 'badge-paid' : 'badge-warning'}`}>
+                        {dealer.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
