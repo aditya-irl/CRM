@@ -19,6 +19,7 @@ import {
 export type NavTab =
   | 'dashboard'
   | 'dealers'
+  | 'agents'
   | 'dealer-collections'
   | 'dealer-settlements'
   | 'agent-collections'
@@ -51,11 +52,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onSelectTab, user }
   const items: Array<{ id: NavTab; label: string; icon: React.ReactNode; hiddenForAgent?: boolean }> = [
     {
       id: 'dashboard',
-      label: isDealer ? 'Store Dashboard' : 'Operations Dashboard',
+      label: isDealer ? 'Store Dashboard' : isAgent ? 'Recovery Dashboard' : 'Operations Dashboard',
       icon: isDealer ? <Store size={17} /> : <LayoutDashboard size={17} />,
-      hiddenForAgent: true,
     },
     { id: 'dealers', label: 'Dealer Stores', icon: <Store size={17} />, hiddenForAgent: true },
+    { id: 'agents', label: 'Field Agents', icon: <UserCheck size={17} />, hiddenForAgent: true },
     {
       id: 'dealer-collections',
       label: isDealer ? 'Store Collections' : 'Dealer Collections',
@@ -68,12 +69,28 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onSelectTab, user }
       icon: <Banknote size={17} />,
       hiddenForAgent: true,
     },
-    { id: 'agent-collections', label: 'Agent Collections', icon: <UserCheck size={17} />, hiddenForAgent: true },
+    {
+      id: 'agent-collections',
+      label: isAgent ? 'My Collections' : 'Agent Collections',
+      icon: <UserCheck size={17} />,
+    },
     { id: 'direct-collections', label: 'Direct Collections', icon: <Building2 size={17} />, hiddenForAgent: true },
-    { id: 'customers', label: isDealer ? 'Store Customers' : 'Customers & Devices', icon: <Users size={17} /> },
-    { id: 'queue', label: 'Collection Queue', icon: <Clock size={17} /> },
-    { id: 'loans', label: isDealer ? 'Financed Devices' : 'Loans & EMI Terms', icon: <CreditCard size={17} /> },
-    { id: 'payments', label: 'Payments Ledger', icon: <Receipt size={17} /> },
+    {
+      id: 'customers',
+      label: isDealer ? 'Store Customers' : isAgent ? 'My Customers' : 'Customers & Devices',
+      icon: <Users size={17} />,
+    },
+    {
+      id: 'queue',
+      label: isAgent ? 'Recovery Queue' : 'Collection Queue',
+      icon: <Clock size={17} />,
+    },
+    {
+      id: 'loans',
+      label: isDealer ? 'Financed Devices' : isAgent ? 'My Loans' : 'Loans & EMI Terms',
+      icon: <CreditCard size={17} />,
+    },
+    { id: 'payments', label: 'Payments Ledger', icon: <Receipt size={17} />, hiddenForAgent: true },
     { id: 'reports', label: 'Reports & Analytics', icon: <FileSpreadsheet size={17} />, hiddenForAgent: true },
     { id: 'audit', label: 'Audit Trail & Logs', icon: <ShieldCheck size={17} />, hiddenForAgent: true },
   ];

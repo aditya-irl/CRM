@@ -10,10 +10,11 @@ const router = Router();
 
 router.post('/login', authRateLimiter, validateBody(loginSchema), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { email, password } = req.body;
+    const identifier = (req.body.identifier || req.body.email) as string;
+    const { password } = req.body;
     const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress;
     const userAgent = req.headers['user-agent'];
-    const result = await AuthService.login(email, password, ip, userAgent);
+    const result = await AuthService.login(identifier, password, ip, userAgent);
 
     return res.json({
       success: true,

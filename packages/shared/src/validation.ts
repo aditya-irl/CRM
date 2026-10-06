@@ -16,8 +16,12 @@ import {
 } from './enums';
 
 export const loginSchema = z.object({
-  email: z.string().min(3, 'Email or Dealer Login ID is required'),
+  email: z.string().min(1, 'Email, Phone, or Login ID is required').optional(),
+  identifier: z.string().min(1, 'Email, Phone, or Login ID is required').optional(),
   password: z.string().min(6, 'Password must be at least 6 characters'),
+}).refine(data => Boolean(data.email || data.identifier), {
+  message: 'Email, Phone, or Login ID is required',
+  path: ['email'],
 });
 
 export const changePasswordSchema = z.object({
@@ -72,6 +76,13 @@ export const createCustomerSchema = z.object({
 
 export const updateCustomerSchema = createCustomerSchema.partial();
 
+function isValidCalendarDate(dateStr: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false;
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+
 export const onboardCustomerSchema = z.object({
   customer: createCustomerSchema,
   loan: z.object({
@@ -79,34 +90,89 @@ export const onboardCustomerSchema = z.object({
     downPayment: z.number().min(0, 'Down payment cannot be negative').default(0),
     annualInterestRate: z.number().min(0, 'Interest rate cannot be negative'),
     interestCalcMethod: z.nativeEnum(InterestMethod).default(InterestMethod.FLAT_RATE),
-    tenureMonths: z.number().int().positive('Tenure must be a positive integer'),
+    tenureMonths: z.number().int('Tenure must be an integer').positive('Tenure must be a positive integer'),
     installmentFrequency: z.nativeEnum(RepaymentFrequency).default(RepaymentFrequency.MONTHLY),
     disbursementDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Disbursement date must be YYYY-MM-DD'),
     firstEmiDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'First EMI date must be YYYY-MM-DD').optional(),
+    emiStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'EMI Start Date must be YYYY-MM-DD').optional(),
     dealerId: z.string().uuid('Invalid dealer ID').optional().nullable(),
     assignedAgentId: z.string().uuid('Invalid agent ID').optional().nullable(),
     status: z.nativeEnum(LoanStatus).optional(),
+  }).superRefine((data, ctx) => {
+    if (!isValidCalendarDate(data.disbursementDate)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['disbursementDate'],
+        message: 'Disbursement date must be a valid calendar date',
+      });
+    }
+    const emiStart = data.firstEmiDate || data.emiStartDate;
+    if (emiStart) {
+      if (!isValidCalendarDate(emiStart)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['firstEmiDate'],
+          message: 'EMI Start Date must be a valid calendar date',
+        });
+      } else if (data.disbursementDate && emiStart < data.disbursementDate) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['firstEmiDate'],
+          message: 'EMI Start Date cannot be earlier than loan disbursement date',
+        });
+      }
+    }
   }).optional(),
 });
 export type OnboardCustomerInput = z.infer<typeof onboardCustomerSchema>;
 
-export const calculateLoanSchema = z.object({
+const loanCalculationFields = {
   principalAmount: z.number().positive('Principal amount must be positive'),
   downPayment: z.number().min(0, 'Down payment cannot be negative').default(0),
   annualInterestRate: z.number().min(0, 'Interest rate cannot be negative'),
   interestCalcMethod: z.nativeEnum(InterestMethod).default(InterestMethod.FLAT_RATE),
-  tenureMonths: z.number().int().positive('Tenure must be a positive integer'),
+  tenureMonths: z.number().int('Tenure must be an integer').positive('Tenure must be a positive integer'),
   installmentFrequency: z.nativeEnum(RepaymentFrequency).default(RepaymentFrequency.MONTHLY),
   disbursementDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Disbursement date must be YYYY-MM-DD'),
   firstEmiDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'First EMI date must be YYYY-MM-DD').optional(),
-});
+  emiStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'EMI Start Date must be YYYY-MM-DD').optional(),
+};
 
-export const createLoanSchema = calculateLoanSchema.extend({
+function refineLoanDates(data: { disbursementDate?: string; firstEmiDate?: string; emiStartDate?: string }, ctx: z.RefinementCtx) {
+  if (data.disbursementDate && !isValidCalendarDate(data.disbursementDate)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['disbursementDate'],
+      message: 'Disbursement date must be a valid calendar date',
+    });
+  }
+  const emiStart = data.firstEmiDate || data.emiStartDate;
+  if (emiStart) {
+    if (!isValidCalendarDate(emiStart)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['firstEmiDate'],
+        message: 'EMI Start Date must be a valid calendar date',
+      });
+    } else if (data.disbursementDate && emiStart < data.disbursementDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['firstEmiDate'],
+        message: 'EMI Start Date cannot be earlier than loan disbursement date',
+      });
+    }
+  }
+}
+
+export const calculateLoanSchema = z.object(loanCalculationFields).superRefine(refineLoanDates);
+
+export const createLoanSchema = z.object({
+  ...loanCalculationFields,
   customerId: z.string().uuid('Invalid customer ID'),
   assignedAgentId: z.string().uuid('Invalid agent ID').optional().nullable(),
   dealerId: z.string().uuid('Invalid dealer ID').optional().nullable(),
   status: z.nativeEnum(LoanStatus).optional(),
-});
+}).superRefine(refineLoanDates);
 
 export const approveLoanSchema = z.object({
   notes: z.string().max(500).optional().nullable(),

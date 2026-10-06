@@ -19,6 +19,8 @@ import { AuditView } from './views/AuditView';
 import { AddCustomerWizard } from './components/AddCustomerWizard';
 import { CustomerPortalView } from './views/CustomerPortalView';
 import { DealerDashboardView } from './views/DealerDashboardView';
+import { AgentDashboardView } from './views/AgentDashboardView';
+import { AgentsView } from './views/AgentsView';
 import { ChangePasswordView } from './views/ChangePasswordView';
 
 export const App: React.FC = () => {
@@ -35,12 +37,7 @@ export const App: React.FC = () => {
   }
 
   const [user, setUser] = useState<IUser | null>(ApiClient.getUser());
-  // Lazy initializer: resolve the correct default tab synchronously at mount time
-  // so COLLECTION_AGENT never sees 'dashboard' even on the very first render.
-  const [activeTab, setActiveTab] = useState<NavTab>(() => {
-    const currentUser = ApiClient.getUser();
-    return currentUser?.role === UserRole.COLLECTION_AGENT ? 'queue' : 'dashboard';
-  });
+  const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
   const [selectedDealerIdForCollections, setSelectedDealerIdForCollections] = useState<string | null>(null);
   const [selectedDealerIdForSettlements, setSelectedDealerIdForSettlements] = useState<string | null>(null);
   const [selectedAgentIdForCollections, setSelectedAgentIdForCollections] = useState<string | null>(null);
@@ -48,11 +45,7 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     if (user) {
-      if (user.role === UserRole.COLLECTION_AGENT) {
-        setActiveTab('queue');
-      } else {
-        setActiveTab('dashboard');
-      }
+      setActiveTab('dashboard');
     }
   }, [user]);
 
@@ -67,8 +60,7 @@ export const App: React.FC = () => {
 
   const handlePasswordChangeSuccess = (updatedUser: IUser) => {
     setUser(updatedUser);
-    // Route agents to their home tab, not the admin dashboard
-    setActiveTab(updatedUser.role === UserRole.COLLECTION_AGENT ? 'queue' : 'dashboard');
+    setActiveTab('dashboard');
   };
 
   const handleNavigateToDealerCollections = (dealerId?: string) => {
@@ -91,6 +83,7 @@ export const App: React.FC = () => {
   }
 
   const isDealer = user.role === UserRole.DEALER;
+  const isAgent = user.role === UserRole.COLLECTION_AGENT;
   const isForcedPasswordChange = Boolean(user.mustChangePassword);
 
   // Mandatory route guard: block all protected app functionality if user must change password
@@ -124,16 +117,17 @@ export const App: React.FC = () => {
       return <DealerDashboardView onNavigateToTab={(t) => setActiveTab(t as NavTab)} />;
     }
 
-    // If collection agent attempts to access admin-only tabs, redirect to queue
-    // This prevents the finance-dashboard API call that would result in a 403.
-    const isAgent = user.role === UserRole.COLLECTION_AGENT;
-    const agentAllowedTabs: NavTab[] = ['queue', 'customers', 'loans', 'payments'];
+    // If collection agent attempts to access admin-only tabs, redirect to agent dashboard
+    const agentAllowedTabs: NavTab[] = ['dashboard', 'queue', 'customers', 'loans', 'agent-collections'];
     if (isAgent && !agentAllowedTabs.includes(activeTab)) {
-      return <QueueView />;
+      return <AgentDashboardView onNavigateToTab={(t) => setActiveTab(t as NavTab)} />;
     }
 
     switch (activeTab) {
       case 'dashboard':
+        if (isAgent) {
+          return <AgentDashboardView onNavigateToTab={(t) => setActiveTab(t as NavTab)} />;
+        }
         return isDealer ? (
           <DealerDashboardView onNavigateToTab={(t) => setActiveTab(t as NavTab)} />
         ) : (
@@ -149,6 +143,8 @@ export const App: React.FC = () => {
             onNavigateToSettlements={handleNavigateToDealerSettlements}
           />
         );
+      case 'agents':
+        return <AgentsView />;
       case 'dealer-collections':
         return (
           <DealerCollectionsView

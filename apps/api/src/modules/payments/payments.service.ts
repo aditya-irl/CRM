@@ -125,8 +125,11 @@ export class PaymentService {
           const isDirectAgent = loan.assigned_agent_id === user.id;
           if (!isDirectAgent) {
             const assignRes = await client.query(
-              `SELECT id FROM collection_assignments 
-               WHERE agent_id = $1 AND customer_id = $2 AND is_active = TRUE 
+              `SELECT id FROM collection_assignments
+               WHERE agent_id = $1
+                 AND (customer_id = $2 OR area_route = (SELECT area_route FROM customers WHERE id = $2))
+                 AND is_active = TRUE
+                 AND (effective_to IS NULL OR effective_to >= CURRENT_DATE)
                LIMIT 1`,
               [user.id, data.customerId]
             );
@@ -757,8 +760,11 @@ export class PaymentService {
       const isLoanAgent = payment.loan_agent_id === user.id;
       if (!isCollector && !isLoanAgent) {
         const assignRes = await queryPostgres(
-          `SELECT id FROM collection_assignments 
-           WHERE agent_id = $1 AND customer_id = $2 AND is_active = TRUE 
+          `SELECT id FROM collection_assignments
+           WHERE agent_id = $1
+             AND (customer_id = $2 OR area_route = (SELECT area_route FROM customers WHERE id = $2))
+             AND is_active = TRUE
+             AND (effective_to IS NULL OR effective_to >= CURRENT_DATE)
            LIMIT 1`,
           [user.id, payment.customer_id]
         );
@@ -905,8 +911,11 @@ export class PaymentService {
       const isLoanAgent = p.loan_agent_id === user.id;
       if (!isCollector && !isLoanAgent) {
         const assignRes = await queryPostgres(
-          `SELECT id FROM collection_assignments 
-           WHERE agent_id = $1 AND customer_id = $2 AND is_active = TRUE 
+          `SELECT id FROM collection_assignments
+           WHERE agent_id = $1
+             AND (customer_id = $2 OR area_route = (SELECT area_route FROM customers WHERE id = $2))
+             AND is_active = TRUE
+             AND (effective_to IS NULL OR effective_to >= CURRENT_DATE)
            LIMIT 1`,
           [user.id, p.customer_id]
         );

@@ -50,7 +50,9 @@ export class EMIService {
         c.area_route,
         c.address_line1 || ', ' || c.city as address_summary,
         (SELECT cl.outcome FROM call_logs cl WHERE cl.customer_id = c.id ORDER BY cl.call_timestamp DESC LIMIT 1) as last_call_outcome,
-        (SELECT TO_CHAR(cl.promised_payment_date, 'YYYY-MM-DD') FROM call_logs cl WHERE cl.customer_id = c.id ORDER BY cl.call_timestamp DESC LIMIT 1) as promised_payment_date
+        (SELECT TO_CHAR(cl.promised_payment_date, 'YYYY-MM-DD') FROM call_logs cl WHERE cl.customer_id = c.id ORDER BY cl.call_timestamp DESC LIMIT 1) as promised_payment_date,
+        (SELECT TO_CHAR(p.payment_timestamp, 'YYYY-MM-DD') FROM payments p WHERE p.loan_id = l.id AND p.status = 'SUCCESS' AND p.is_reversal = FALSE ORDER BY p.payment_timestamp DESC LIMIT 1) as last_payment_date,
+        (SELECT p.amount FROM payments p WHERE p.loan_id = l.id AND p.status = 'SUCCESS' AND p.is_reversal = FALSE ORDER BY p.payment_timestamp DESC LIMIT 1) as last_payment_amount
       FROM emi_installments e
       JOIN loans l ON e.loan_id = l.id
       JOIN customers c ON e.customer_id = c.id
@@ -70,13 +72,21 @@ export class EMIService {
       paramIndex++;
     }
 
-    if (filters.status === 'DUE_TODAY') {
+    const filterVal = (filters.status || '').toUpperCase();
+    if (filterVal === 'DUE_TODAY' || filterVal === 'TODAY') {
       sql += ` AND (e.status = 'DUE_TODAY' OR e.due_date = $${paramIndex++})`;
       params.push(businessToday);
-    } else if (filters.status === 'OVERDUE') {
+    } else if (filterVal === 'TOMORROW') {
+      sql += ` AND (e.due_date = ($${paramIndex++}::date + INTERVAL '1 day'))`;
+      params.push(businessToday);
+    } else if (filterVal === 'NEXT_7_DAYS') {
+      sql += ` AND (e.due_date >= $${paramIndex}::date AND e.due_date <= ($${paramIndex}::date + INTERVAL '7 days'))`;
+      params.push(businessToday);
+      paramIndex++;
+    } else if (filterVal === 'OVERDUE') {
       sql += ` AND (e.status = 'OVERDUE' OR e.days_overdue > 0 OR e.due_date < $${paramIndex++})`;
       params.push(businessToday);
-    } else if (filters.status === 'UPCOMING') {
+    } else if (filterVal === 'UPCOMING') {
       sql += ` AND (e.status = 'UPCOMING' OR e.status = 'PARTIALLY_PAID') AND e.due_date > $${paramIndex++}`;
       params.push(businessToday);
     }
@@ -133,6 +143,14 @@ export class EMIService {
         businessToday,
       });
 
+      const daysOverdue = evalResult.daysOverdue;
+      let priority: 'HIGH' | 'MEDIUM' | 'LOW' = 'LOW';
+      if (daysOverdue > 15 || Number(r.penalty_amount || 0) > 0) {
+        priority = 'HIGH';
+      } else if (daysOverdue > 5) {
+        priority = 'MEDIUM';
+      }
+
       return {
         installmentId: r.installment_id,
         installmentNumber: Number(r.installment_number),
@@ -141,8 +159,10 @@ export class EMIService {
         paidAmount: Number(r.paid_amount),
         remainingAmount: Number(r.remaining_amount),
         penaltyAmount: Number(r.penalty_amount || 0),
+        totalDue: Number(r.remaining_amount) + Number(r.penalty_amount || 0),
         status: evalResult.status,
         daysOverdue: evalResult.daysOverdue,
+        priority,
         loanId: r.loan_id,
         loanAccountNo: r.loan_account_no,
         totalInstallments: Number(r.total_installments),
@@ -155,6 +175,8 @@ export class EMIService {
         addressSummary: r.address_summary,
         lastCallOutcome: r.last_call_outcome,
         promisedPaymentDate: r.promised_payment_date || null,
+        lastPaymentDate: r.last_payment_date || null,
+        lastPaymentAmount: r.last_payment_amount ? Number(r.last_payment_amount) : null,
       };
     });
 
@@ -221,6 +243,133 @@ export class EMIService {
       collectionEfficiency: efficiency,
       dueTodayCount: Number(expRow?.due_today_count || 0),
       overdueCount: Number(expRow?.overdue_count || 0),
+    };
+  }
+
+  /**
+   * Fetch complete field-recovery agent dashboard metrics (strictly scoped to agent's assigned portfolio).
+   * Does NOT expose organization-wide financial totals.
+   */
+  public static async getAgentDashboard(user: AuthenticatedUser) {
+    const businessToday = getBusinessDate(undefined, 'Asia/Kolkata');
+    const targetAgentId = user.id;
+
+    // 1. Assigned customers count (distinct)
+    const custRes = await queryPostgres(
+      `SELECT COUNT(DISTINCT c.id)::int as assigned_customers
+       FROM customers c
+       LEFT JOIN loans l ON l.customer_id = c.id AND l.status = 'ACTIVE'
+       LEFT JOIN collection_assignments ca ON ca.customer_id = c.id AND ca.is_active = TRUE
+       WHERE c.deleted_at IS NULL
+         AND (
+           l.assigned_agent_id = $1
+           OR ca.agent_id = $1
+           OR c.area_route IN (SELECT area_route FROM collection_assignments WHERE agent_id = $1 AND is_active = TRUE)
+         )`,
+      [targetAgentId]
+    );
+
+    // 2. Active loans count
+    const loansRes = await queryPostgres(
+      `SELECT COUNT(DISTINCT l.id)::int as active_loans
+       FROM loans l
+       JOIN customers c ON l.customer_id = c.id
+       WHERE l.status = 'ACTIVE' AND c.deleted_at IS NULL
+         AND (
+           l.assigned_agent_id = $1
+           OR c.id IN (SELECT customer_id FROM collection_assignments WHERE agent_id = $1 AND is_active = TRUE)
+           OR c.area_route IN (SELECT area_route FROM collection_assignments WHERE agent_id = $1 AND is_active = TRUE)
+         )`,
+      [targetAgentId]
+    );
+
+    // 3. Today's collections by this agent
+    const todayCollRes = await queryPostgres(
+      `SELECT COALESCE(SUM(amount), 0) as today_collected, COUNT(id)::int as today_count
+       FROM payments
+       WHERE (collected_by_agent_id = $1 OR agent_id = $1)
+         AND DATE(payment_timestamp AT TIME ZONE 'Asia/Kolkata') = $2::date
+         AND status = 'SUCCESS' AND is_reversal = FALSE`,
+      [targetAgentId, businessToday]
+    );
+
+    // 4. Overdue and due today / upcoming metrics
+    const duesRes = await queryPostgres(
+      `SELECT
+         COALESCE(SUM(CASE WHEN e.due_date = $2 THEN e.remaining_amount ELSE 0 END), 0) as today_due,
+         COUNT(CASE WHEN e.due_date = $2 THEN 1 END)::int as today_due_count,
+         COALESCE(SUM(CASE WHEN e.due_date > $2 AND e.due_date <= ($2::date + INTERVAL '7 days') THEN e.remaining_amount ELSE 0 END), 0) as upcoming_dues,
+         COUNT(CASE WHEN e.due_date > $2 AND e.due_date <= ($2::date + INTERVAL '7 days') THEN 1 END)::int as upcoming_due_count,
+         COALESCE(SUM(CASE WHEN e.due_date < $2 THEN e.remaining_amount + COALESCE(e.penalty_amount, 0) ELSE 0 END), 0) as overdue_amount,
+         COUNT(DISTINCT CASE WHEN e.due_date < $2 THEN c.id END)::int as overdue_customers,
+         COUNT(CASE WHEN e.due_date < $2 THEN 1 END)::int as overdue_emis_count
+       FROM emi_installments e
+       JOIN loans l ON e.loan_id = l.id
+       JOIN customers c ON e.customer_id = c.id
+       WHERE e.status != 'PAID' AND l.status = 'ACTIVE' AND c.deleted_at IS NULL
+         AND (
+           l.assigned_agent_id = $1
+           OR c.id IN (SELECT customer_id FROM collection_assignments WHERE agent_id = $1 AND is_active = TRUE)
+           OR c.area_route IN (SELECT area_route FROM collection_assignments WHERE agent_id = $1 AND is_active = TRUE)
+         )`,
+      [targetAgentId, businessToday]
+    );
+
+    // 5. Monthly collections & performance
+    const monthCollRes = await queryPostgres(
+      `SELECT COALESCE(SUM(amount), 0) as month_collected
+       FROM payments
+       WHERE (collected_by_agent_id = $1 OR agent_id = $1)
+         AND DATE_TRUNC('month', payment_timestamp AT TIME ZONE 'Asia/Kolkata') = DATE_TRUNC('month', $2::date)
+         AND status = 'SUCCESS' AND is_reversal = FALSE`,
+      [targetAgentId, businessToday]
+    );
+
+    const duesRow = duesRes.rows[0];
+    const todayCollected = Number(todayCollRes.rows[0]?.today_collected || 0);
+    const todayDue = Number(duesRow?.today_due || 0);
+    const overdueAmount = Number(duesRow?.overdue_amount || 0);
+    const upcomingDues = Number(duesRow?.upcoming_dues || 0);
+
+    const totalDueScope = todayDue + overdueAmount;
+    const efficiency = totalDueScope > 0 ? Math.min(100, Math.round((todayCollected / totalDueScope) * 100)) : 100;
+
+    const recentCollRes = await queryPostgres(
+      `SELECT p.id, p.amount, p.payment_mode, p.payment_timestamp as payment_date, p.receipt_number,
+              c.full_name as customer_name, l.loan_account_no
+       FROM payments p
+       JOIN customers c ON p.customer_id = c.id
+       JOIN loans l ON p.loan_id = l.id
+       WHERE (p.collected_by_agent_id = $1 OR p.agent_id = $1)
+         AND p.collection_source = 'RECOVERY_AGENT'
+         AND (p.status = 'SUCCESS' OR p.status IS NULL)
+       ORDER BY p.payment_timestamp DESC
+       LIMIT 10`,
+      [targetAgentId]
+    );
+
+    return {
+      agent: {
+        id: user.id,
+        fullName: user.fullName,
+        email: user.email,
+        assignedBranch: user.assignedBranch,
+      },
+      businessDate: businessToday,
+      assignedCustomers: Number(custRes.rows[0]?.assigned_customers || 0),
+      activeLoans: Number(loansRes.rows[0]?.active_loans || 0),
+      todayDue,
+      todayDueCount: Number(duesRow?.today_due_count || 0),
+      todayCollected,
+      todayCollectionCount: Number(todayCollRes.rows[0]?.today_count || 0),
+      upcomingDues,
+      upcomingDueCount: Number(duesRow?.upcoming_due_count || 0),
+      overdueCustomers: Number(duesRow?.overdue_customers || 0),
+      overdueAmount,
+      overdueEmisCount: Number(duesRow?.overdue_emis_count || 0),
+      monthCollected: Number(monthCollRes.rows[0]?.month_collected || 0),
+      collectionPerformance: efficiency,
+      recentCollections: recentCollRes.rows,
     };
   }
 

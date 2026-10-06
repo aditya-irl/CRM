@@ -61,6 +61,7 @@ export class AuthService {
        LEFT JOIN dealers d ON u.dealer_id = d.id
        WHERE (
          LOWER(u.email) = $1
+         OR LOWER(SPLIT_PART(u.email, '@', 1)) = $1
          OR u.phone = $2
          OR LOWER(d.dealer_code) = $1
          OR ($3::text IS NOT NULL AND LOWER(d.dealer_code) = $3)
@@ -308,6 +309,7 @@ export class AuthService {
     return {
       success: true,
       message: 'Password changed successfully',
+      mustChangePassword: false,
     };
   }
 }

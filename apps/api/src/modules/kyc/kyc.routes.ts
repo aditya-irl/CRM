@@ -1,10 +1,70 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import fs from 'fs';
+import path from 'path';
 import { KYCService } from './kyc.service';
 import { authenticate, requireRole } from '../../middlewares/auth.middleware';
 import { validateBody } from '../../middlewares/validate.middleware';
 import { kycUploadInitSchema, kycConfirmSchema, UserRole } from '@crm/shared';
 
 const router = Router();
+
+// Local development storage vault stream (Safe path validation)
+router.get('/local-vault', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const rawKey = req.query.key as string;
+    if (!rawKey) {
+      return res.status(400).send('Storage key missing');
+    }
+    const baseDir = path.resolve(process.cwd(), 'data/storage_vault');
+    const safePath = path.resolve(baseDir, rawKey);
+    if (!safePath.startsWith(baseDir)) {
+      return res.status(403).send('Invalid file path');
+    }
+    if (!fs.existsSync(safePath)) {
+      return res.status(404).send('Document file not found in local vault');
+    }
+    const ext = path.extname(safePath).toLowerCase();
+    let mimeType = 'application/octet-stream';
+    if (ext === '.pdf') mimeType = 'application/pdf';
+    else if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg';
+    else if (ext === '.png') mimeType = 'image/png';
+    else if (ext === '.webp') mimeType = 'image/webp';
+
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Content-Disposition', 'inline');
+    const stream = fs.createReadStream(safePath);
+    return stream.pipe(res);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Local development file upload receiver
+router.put('/local-vault', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const rawKey = req.query.key as string;
+    if (!rawKey) {
+      return res.status(400).send('Storage key missing');
+    }
+    const baseDir = path.resolve(process.cwd(), 'data/storage_vault');
+    const safePath = path.resolve(baseDir, rawKey);
+    if (!safePath.startsWith(baseDir)) {
+      return res.status(403).send('Invalid file path');
+    }
+    const parent = path.dirname(safePath);
+    if (!fs.existsSync(parent)) {
+      fs.mkdirSync(parent, { recursive: true });
+    }
+    const writeStream = fs.createWriteStream(safePath);
+    req.pipe(writeStream);
+    writeStream.on('finish', () => {
+      res.status(200).json({ success: true, key: rawKey });
+    });
+    writeStream.on('error', (err) => next(err));
+  } catch (err) {
+    next(err);
+  }
+});
 
 router.use(authenticate);
 

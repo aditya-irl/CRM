@@ -408,18 +408,24 @@ export interface IAgentQueueItem {
   customerCode: string;
   customerName: string;
   primaryPhone: string;
+  customerPhone?: string;
   areaRoute: string;
   addressSummary: string;
   installmentNumber: number;
   totalInstallments: number;
   dueDate: string;
   expectedAmount: number;
+  emiAmount?: number;
   paidAmount: number;
   remainingAmount: number;
   penaltyAmount: number;
+  totalDue?: number;
   totalOutstandingLoan: number;
   status: EMIStatus;
   daysOverdue: number;
+  priority?: 'HIGH' | 'MEDIUM' | 'LOW';
+  lastPaymentDate?: string | null;
+  lastPaymentAmount?: number;
   lastCallOutcome?: CallOutcome | null;
   promisedPaymentDate?: string | null;
 }

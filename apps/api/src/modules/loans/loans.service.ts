@@ -26,6 +26,7 @@ export interface CreateLoanDTO {
   installmentFrequency: RepaymentFrequency;
   disbursementDate: string;
   firstEmiDate?: string;
+  emiStartDate?: string;
   assignedAgentId?: string | null;
   dealerId?: string | null;
   status?: LoanStatus;
@@ -106,6 +107,11 @@ export class LoanService {
       }
     }
 
+    const resolvedFirstEmiDate = data.firstEmiDate || data.emiStartDate;
+    if (resolvedFirstEmiDate && data.disbursementDate && resolvedFirstEmiDate < data.disbursementDate) {
+      throw new AppError('EMI Start Date cannot be earlier than loan disbursement date');
+    }
+
     // 4. Calculate deterministic amortization schedule (Banker's rounding & last-cent conservation)
     const calc = generateAmortizationSchedule({
       principalAmount: data.principalAmount,
@@ -115,7 +121,7 @@ export class LoanService {
       installmentFrequency: data.installmentFrequency,
       interestCalcMethod: data.interestCalcMethod,
       disbursementDate: data.disbursementDate,
-      firstEmiDate: data.firstEmiDate,
+      firstEmiDate: resolvedFirstEmiDate,
     });
 
     const loanId = uuidv4();
@@ -412,7 +418,10 @@ export class LoanService {
     }
 
     const disbursementDate = data?.disbursementDate || loan.disbursement_date;
-    const firstEmiDate = data?.firstEmiDate || loan.first_emi_date;
+    const firstEmiDate = data?.firstEmiDate || (data as any)?.emiStartDate || loan.first_emi_date;
+    if (firstEmiDate && disbursementDate && firstEmiDate < disbursementDate) {
+      throw new AppError('EMI Start Date cannot be earlier than loan disbursement date');
+    }
     const assignedAgentId = data?.assignedAgentId !== undefined ? data.assignedAgentId : loan.assigned_agent_id;
 
     const calc = generateAmortizationSchedule({

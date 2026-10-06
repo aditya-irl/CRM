@@ -51,6 +51,24 @@ router.get(
   }
 );
 
+// Comprehensive Field Recovery Agent Dashboard
+router.get(
+  '/agent-dashboard',
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER, UserRole.COLLECTION_AGENT),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const dashboard = await EMIService.getAgentDashboard(req.user!);
+      return res.json({
+        success: true,
+        data: dashboard,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 // Add Late Payment Penalty to Overdue EMI
 // Allowed: SUPER_ADMIN, ADMIN, DEALER (subject to ALLOW_DEALER_PENALTY setting + RLAC)
 // Blocked: COLLECTION_AGENT (403), BRANCH_MANAGER (403), unauthenticated (401)

@@ -287,4 +287,117 @@ describe('Financial Calculation Engine', () => {
       expect(alloc.newStatus).not.toBe(EMIStatus.PAID);
     });
   });
+
+  describe('Manual EMI Start Date and Tenure Selection', () => {
+    test('Loan Date separate from manual EMI Start Date generates exact installments', () => {
+      // Loan Origination Date: 2026-10-06
+      // Manual EMI Start Date: 2026-11-05
+      // Tenure: 12 months
+      const result = generateAmortizationSchedule({
+        principalAmount: 60000,
+        downPayment: 10000,
+        annualInterestRate: 14,
+        tenureMonths: 12,
+        installmentFrequency: RepaymentFrequency.MONTHLY,
+        interestCalcMethod: InterestMethod.FLAT_RATE,
+        disbursementDate: '2026-10-06',
+        firstEmiDate: '2026-11-05',
+      });
+
+      expect(result.disbursementDate).toBe('2026-10-06');
+      expect(result.firstEmiDate).toBe('2026-11-05');
+      expect(result.totalInstallments).toBe(12);
+      expect(result.schedule.length).toBe(12);
+
+      // Verify exact installment dates
+      expect(result.schedule[0].dueDate).toBe('2026-11-05'); // Installment 1
+      expect(result.schedule[1].dueDate).toBe('2026-12-05'); // Installment 2
+      expect(result.schedule[2].dueDate).toBe('2027-01-05'); // Installment 3
+      expect(result.schedule[10].dueDate).toBe('2027-09-05'); // Installment 11
+      expect(result.schedule[11].dueDate).toBe('2027-10-05'); // Installment 12
+      expect(result.maturityDate).toBe('2027-10-05');
+    });
+
+    test('Changing EMI Start Date preserves identical financial calculations and amounts', () => {
+      const scheduleNov = generateAmortizationSchedule({
+        principalAmount: 50000,
+        downPayment: 5000,
+        annualInterestRate: 15,
+        tenureMonths: 6,
+        installmentFrequency: RepaymentFrequency.MONTHLY,
+        interestCalcMethod: InterestMethod.REDUCING_BALANCE,
+        disbursementDate: '2026-10-06',
+        firstEmiDate: '2026-11-05',
+      });
+
+      const scheduleDec = generateAmortizationSchedule({
+        principalAmount: 50000,
+        downPayment: 5000,
+        annualInterestRate: 15,
+        tenureMonths: 6,
+        installmentFrequency: RepaymentFrequency.MONTHLY,
+        interestCalcMethod: InterestMethod.REDUCING_BALANCE,
+        disbursementDate: '2026-10-06',
+        firstEmiDate: '2026-12-15',
+      });
+
+      // Amounts must be identical
+      expect(scheduleNov.emiAmount).toBe(scheduleDec.emiAmount);
+      expect(scheduleNov.totalInterest).toBe(scheduleDec.totalInterest);
+      expect(scheduleNov.totalPayable).toBe(scheduleDec.totalPayable);
+      expect(scheduleNov.netDisbursedAmount).toBe(scheduleDec.netDisbursedAmount);
+
+      // Dates must strictly reflect the chosen start date
+      expect(scheduleNov.schedule[0].dueDate).toBe('2026-11-05');
+      expect(scheduleDec.schedule[0].dueDate).toBe('2026-12-15');
+      expect(scheduleNov.maturityDate).toBe('2027-04-05');
+      expect(scheduleDec.maturityDate).toBe('2027-05-15');
+    });
+
+    test('Safe month-end clamping when manual EMI Start Date is on 31st', () => {
+      const result = generateAmortizationSchedule({
+        principalAmount: 40000,
+        annualInterestRate: 12,
+        tenureMonths: 6,
+        installmentFrequency: RepaymentFrequency.MONTHLY,
+        interestCalcMethod: InterestMethod.FLAT_RATE,
+        disbursementDate: '2026-01-15',
+        firstEmiDate: '2026-01-31',
+      });
+
+      expect(result.schedule[0].dueDate).toBe('2026-01-31'); // Jan 31
+      expect(result.schedule[1].dueDate).toBe('2026-02-28'); // Feb 28 (clamped)
+      expect(result.schedule[2].dueDate).toBe('2026-03-31'); // Mar 31
+      expect(result.schedule[3].dueDate).toBe('2026-04-30'); // Apr 30 (clamped)
+      expect(result.schedule[4].dueDate).toBe('2026-05-31'); // May 31
+      expect(result.schedule[5].dueDate).toBe('2026-06-30'); // Jun 30 (clamped)
+      expect(result.maturityDate).toBe('2026-06-30');
+    });
+
+    test('Changing tenure generates exact installment count', () => {
+      const res6 = generateAmortizationSchedule({
+        principalAmount: 30000,
+        annualInterestRate: 12,
+        tenureMonths: 6,
+        disbursementDate: '2026-10-06',
+        firstEmiDate: '2026-11-05',
+      });
+
+      const res12 = generateAmortizationSchedule({
+        principalAmount: 30000,
+        annualInterestRate: 12,
+        tenureMonths: 12,
+        disbursementDate: '2026-10-06',
+        firstEmiDate: '2026-11-05',
+      });
+
+      expect(res6.totalInstallments).toBe(6);
+      expect(res6.schedule.length).toBe(6);
+      expect(res6.maturityDate).toBe('2027-04-05');
+
+      expect(res12.totalInstallments).toBe(12);
+      expect(res12.schedule.length).toBe(12);
+      expect(res12.maturityDate).toBe('2027-10-05');
+    });
+  });
 });

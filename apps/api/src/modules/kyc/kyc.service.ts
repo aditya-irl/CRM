@@ -226,6 +226,7 @@ export class KYCService {
       key: doc.storage_key,
       expiresInSeconds: MAX_KYC_URL_EXPIRY_SECONDS,
       operation: 'getObject',
+      mimeType: doc.file_mime_type,
     });
 
     await AuditService.log({

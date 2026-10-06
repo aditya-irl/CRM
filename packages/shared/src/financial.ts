@@ -1,5 +1,6 @@
 import { Decimal } from 'decimal.js';
 import { InterestMethod, RepaymentFrequency, EMIStatus } from './enums';
+import { calculateNextDueDate } from './datetime';
 
 // Configure Decimal.js for financial precision: 20 significant digits, ROUND_HALF_EVEN (Banker's rounding)
 Decimal.set({ precision: 20, rounding: Decimal.ROUND_HALF_EVEN });
@@ -13,6 +14,7 @@ export interface LoanCalculationInput {
   interestCalcMethod?: InterestMethod;
   disbursementDate: string | Date;
   firstEmiDate?: string | Date;
+  emiStartDate?: string | Date;
 }
 
 export interface CalculatedInstallment {
@@ -56,21 +58,13 @@ export function toFixed2(val: Decimal.Value): number {
 
 /**
  * Helper to add intervals based on repayment frequency.
+ * Reuses calculateNextDueDate for calendar-month arithmetic and safe month-end clamping.
  */
-export function getNextDueDate(startDate: Date, installmentIndex: number, frequency: RepaymentFrequency): string {
-  const d = new Date(startDate);
-  if (frequency === RepaymentFrequency.MONTHLY) {
-    // Add months preserving date or clamped to month end
-    const targetMonth = d.getMonth() + installmentIndex;
-    d.setMonth(targetMonth);
-  } else if (frequency === RepaymentFrequency.BI_WEEKLY) {
-    d.setDate(d.getDate() + installmentIndex * 14);
-  } else if (frequency === RepaymentFrequency.WEEKLY) {
-    d.setDate(d.getDate() + installmentIndex * 7);
-  } else if (frequency === RepaymentFrequency.DAILY) {
-    d.setDate(d.getDate() + installmentIndex * 1);
-  }
-  return d.toISOString().split('T')[0];
+export function getNextDueDate(startDate: Date | string, installmentIndex: number, frequency: RepaymentFrequency): string {
+  const dateStr = typeof startDate === 'string'
+    ? startDate.split('T')[0]
+    : startDate.toISOString().split('T')[0];
+  return calculateNextDueDate(dateStr, installmentIndex, frequency);
 }
 
 /**
@@ -122,13 +116,18 @@ export function generateAmortizationSchedule(input: LoanCalculationInput): LoanC
     periodicRate = annualRate.dividedBy(12);
   }
 
-  const disbDate = new Date(input.disbursementDate);
-  const firstEmiDate = input.firstEmiDate ? new Date(input.firstEmiDate) : new Date(disbDate);
-  if (!input.firstEmiDate) {
-    if (frequency === RepaymentFrequency.MONTHLY) firstEmiDate.setMonth(firstEmiDate.getMonth() + 1);
-    else if (frequency === RepaymentFrequency.BI_WEEKLY) firstEmiDate.setDate(firstEmiDate.getDate() + 14);
-    else if (frequency === RepaymentFrequency.WEEKLY) firstEmiDate.setDate(firstEmiDate.getDate() + 7);
-    else if (frequency === RepaymentFrequency.DAILY) firstEmiDate.setDate(firstEmiDate.getDate() + 1);
+  const disbDateStr = typeof input.disbursementDate === 'string'
+    ? input.disbursementDate.split('T')[0]
+    : input.disbursementDate.toISOString().split('T')[0];
+
+  const rawFirstEmiDate = input.firstEmiDate || input.emiStartDate;
+  let firstEmiDateStr: string;
+  if (rawFirstEmiDate) {
+    firstEmiDateStr = typeof rawFirstEmiDate === 'string'
+      ? rawFirstEmiDate.split('T')[0]
+      : rawFirstEmiDate.toISOString().split('T')[0];
+  } else {
+    firstEmiDateStr = calculateNextDueDate(disbDateStr, 1, frequency);
   }
 
   let totalInterest: Decimal;
@@ -152,7 +151,7 @@ export function generateAmortizationSchedule(input: LoanCalculationInput): LoanC
 
     for (let i = 1; i <= totalInstallments; i++) {
       const isLast = i === totalInstallments;
-      const dueDate = getNextDueDate(firstEmiDate, i - 1, frequency);
+      const dueDate = getNextDueDate(firstEmiDateStr, i - 1, frequency);
 
       let pComp: Decimal;
       let iComp: Decimal;
@@ -203,7 +202,7 @@ export function generateAmortizationSchedule(input: LoanCalculationInput): LoanC
 
     for (let i = 1; i <= totalInstallments; i++) {
       const isLast = i === totalInstallments;
-      const dueDate = getNextDueDate(firstEmiDate, i - 1, frequency);
+      const dueDate = getNextDueDate(firstEmiDateStr, i - 1, frequency);
 
       let iComp = remainingPrincipal.times(periodicRate).toDecimalPlaces(2, Decimal.ROUND_HALF_EVEN);
       let pComp = baseEmi.minus(iComp);
@@ -236,7 +235,7 @@ export function generateAmortizationSchedule(input: LoanCalculationInput): LoanC
     totalPayable = netDisbursed.plus(totalInterest);
   }
 
-  const maturityDate = schedule[schedule.length - 1]?.dueDate || firstEmiDate.toISOString().split('T')[0];
+  const maturityDate = schedule[schedule.length - 1]?.dueDate || firstEmiDateStr;
 
   return {
     principalAmount: toFixed2(principalRaw),
@@ -251,8 +250,8 @@ export function generateAmortizationSchedule(input: LoanCalculationInput): LoanC
     totalInterest: toFixed2(totalInterest),
     totalPayable: toFixed2(totalPayable),
     outstandingBalance: toFixed2(totalPayable),
-    disbursementDate: disbDate.toISOString().split('T')[0],
-    firstEmiDate: firstEmiDate.toISOString().split('T')[0],
+    disbursementDate: disbDateStr,
+    firstEmiDate: firstEmiDateStr,
     maturityDate,
     schedule,
   };

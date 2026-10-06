@@ -46,6 +46,13 @@ router.patch(
   DealerController.updateDealerStatus
 );
 
+router.delete(
+  '/:id',
+  authenticate,
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN),
+  DealerController.deleteDealer
+);
+
 // Admin & Branch Manager only dealer account / authentication management
 router.post(
   '/:id/login-account',

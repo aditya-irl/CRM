@@ -77,14 +77,12 @@ export const EditCustomerModal: React.FC<EditCustomerModalProps> = ({
             else if (catLower.includes('voter')) docTypeEnum = KYCType.VOTER_ID;
             else if (catLower.includes('driving')) docTypeEnum = KYCType.DRIVING_LICENSE;
 
-            // Confirm document registration
-            await ApiClient.confirmKYC({
+            // Confirm document registration with upload
+            await ApiClient.uploadKYCDocument({
               customerId: customer.id,
+              file: item.file,
               docType: docTypeEnum,
               docNumber: item.title || null,
-              storageKey: `kyc/${customer.id}/${Date.now()}_${item.file.name}`,
-              fileMimeType: item.mimeType || 'image/jpeg',
-              fileSizeBytes: item.fileSizeBytes || item.file.size,
             });
           } catch (docErr) {
             console.warn('Doc registration notice:', docErr);

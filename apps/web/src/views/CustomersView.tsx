@@ -159,13 +159,11 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole }) => {
           else if (cat.includes('voter')) docTypeEnum = KYCType.VOTER_ID;
           else if (cat.includes('driving')) docTypeEnum = KYCType.DRIVING_LICENSE;
 
-          await ApiClient.confirmKYC({
+          await ApiClient.uploadKYCDocument({
             customerId: customerDetail.customer.id,
+            file: doc.file,
             docType: docTypeEnum,
             docNumber: doc.title || null,
-            storageKey: `kyc/${customerDetail.customer.id}/${Date.now()}_${doc.file.name}`,
-            fileMimeType: doc.mimeType || 'image/jpeg',
-            fileSizeBytes: doc.fileSizeBytes || doc.file.size,
           });
         }
       }

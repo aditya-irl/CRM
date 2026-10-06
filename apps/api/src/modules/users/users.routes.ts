@@ -31,6 +31,89 @@ const resetPasswordSchema = z.object({
   password: z.string().min(6, 'Password must be at least 6 characters'),
 });
 
+const createAgentSchema = z.object({
+  fullName: z.string().min(2, 'Full name must be at least 2 characters'),
+  phone: z.string().regex(/^[0-9+()-\s]{10,15}$/, 'Invalid phone number'),
+  loginId: z.string().min(3, 'Login ID must be at least 3 characters'),
+  status: z.nativeEnum(UserStatus).optional(),
+  assignedBranch: z.string().optional().nullable(),
+  areaRoute: z.string().optional().nullable(),
+});
+
+const updateAgentStatusSchema = z.object({
+  status: z.nativeEnum(UserStatus),
+});
+
+// Create Collection Agent with automatic temporary password provisioning
+router.post(
+  '/agents',
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const parsed = createAgentSchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw new ValidationError(
+          'Invalid request payload',
+          parsed.error.errors.map((e) => ({ field: e.path.join('.'), issue: e.message }))
+        );
+      }
+
+      const result = await UsersService.createAgent(parsed.data, req.user!);
+      return res.status(201).json({
+        success: true,
+        data: result,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// Reset Collection Agent Password (generates new secure temporary password)
+router.post(
+  '/agents/:id/reset-password',
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await UsersService.resetAgentPassword(req.params.id, req.user!);
+      return res.json({
+        success: true,
+        data: result,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// Toggle Collection Agent Status (Active / Inactive)
+router.patch(
+  '/agents/:id/status',
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const parsed = updateAgentStatusSchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw new ValidationError(
+          'Invalid request payload',
+          parsed.error.errors.map((e) => ({ field: e.path.join('.'), issue: e.message }))
+        );
+      }
+
+      const result = await UsersService.updateAgentStatus(req.params.id, parsed.data.status, req.user!);
+      return res.json({
+        success: true,
+        data: result,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 // Create user
 router.post(
   '/',
@@ -149,6 +232,24 @@ router.patch(
       return res.json({
         success: true,
         message: 'Password reset successfully',
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// Reset user / agent password with secure temporary password generation
+router.post(
+  '/:id/reset-password',
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await UsersService.resetAgentPassword(req.params.id, req.user!);
+      return res.json({
+        success: true,
+        data: result,
         timestamp: new Date().toISOString(),
       });
     } catch (err) {

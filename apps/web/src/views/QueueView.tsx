@@ -23,7 +23,7 @@ export const QueueView: React.FC = () => {
   const [stats, setStats] = useState<{ todayTarget: number; todayCollected: number; todayPending: number; collectionEfficiency: number } | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'DUE_TODAY' | 'OVERDUE' | 'UPCOMING'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'DUE_TODAY' | 'OVERDUE' | 'UPCOMING' | 'TODAY' | 'TOMORROW' | 'NEXT_7_DAYS'>('ALL');
   const [routeFilter, setRouteFilter] = useState('');
   const [search, setSearch] = useState('');
 
@@ -110,18 +110,24 @@ export const QueueView: React.FC = () => {
     const fullDue = item.remainingAmount + item.penaltyAmount;
     setPaymentAmount(fullDue);
     setPaymentMode(PaymentMode.CASH);
-    setCollectionSource(CollectionSource.DIRECT_CUSTOMER);
-    setSelectedDealerId('');
-    setSelectedAgentId('');
     setRefNumber('');
     setPaymentNotes('');
 
-    // Fetch active dealers and collection agents if not loaded
-    if (dealersList.length === 0) {
-      ApiClient.getDealers(undefined, 'ACTIVE').then(setDealersList).catch(console.error);
-    }
-    if (agentsList.length === 0) {
-      ApiClient.getUsers('COLLECTION_AGENT', 'ACTIVE').then(setAgentsList).catch(console.error);
+    const currentUser = ApiClient.getUser();
+    if (currentUser?.role === 'COLLECTION_AGENT') {
+      setCollectionSource(CollectionSource.RECOVERY_AGENT);
+      setSelectedAgentId(currentUser.id);
+    } else {
+      setCollectionSource(CollectionSource.DIRECT_CUSTOMER);
+      setSelectedDealerId('');
+      setSelectedAgentId('');
+      // Fetch active dealers and collection agents if not loaded
+      if (dealersList.length === 0) {
+        ApiClient.getDealers(undefined, 'ACTIVE').then(setDealersList).catch(console.error);
+      }
+      if (agentsList.length === 0) {
+        ApiClient.getUsers('COLLECTION_AGENT', 'ACTIVE').then(setAgentsList).catch(console.error);
+      }
     }
   };
 
@@ -205,17 +211,26 @@ export const QueueView: React.FC = () => {
 
       {/* Filter and Search Bar */}
       <div className="crm-card" style={{ padding: 14, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ display: 'flex', gap: 4, background: 'var(--bg-surface-secondary)', padding: 3, borderRadius: 'var(--radius-md)' }}>
-          {(['ALL', 'DUE_TODAY', 'OVERDUE', 'UPCOMING'] as const).map((s) => (
-            <button
-              key={s}
-              onClick={() => setStatusFilter(s)}
-              className={`crm-tab ${statusFilter === s ? 'active' : ''}`}
-              style={{ fontSize: 12, padding: '6px 12px' }}
-            >
-              {s.replace('_', ' ')}
-            </button>
-          ))}
+        <div style={{ display: 'flex', gap: 4, background: 'var(--bg-surface-secondary)', padding: 3, borderRadius: 'var(--radius-md)', flexWrap: 'wrap' }}>
+          {(['ALL', 'TODAY', 'TOMORROW', 'NEXT_7_DAYS', 'OVERDUE'] as const).map((s) => {
+            const labels: Record<string, string> = {
+              ALL: 'All Active',
+              TODAY: "Today's Due",
+              TOMORROW: 'Tomorrow',
+              NEXT_7_DAYS: 'Next 7 Days',
+              OVERDUE: 'Overdue Queue',
+            };
+            return (
+              <button
+                key={s}
+                onClick={() => setStatusFilter(s)}
+                className={`crm-tab ${statusFilter === s ? 'active' : ''}`}
+                style={{ fontSize: 12, padding: '6px 12px' }}
+              >
+                {labels[s]}
+              </button>
+            );
+          })}
         </div>
 
         <form onSubmit={handleSearchSubmit} style={{ display: 'flex', gap: 10, flex: 1, minWidth: 260 }}>

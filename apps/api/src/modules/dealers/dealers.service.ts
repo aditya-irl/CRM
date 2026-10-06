@@ -806,4 +806,69 @@ export class DealerService {
       })),
     };
   }
+
+  /**
+   * Delete a partner retail store.
+   * Safety rule: Destructive deletion is blocked if any linked customers, loans, payments,
+   * settlements, or other financial records exist. In that case, returns a clear explanatory
+   * message advising deactivation instead.
+   */
+  public static async deleteDealer(id: string, currentUser: AuthenticatedUser) {
+    const dealerRes = await queryPostgres('SELECT * FROM dealers WHERE id = $1', [id]);
+    if (dealerRes.rows.length === 0) {
+      throw new NotFoundError('Dealer not found');
+    }
+    const dealer = dealerRes.rows[0];
+
+    // Check all linked financial and operational records
+    const [custRes, loansRes, paymentsRes, settlementsRes] = await Promise.all([
+      queryPostgres('SELECT COUNT(DISTINCT customer_id)::int as count FROM loans WHERE dealer_id = $1', [id]),
+      queryPostgres('SELECT COUNT(*)::int as count FROM loans WHERE dealer_id = $1', [id]),
+      queryPostgres('SELECT COUNT(*)::int as count FROM payments WHERE dealer_id = $1', [id]),
+      queryPostgres('SELECT COUNT(*)::int as count FROM dealer_settlements WHERE dealer_id = $1', [id]),
+    ]);
+
+    const linkedCustomers = parseInt(custRes.rows[0]?.count || '0', 10);
+    const linkedLoans = parseInt(loansRes.rows[0]?.count || '0', 10);
+    const linkedPayments = parseInt(paymentsRes.rows[0]?.count || '0', 10);
+    const linkedSettlements = parseInt(settlementsRes.rows[0]?.count || '0', 10);
+
+    if (linkedCustomers > 0 || linkedLoans > 0 || linkedPayments > 0 || linkedSettlements > 0) {
+      const reasons: string[] = [];
+      if (linkedCustomers > 0) reasons.push(`${linkedCustomers} linked customer(s)`);
+      if (linkedLoans > 0) reasons.push(`${linkedLoans} loan agreement(s)`);
+      if (linkedPayments > 0) reasons.push(`${linkedPayments} payment record(s)`);
+      if (linkedSettlements > 0) reasons.push(`${linkedSettlements} settlement(s)`);
+
+      throw new AppError(
+        `Cannot delete partner store "${dealer.store_name}" because active financial history exists (${reasons.join(', ')}). Please deactivate the store instead to preserve financial records and regulatory audit history.`,
+        400
+      );
+    }
+
+    // Safe to delete cleanly: remove user account if any and dealer record
+    await runPostgresTransaction(async (client) => {
+      await client.query('DELETE FROM users WHERE dealer_id = $1', [id]);
+      await client.query('DELETE FROM dealers WHERE id = $1', [id]);
+    });
+
+    // Write immutable audit log
+    await AuditService.log({
+      userId: currentUser.id,
+      action: 'DEALER_DELETED',
+      entity: 'Dealer',
+      entityId: id,
+      previousState: {
+        dealerCode: dealer.dealer_code,
+        storeName: dealer.store_name,
+        ownerName: dealer.owner_name,
+        phone: dealer.phone,
+      },
+    });
+
+    return {
+      success: true,
+      message: `Partner store "${dealer.store_name}" (${dealer.dealer_code}) was deleted successfully.`,
+    };
+  }
 }

@@ -189,4 +189,21 @@ export class DealerController {
       next(err);
     }
   }
+
+  public static async deleteDealer(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params;
+      const user = req.user as AuthenticatedUser;
+      const result = await DealerService.deleteDealer(id, user);
+
+      res.json({
+        success: true,
+        data: result,
+        message: result.message,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
 }

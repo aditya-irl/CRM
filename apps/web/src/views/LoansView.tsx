@@ -39,6 +39,8 @@ export const LoansView: React.FC = () => {
   const [tenureMonths, setTenureMonths] = useState<number>(12);
   const [frequency, setFrequency] = useState<RepaymentFrequency>(RepaymentFrequency.MONTHLY);
   const [disbDate, setDisbDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [emiStartDate, setEmiStartDate] = useState<string>('');
+  const [originationError, setOriginationError] = useState<string | null>(null);
 
   const [previewSchedule, setPreviewSchedule] = useState<any | null>(null);
   const [calculatingPreview, setCalculatingPreview] = useState(false);
@@ -169,6 +171,22 @@ export const LoansView: React.FC = () => {
   }, []);
 
   const handlePreviewCalculation = async () => {
+    if (!emiStartDate) {
+      setOriginationError('EMI Start Date is required. Select the date when the first EMI becomes due.');
+      setPreviewSchedule(null);
+      return;
+    }
+    if (emiStartDate < disbDate) {
+      setOriginationError('EMI Start Date cannot be earlier than loan disbursement date.');
+      setPreviewSchedule(null);
+      return;
+    }
+    if (!tenureMonths || tenureMonths <= 0 || !Number.isInteger(Number(tenureMonths))) {
+      setOriginationError('EMI Tenure must be a positive integer number of months.');
+      setPreviewSchedule(null);
+      return;
+    }
+    setOriginationError(null);
     setCalculatingPreview(true);
     try {
       const res = await ApiClient.calculateLoanPreview({
@@ -179,19 +197,54 @@ export const LoansView: React.FC = () => {
         tenureMonths: Number(tenureMonths),
         installmentFrequency: frequency,
         disbursementDate: disbDate,
+        firstEmiDate: emiStartDate,
       });
       setPreviewSchedule(res);
     } catch (err: any) {
-      alert(err.message || 'Failed to calculate amortization preview');
+      setOriginationError(err.message || 'Failed to calculate amortization preview');
+      setPreviewSchedule(null);
     } finally {
       setCalculatingPreview(false);
     }
   };
 
+  // Immediate preview update when any calculation parameter changes - guarantees no stale schedule
+  useEffect(() => {
+    if (!showOriginationModal) return;
+    if (!emiStartDate || !tenureMonths || tenureMonths <= 0 || !principalAmount || principalAmount <= 0) {
+      setPreviewSchedule(null);
+      return;
+    }
+    if (emiStartDate < disbDate) {
+      setPreviewSchedule(null);
+      setOriginationError('EMI Start Date cannot be earlier than loan disbursement date.');
+      return;
+    }
+    setOriginationError(null);
+
+    const timer = setTimeout(() => {
+      handlePreviewCalculation();
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [principalAmount, downPayment, annualRate, calcMethod, tenureMonths, frequency, disbDate, emiStartDate, showOriginationModal]);
+
   const handleBookLoan = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCustomerId) {
       alert('Please select a customer borrower');
+      return;
+    }
+    if (!emiStartDate) {
+      alert('EMI Start Date is required. Select the date when the first EMI becomes due.');
+      return;
+    }
+    if (emiStartDate < disbDate) {
+      alert('EMI Start Date cannot be earlier than loan disbursement date.');
+      return;
+    }
+    if (!tenureMonths || tenureMonths <= 0 || !Number.isInteger(Number(tenureMonths))) {
+      alert('EMI Tenure must be a positive integer number of months.');
       return;
     }
     setBookingLoan(true);
@@ -205,9 +258,11 @@ export const LoansView: React.FC = () => {
         tenureMonths: Number(tenureMonths),
         installmentFrequency: frequency,
         disbursementDate: disbDate,
+        firstEmiDate: emiStartDate,
       });
       setShowOriginationModal(false);
       setPreviewSchedule(null);
+      setEmiStartDate('');
       loadData();
     } catch (err: any) {
       alert(err.message || 'Failed to originate loan');
@@ -249,7 +304,7 @@ export const LoansView: React.FC = () => {
           </p>
         </div>
 
-        <button onClick={() => { setShowOriginationModal(true); setPreviewSchedule(null); }} className="btn btn-primary">
+        <button onClick={() => { setShowOriginationModal(true); setPreviewSchedule(null); setEmiStartDate(''); setOriginationError(null); }} className="btn btn-primary">
           <Plus size={15} />
           <span>Originate New Loan</span>
         </button>
@@ -416,18 +471,9 @@ export const LoansView: React.FC = () => {
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>Tenure (Months)</label>
-                  <input
-                    type="number"
-                    className="form-input mono"
-                    value={tenureMonths}
-                    onChange={(e) => setTenureMonths(Number(e.target.value))}
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>Disbursement Date</label>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                    Disbursement Date <span style={{ color: 'var(--danger)' }}>*</span>
+                  </label>
                   <input
                     type="date"
                     className="form-input"
@@ -436,7 +482,49 @@ export const LoansView: React.FC = () => {
                     required
                   />
                 </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                    EMI Start Date <span style={{ color: 'var(--danger)' }}>*</span>
+                  </label>
+                  <input
+                    type="date"
+                    className="form-input"
+                    value={emiStartDate}
+                    onChange={(e) => setEmiStartDate(e.target.value)}
+                    required
+                  />
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                    Select the date when the first EMI becomes due.
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                    EMI Tenure <span style={{ color: 'var(--danger)' }}>*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    className="form-input mono"
+                    placeholder="e.g. 12"
+                    value={tenureMonths}
+                    onChange={(e) => setTenureMonths(Number(e.target.value))}
+                    required
+                  />
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                    Tenure in months (determines installment count).
+                  </div>
+                </div>
               </div>
+
+              {originationError && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 'var(--radius-sm)', color: '#991b1b', fontSize: 13 }}>
+                  <AlertCircle size={16} />
+                  <span>{originationError}</span>
+                </div>
+              )}
 
               <div>
                 <button
@@ -447,14 +535,15 @@ export const LoansView: React.FC = () => {
                   style={{ width: '100%' }}
                 >
                   <Calculator size={15} />
-                  <span>{calculatingPreview ? 'Computing...' : '1. Preview Server Amortization Schedule'}</span>
+                  <span>{calculatingPreview ? 'Computing Amortization...' : '1. Preview Server Amortization Schedule'}</span>
                 </button>
               </div>
 
               {/* Schedule Preview Section */}
               {previewSchedule && (
                 <div style={{ background: 'var(--bg-surface-secondary)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: 16 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 14, textAlign: 'center' }}>
+                  {/* Financial Metrics */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 12, textAlign: 'center' }}>
                     <div style={{ background: '#ffffff', padding: 10, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
                       <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Net Disbursed</div>
                       <div className="mono" style={{ fontSize: 15, fontWeight: 700 }}>{formatINR(previewSchedule.netDisbursedAmount)}</div>
@@ -470,6 +559,26 @@ export const LoansView: React.FC = () => {
                     <div style={{ background: '#ffffff', padding: 10, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
                       <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>EMI Amount</div>
                       <div className="mono" style={{ fontSize: 15, fontWeight: 700, color: 'var(--success)' }}>{formatINR(previewSchedule.emiAmount)}</div>
+                    </div>
+                  </div>
+
+                  {/* Schedule Details Summary */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 14, textAlign: 'center' }}>
+                    <div style={{ background: '#ffffff', padding: 10, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>EMI Start Date</div>
+                      <div className="mono" style={{ fontSize: 13, fontWeight: 700, color: 'var(--primary)' }}>{previewSchedule.firstEmiDate}</div>
+                    </div>
+                    <div style={{ background: '#ffffff', padding: 10, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>EMI Tenure</div>
+                      <div className="mono" style={{ fontSize: 13, fontWeight: 700 }}>{previewSchedule.tenureMonths} Months ({previewSchedule.totalInstallments} EMIs)</div>
+                    </div>
+                    <div style={{ background: '#ffffff', padding: 10, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>First EMI Due Date</div>
+                      <div className="mono" style={{ fontSize: 13, fontWeight: 700 }}>{previewSchedule.schedule[0]?.dueDate || previewSchedule.firstEmiDate}</div>
+                    </div>
+                    <div style={{ background: '#ffffff', padding: 10, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Last EMI Due Date</div>
+                      <div className="mono" style={{ fontSize: 13, fontWeight: 700 }}>{previewSchedule.maturityDate}</div>
                     </div>
                   </div>
 

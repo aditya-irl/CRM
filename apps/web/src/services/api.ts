@@ -648,7 +648,16 @@ export class ApiClient {
 
   // KYC
   public static async getKYCDownloadUrl(docId: string) {
-    return this.request<{ downloadUrl: string }>(`/kyc/${docId}/presigned-download`);
+    const res = await this.request<{ downloadUrl: string }>(`/kyc/${docId}/presigned-download`);
+    let url = res.downloadUrl;
+    if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+      let base = (import.meta as any).env?.VITE_API_BASE_URL || '';
+      base = base.trim().replace(/\/api\/v1\/?$/, '').replace(/\/+$/, '');
+      if (base) {
+        url = `${base}${url.startsWith('/') ? '' : '/'}${url}`;
+      }
+    }
+    return { ...res, downloadUrl: url };
   }
 
   public static async initKYCUpload(data: { customerId: string; docType: string; fileName: string; mimeType: string; fileSizeBytes: number }) {
@@ -662,6 +671,60 @@ export class ApiClient {
     return this.request<any>('/kyc/confirm', {
       method: 'POST',
       body: JSON.stringify(data),
+    });
+  }
+
+  /**
+   * Complete 3-stage KYC document upload:
+   * 1. Request presigned upload URL from API.
+   * 2. PUT file binary data to storage (S3 presigned PUT or local API receiver).
+   * 3. Confirm document metadata with backend.
+   */
+  public static async uploadKYCDocument(data: {
+    customerId: string;
+    docType: string;
+    file: File;
+    docNumber?: string | null;
+  }) {
+    const mimeType = data.file.type || 'application/octet-stream';
+    const initRes = await this.initKYCUpload({
+      customerId: data.customerId,
+      docType: data.docType,
+      fileName: data.file.name,
+      mimeType,
+      fileSizeBytes: data.file.size,
+    });
+
+    let uploadUrl = initRes.uploadUrl;
+    if (uploadUrl.startsWith('/')) {
+      uploadUrl = buildApiUrl(uploadUrl.replace(/^\/api\/v1/, ''));
+    }
+
+    const headers: Record<string, string> = {
+      'Content-Type': mimeType,
+    };
+    if (uploadUrl.includes('/api/v1/')) {
+      const token = this.getToken();
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const uploadRes = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers,
+      body: data.file,
+    });
+
+    if (!uploadRes.ok) {
+      throw new Error(`Failed to upload document file: HTTP ${uploadRes.status}`);
+    }
+
+    return this.confirmKYC({
+      customerId: data.customerId,
+      docType: data.docType,
+      docNumber: data.docNumber || null,
+      storageKey: initRes.storageKey,
+      fileMimeType: mimeType,
+      fileSizeBytes: data.file.size,
     });
   }
 
@@ -748,13 +811,62 @@ export class ApiClient {
     return this.request<{ dealer: IDealer; loans: any[] }>('/dealers/me');
   }
 
-  // Users / Agents
+  public static async deleteDealer(id: string) {
+    return this.request<{ success: boolean; message: string }>(`/dealers/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Users / Agents Management
   public static async getUsers(role?: string, status?: string) {
     const params = new URLSearchParams();
     if (role) params.append('role', role);
     if (status) params.append('status', status);
     const res = await this.request<any>(`/users?${params.toString()}`);
     return Array.isArray(res) ? res : res?.users || [];
+  }
+
+  public static async createAgent(data: {
+    fullName: string;
+    phone: string;
+    loginId: string;
+    status?: string;
+    assignedBranch?: string | null;
+    areaRoute?: string | null;
+  }) {
+    return this.request<{
+      agentId: string;
+      loginId: string;
+      temporaryPassword: string;
+      mustChangePassword: boolean;
+      user: any;
+    }>('/users/agents', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  public static async resetAgentPassword(agentId: string) {
+    return this.request<{
+      agentId: string;
+      loginId: string;
+      temporaryPassword: string;
+      mustChangePassword: boolean;
+      user: any;
+    }>(`/users/agents/${agentId}/reset-password`, {
+      method: 'POST',
+    });
+  }
+
+  public static async updateAgentStatus(agentId: string, status: string) {
+    return this.request<{ id: string; status: string }>(`/users/agents/${agentId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    });
+  }
+
+  public static async getAgentDashboard() {
+    return this.request<any>('/emi/agent-dashboard');
   }
 
   // Dealer Collections Ledger

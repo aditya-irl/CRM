@@ -53,8 +53,6 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
           setDealers(data);
           if (isDealer && currentUser?.dealerId) {
             setSelectedDealerId(currentUser.dealerId);
-          } else if (data.length > 0 && !selectedDealerId) {
-            setSelectedDealerId(data[0].id);
           }
         })
         .catch((err) => console.error('Failed to load active dealers', err));
@@ -154,6 +152,21 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
     const financed = Math.max(0, productPrice - downPayment);
     if (financed <= 0) {
       setErrorMsg('Financed amount must be greater than zero. Down payment cannot equal or exceed product price.');
+      setPreviewSchedule(null);
+      return;
+    }
+    if (!firstEmiDate) {
+      setPreviewSchedule(null);
+      return;
+    }
+    if (firstEmiDate < disbursementDate) {
+      setErrorMsg('EMI Start Date cannot be earlier than loan origination date.');
+      setPreviewSchedule(null);
+      return;
+    }
+    if (!tenureMonths || tenureMonths <= 0) {
+      setErrorMsg('EMI Tenure must be a positive integer.');
+      setPreviewSchedule(null);
       return;
     }
 
@@ -168,11 +181,12 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
         tenureMonths: Number(tenureMonths),
         installmentFrequency: frequency,
         disbursementDate,
-        firstEmiDate: firstEmiDate || undefined,
+        firstEmiDate,
       });
       setPreviewSchedule(res);
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to calculate EMI preview from server.');
+      setPreviewSchedule(null);
     } finally {
       setCalculatingPreview(false);
     }
@@ -182,7 +196,15 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
   useEffect(() => {
     if (!isOpen || currentStep !== 4) return;
     const financed = Math.max(0, productPrice - downPayment);
-    if (financed <= 0 || !tenureMonths || tenureMonths <= 0) return;
+    if (financed <= 0 || !tenureMonths || tenureMonths <= 0 || !firstEmiDate) {
+      setPreviewSchedule(null);
+      return;
+    }
+    if (firstEmiDate < disbursementDate) {
+      setErrorMsg('EMI Start Date cannot be earlier than loan origination date.');
+      setPreviewSchedule(null);
+      return;
+    }
 
     const timer = setTimeout(() => {
       handleFetchPreview();
@@ -207,13 +229,25 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
         setErrorMsg('Please specify product brand, model, and valid cash price.');
         return;
       }
-      if (dealers.length > 0 && !selectedDealerId) {
-        setErrorMsg('Please select the partner retail store originating this loan.');
+      if (isDealer && !currentUser?.dealerId) {
+        setErrorMsg('Dealer partner account context is required.');
         return;
       }
       setCurrentStep(4);
       setTimeout(handleFetchPreview, 50);
     } else if (currentStep === 4) {
+      if (!firstEmiDate) {
+        setErrorMsg('EMI Start Date is required. Select the date when the first EMI becomes due.');
+        return;
+      }
+      if (firstEmiDate < disbursementDate) {
+        setErrorMsg('EMI Start Date cannot be earlier than loan origination date.');
+        return;
+      }
+      if (!tenureMonths || tenureMonths <= 0) {
+        setErrorMsg('EMI Tenure must be a positive integer.');
+        return;
+      }
       const financed = Math.max(0, productPrice - downPayment);
       if (financed <= 0) {
         setErrorMsg('Financed amount must be greater than zero. Down payment cannot equal or exceed product price.');
@@ -286,13 +320,11 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
             else if (cat.includes('voter')) docType = KYCType.VOTER_ID;
             else if (cat.includes('driving')) docType = KYCType.DRIVING_LICENSE;
 
-            await ApiClient.confirmKYC({
+            await ApiClient.uploadKYCDocument({
               customerId: newCustomer.id,
               docType,
               docNumber: kyc.title || null,
-              storageKey: `kyc/${newCustomer.id}/${Date.now()}_${kyc.file.name}`,
-              fileMimeType: kyc.mimeType || 'image/jpeg',
-              fileSizeBytes: kyc.fileSizeBytes || kyc.file.size,
+              file: kyc.file,
             });
           } catch (e) {
             console.warn('KYC item registration note:', e);
@@ -639,46 +671,29 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
               {currentStep === 3 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   {/* Originating Partner Dealer / Store */}
-                  <div
-                    style={{
-                      padding: 14,
-                      background: 'var(--bg-surface-secondary)',
-                      borderRadius: 'var(--radius-md)',
-                      border: '1px solid var(--border-subtle)',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                      <Store size={16} color="var(--primary)" />
-                      <label style={{ fontSize: 13, fontWeight: 700, margin: 0 }}>
-                        Partner Mobile Store / Dealer <span style={{ color: 'var(--danger)' }}>*</span>
-                      </label>
-                    </div>
-                    <select
-                      className="form-select"
-                      value={selectedDealerId}
-                      onChange={(e) => setSelectedDealerId(e.target.value)}
-                      disabled={isDealer}
-                      required
-                      style={{ background: isDealer ? 'var(--bg-surface-secondary)' : '#ffffff' }}
+                  {isDealer && (
+                    <div
+                      style={{
+                        padding: 14,
+                        background: 'var(--bg-surface-secondary)',
+                        borderRadius: 'var(--radius-md)',
+                        border: '1px solid var(--border-subtle)',
+                      }}
                     >
-                      <option value="">-- Select Originating Partner Store --</option>
-                      {dealers.map((d) => (
-                        <option key={d.id} value={d.id}>
-                          {d.storeName} ({d.dealerCode}) — {d.areaCity} {isDealer && d.id === currentUser?.dealerId ? '(Your Store)' : ''}
-                        </option>
-                      ))}
-                    </select>
-                    {isDealer && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                        <Store size={16} color="var(--primary)" />
+                        <label style={{ fontSize: 13, fontWeight: 700, margin: 0 }}>
+                          Originating Partner Retail Store
+                        </label>
+                      </div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                        {dealers.find((d) => d.id === currentUser?.dealerId)?.storeName || 'Your Store'}
+                      </div>
                       <div style={{ fontSize: 11, color: 'var(--success-text)', marginTop: 4, fontWeight: 600 }}>
-                        ✓ Locked to your authorized partner store origin.
+                        ✓ Automatically associated with your authenticated partner store origin.
                       </div>
-                    )}
-                    {!isDealer && (
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-                        Select the retail store where the customer is purchasing this mobile handset under financing.
-                      </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
                     <div>
@@ -845,15 +860,46 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                     </div>
                   </div>
 
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                        Loan Origination Date <span style={{ color: 'var(--danger)' }}>*</span>
+                      </label>
+                      <input
+                        type="date"
+                        className="form-input"
+                        value={disbursementDate}
+                        onChange={(e) => setDisbursementDate(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                        EMI Start Date <span style={{ color: 'var(--danger)' }}>*</span>
+                      </label>
+                      <input
+                        type="date"
+                        className="form-input"
+                        value={firstEmiDate}
+                        onChange={(e) => setFirstEmiDate(e.target.value)}
+                        required
+                      />
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                        Select the date when the first EMI becomes due.
+                      </div>
+                    </div>
+                  </div>
+
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12 }}>
                     <div>
                       <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
-                        Tenure (Months)
+                        EMI Tenure <span style={{ color: 'var(--danger)' }}>*</span>
                       </label>
                       <select
                         className="form-select"
                         value={tenureMonths}
                         onChange={(e) => setTenureMonths(Number(e.target.value))}
+                        required
                       >
                         <option value={3}>3 Months</option>
                         <option value={6}>6 Months</option>
@@ -862,6 +908,9 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                         <option value={18}>18 Months</option>
                         <option value={24}>24 Months</option>
                       </select>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                        Number of installments.
+                      </div>
                     </div>
 
                     <div>
@@ -932,7 +981,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                         padding: 16,
                       }}
                     >
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, textAlign: 'center' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, textAlign: 'center', marginBottom: 12 }}>
                         <div>
                           <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>MONTHLY EMI</div>
                           <div className="mono" style={{ fontSize: 18, fontWeight: 800, color: 'var(--success)' }}>
@@ -952,9 +1001,36 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                           </div>
                         </div>
                         <div>
-                          <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>INSTALLMENTS</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>NET FINANCED</div>
                           <div className="mono" style={{ fontSize: 18, fontWeight: 800 }}>
-                            {previewSchedule.totalInstallments} EMIs
+                            {formatINR(previewSchedule.netDisbursedAmount)}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, textAlign: 'center' }}>
+                        <div>
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>EMI START DATE</div>
+                          <div className="mono" style={{ fontSize: 14, fontWeight: 700, color: 'var(--primary)' }}>
+                            {previewSchedule.firstEmiDate}
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>EMI TENURE</div>
+                          <div className="mono" style={{ fontSize: 14, fontWeight: 700 }}>
+                            {previewSchedule.tenureMonths} Mos ({previewSchedule.totalInstallments} EMIs)
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>FIRST EMI DUE</div>
+                          <div className="mono" style={{ fontSize: 14, fontWeight: 700 }}>
+                            {previewSchedule.schedule[0]?.dueDate || previewSchedule.firstEmiDate}
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>LAST EMI DUE</div>
+                          <div className="mono" style={{ fontSize: 14, fontWeight: 700 }}>
+                            {previewSchedule.maturityDate}
                           </div>
                         </div>
                       </div>
@@ -1059,9 +1135,9 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                           </div>
                         </div>
                         <div>
-                          <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Tenure</div>
-                          <div className="mono" style={{ fontSize: 16, fontWeight: 800 }}>
-                            {previewSchedule.totalInstallments} EMIs
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Tenure & Schedule</div>
+                          <div className="mono" style={{ fontSize: 14, fontWeight: 800 }}>
+                            {previewSchedule.totalInstallments} EMIs (Starts {previewSchedule.firstEmiDate})
                           </div>
                         </div>
                       </div>

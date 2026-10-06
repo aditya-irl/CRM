@@ -433,6 +433,11 @@ export class CustomerService {
           }
         }
 
+        const resolvedFirstEmiDate = data.loan.firstEmiDate || (data.loan as any).emiStartDate;
+        if (resolvedFirstEmiDate && data.loan.disbursementDate && resolvedFirstEmiDate < data.loan.disbursementDate) {
+          throw new AppError('EMI Start Date cannot be earlier than loan disbursement date');
+        }
+
         const calc = generateAmortizationSchedule({
           principalAmount: data.loan.principalAmount,
           downPayment: data.loan.downPayment || 0,
@@ -441,7 +446,7 @@ export class CustomerService {
           installmentFrequency: data.loan.installmentFrequency,
           interestCalcMethod: data.loan.interestCalcMethod,
           disbursementDate: data.loan.disbursementDate,
-          firstEmiDate: data.loan.firstEmiDate,
+          firstEmiDate: resolvedFirstEmiDate,
         });
 
         const loanId = uuidv4();

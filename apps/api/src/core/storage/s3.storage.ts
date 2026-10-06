@@ -60,10 +60,15 @@ export class S3StorageProvider implements StorageProvider {
     const effectiveExpiry = Math.min(params.expiresInSeconds, MAX_KYC_URL_EXPIRY_SECONDS);
 
     if (params.operation === 'getObject') {
-      const cmd = new GetObjectCommand({
+      const getCmdParams: any = {
         Bucket: this.bucket,
         Key: params.key,
-      });
+        ResponseContentDisposition: 'inline',
+      };
+      if (params.mimeType) {
+        getCmdParams.ResponseContentType = params.mimeType;
+      }
+      const cmd = new GetObjectCommand(getCmdParams);
       return getSignedUrl(this.client, cmd, { expiresIn: effectiveExpiry });
     } else {
       const cmd = new PutObjectCommand({
