@@ -21,7 +21,7 @@ export interface CreateUserData {
 export interface CreateAgentData {
   fullName: string;
   phone: string;
-  loginId: string;
+  loginId?: string | null;
   status?: UserStatus;
   assignedBranch?: string | null;
   areaRoute?: string | null;
@@ -375,7 +375,8 @@ export class UsersService {
     data: CreateAgentData,
     creator: AuthenticatedUser
   ): Promise<AgentCredentialsResponse> {
-    const loginIdNorm = data.loginId.trim().toLowerCase();
+    const rawLoginId = data.loginId && data.loginId.trim() ? data.loginId.trim() : data.phone.trim();
+    const loginIdNorm = rawLoginId.toLowerCase();
     const phoneNorm = data.phone.trim();
 
     // Check duplicate email/loginId or phone

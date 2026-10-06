@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { MobileApi } from '../services/mobileApi';
 import { ArrowRight, UserCheck } from 'lucide-react';
+import { BrandLogo } from '../components/BrandLogo';
 
 interface MobileLoginProps {
   onSuccess: () => void;
@@ -43,28 +44,8 @@ export const MobileLogin: React.FC<MobileLoginProps> = ({ onSuccess }) => {
       }}
     >
       <div className="mobile-card" style={{ padding: '28px 20px', boxShadow: 'var(--shadow-card)' }}>
-        <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <div
-            style={{
-              width: 48,
-              height: 48,
-              borderRadius: 'var(--radius-md)',
-              background: 'var(--primary)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 10px',
-              color: '#ffffff',
-              fontSize: 22,
-              fontWeight: 800,
-            }}
-          >
-            ₹
-          </div>
-          <h1 style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-primary)' }}>Field Collection CRM</h1>
-          <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
-            Low-bandwidth field collection terminal
-          </p>
+        <div style={{ textAlign: 'center', marginBottom: 24, display: 'flex', justifyContent: 'center' }}>
+          <BrandLogo variant="full" size="md" subtitle="Field Collection Terminal" />
         </div>
 
         {error && (

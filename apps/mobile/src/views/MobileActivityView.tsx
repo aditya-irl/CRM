@@ -23,6 +23,14 @@ export const MobileActivityView: React.FC = () => {
     loadPayments();
   }, []);
 
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayPayments = payments.filter((p) => {
+    const isToday = (p.paymentTimestamp || (p as any).payment_timestamp || '').slice(0, 10) === todayStr;
+    const isReversed = p.status === 'REVERSED' || Boolean((p as any).is_reversal);
+    return isToday && !isReversed;
+  });
+  const todayTotal = todayPayments.reduce((acc, p) => acc + Number(p.amount || 0), 0);
+
   return (
     <div style={{ paddingBottom: 70, minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
@@ -39,6 +47,44 @@ export const MobileActivityView: React.FC = () => {
         <h2 style={{ fontSize: 16, fontWeight: 800 }}>Field Collection Activity</h2>
         <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
           Recent transactions and field settlement records
+        </div>
+      </div>
+
+      {/* Summary KPI Banner */}
+      <div style={{ padding: '12px 16px 0 16px' }}>
+        <div
+          style={{
+            background: 'linear-gradient(135deg, #1e293b, #0f172a)',
+            color: '#ffffff',
+            padding: '14px 16px',
+            borderRadius: 12,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              Today's Field Collections
+            </div>
+            <div className="mono" style={{ fontSize: 20, fontWeight: 800, color: '#38bdf8', marginTop: 2 }}>
+              {formatINR(todayTotal)}
+            </div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <span
+              style={{
+                background: 'rgba(255, 255, 255, 0.12)',
+                padding: '4px 10px',
+                borderRadius: 20,
+                fontSize: 12,
+                fontWeight: 700,
+              }}
+            >
+              {todayPayments.length} receipts
+            </span>
+          </div>
         </div>
       </div>
 
@@ -87,6 +133,37 @@ export const MobileActivityView: React.FC = () => {
                     {new Date(p.paymentTimestamp || (p as any).payment_timestamp).toLocaleTimeString('en-IN', { hour12: true })}
                   </div>
                 </div>
+              </div>
+
+              {/* Collection Channel Tag */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 11, color: 'var(--text-secondary)' }}>
+                <span>Channel:</span>
+                <span
+                  style={{
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                    fontSize: 10,
+                    fontWeight: 700,
+                    background:
+                      (p.collectionSource || (p as any).collection_source) === 'DEALER'
+                        ? '#e0f2fe'
+                        : (p.collectionSource || (p as any).collection_source) === 'RECOVERY_AGENT'
+                        ? '#fef3c7'
+                        : '#f1f5f9',
+                    color:
+                      (p.collectionSource || (p as any).collection_source) === 'DEALER'
+                        ? '#0369a1'
+                        : (p.collectionSource || (p as any).collection_source) === 'RECOVERY_AGENT'
+                        ? '#92400e'
+                        : '#475569',
+                  }}
+                >
+                  {(p.collectionSource || (p as any).collection_source) === 'DEALER'
+                    ? `Partner Store: ${p.dealerStoreName || (p as any).dealer_store_name || 'Dealer'}`
+                    : (p.collectionSource || (p as any).collection_source) === 'RECOVERY_AGENT'
+                    ? `Recovery Agent: ${p.agentName || (p as any).agent_name || 'Rahul Singh'}`
+                    : 'Direct Customer'}
+                </span>
               </div>
             </div>
           ))

@@ -49,6 +49,9 @@ export class EMIService {
         c.primary_phone,
         c.area_route,
         c.address_line1 || ', ' || c.city as address_summary,
+        (SELECT TO_CHAR(ca.created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') FROM collection_assignments ca WHERE ca.loan_id = l.id AND ca.is_active = TRUE LIMIT 1) as assigned_at,
+        (SELECT u2.full_name FROM collection_assignments ca JOIN users u2 ON ca.assigned_by = u2.id WHERE ca.loan_id = l.id AND ca.is_active = TRUE LIMIT 1) as assigned_by_name,
+        (SELECT COUNT(*)::int FROM emi_installments ei WHERE ei.loan_id = l.id AND ei.due_date < '${businessToday}' AND ei.status != 'PAID') as overdue_emis_count,
         (SELECT cl.outcome FROM call_logs cl WHERE cl.customer_id = c.id ORDER BY cl.call_timestamp DESC LIMIT 1) as last_call_outcome,
         (SELECT TO_CHAR(cl.promised_payment_date, 'YYYY-MM-DD') FROM call_logs cl WHERE cl.customer_id = c.id ORDER BY cl.call_timestamp DESC LIMIT 1) as promised_payment_date,
         (SELECT TO_CHAR(p.payment_timestamp, 'YYYY-MM-DD') FROM payments p WHERE p.loan_id = l.id AND p.status = 'SUCCESS' AND p.is_reversal = FALSE ORDER BY p.payment_timestamp DESC LIMIT 1) as last_payment_date,
@@ -61,15 +64,10 @@ export class EMIService {
     const params: any[] = [];
     let paramIndex = 1;
 
-    // Agent assignment scoping
+    // Agent assignment scoping: strictly assigned loans only
     if (user.role === UserRole.COLLECTION_AGENT) {
-      sql += ` AND (
-        l.assigned_agent_id = $${paramIndex} 
-        OR c.id IN (SELECT customer_id FROM collection_assignments WHERE agent_id = $${paramIndex} AND is_active = TRUE AND (effective_to IS NULL OR effective_to >= CURRENT_DATE))
-        OR c.area_route IN (SELECT area_route FROM collection_assignments WHERE agent_id = $${paramIndex} AND is_active = TRUE AND (effective_to IS NULL OR effective_to >= CURRENT_DATE))
-      )`;
+      sql += ` AND l.assigned_agent_id = $${paramIndex++}`;
       params.push(user.id);
-      paramIndex++;
     }
 
     const filterVal = (filters.status || '').toUpperCase();
@@ -177,6 +175,9 @@ export class EMIService {
         promisedPaymentDate: r.promised_payment_date || null,
         lastPaymentDate: r.last_payment_date || null,
         lastPaymentAmount: r.last_payment_amount ? Number(r.last_payment_amount) : null,
+        assignedAt: r.assigned_at || null,
+        assignedByName: r.assigned_by_name || null,
+        overdueEmisCount: Number(r.overdue_emis_count || 0),
       };
     });
 
@@ -258,14 +259,8 @@ export class EMIService {
     const custRes = await queryPostgres(
       `SELECT COUNT(DISTINCT c.id)::int as assigned_customers
        FROM customers c
-       LEFT JOIN loans l ON l.customer_id = c.id AND l.status = 'ACTIVE'
-       LEFT JOIN collection_assignments ca ON ca.customer_id = c.id AND ca.is_active = TRUE
-       WHERE c.deleted_at IS NULL
-         AND (
-           l.assigned_agent_id = $1
-           OR ca.agent_id = $1
-           OR c.area_route IN (SELECT area_route FROM collection_assignments WHERE agent_id = $1 AND is_active = TRUE)
-         )`,
+       JOIN loans l ON l.customer_id = c.id AND l.status = 'ACTIVE'
+       WHERE c.deleted_at IS NULL AND l.assigned_agent_id = $1`,
       [targetAgentId]
     );
 
@@ -274,12 +269,7 @@ export class EMIService {
       `SELECT COUNT(DISTINCT l.id)::int as active_loans
        FROM loans l
        JOIN customers c ON l.customer_id = c.id
-       WHERE l.status = 'ACTIVE' AND c.deleted_at IS NULL
-         AND (
-           l.assigned_agent_id = $1
-           OR c.id IN (SELECT customer_id FROM collection_assignments WHERE agent_id = $1 AND is_active = TRUE)
-           OR c.area_route IN (SELECT area_route FROM collection_assignments WHERE agent_id = $1 AND is_active = TRUE)
-         )`,
+       WHERE l.status = 'ACTIVE' AND c.deleted_at IS NULL AND l.assigned_agent_id = $1`,
       [targetAgentId]
     );
 
@@ -307,11 +297,7 @@ export class EMIService {
        JOIN loans l ON e.loan_id = l.id
        JOIN customers c ON e.customer_id = c.id
        WHERE e.status != 'PAID' AND l.status = 'ACTIVE' AND c.deleted_at IS NULL
-         AND (
-           l.assigned_agent_id = $1
-           OR c.id IN (SELECT customer_id FROM collection_assignments WHERE agent_id = $1 AND is_active = TRUE)
-           OR c.area_route IN (SELECT area_route FROM collection_assignments WHERE agent_id = $1 AND is_active = TRUE)
-         )`,
+         AND l.assigned_agent_id = $1`,
       [targetAgentId, businessToday]
     );
 

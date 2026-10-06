@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { MobileApi } from '../services/mobileApi';
-import { IAgentQueueItem, formatINR, EMIStatus, CallOutcome, PaymentMode, IUser } from '@crm/shared';
+import { IAgentQueueItem, formatINR, EMIStatus, CallOutcome, PaymentMode, IUser, CollectionSource } from '@crm/shared';
 import {
   Phone,
   MessageCircle,
@@ -26,6 +26,8 @@ export const MobileQueue: React.FC<MobileQueueProps> = ({ user, onLogout }) => {
   const [stats, setStats] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [fromCache, setFromCache] = useState(false);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const [tab, setTab] = useState<'DUE_TODAY' | 'OVERDUE' | 'ALL'>('DUE_TODAY');
   const [search, setSearch] = useState('');
@@ -43,9 +45,22 @@ export const MobileQueue: React.FC<MobileQueueProps> = ({ user, onLogout }) => {
   const [refNo, setRefNo] = useState('');
   const [savingPayment, setSavingPayment] = useState(false);
   const [receiptResult, setReceiptResult] = useState<any | null>(null);
+  const [copiedReceipt, setCopiedReceipt] = useState(false);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const loadData = async () => {
     setLoading(true);
+    setErrorMsg(null);
     try {
       const statusParam = tab === 'ALL' ? undefined : tab;
       const res = await MobileApi.getQueue(statusParam, undefined, search || undefined);
@@ -54,8 +69,9 @@ export const MobileQueue: React.FC<MobileQueueProps> = ({ user, onLogout }) => {
 
       const statsRes = await MobileApi.getStats();
       setStats(statsRes);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Queue load failed', err);
+      setErrorMsg(err.message || 'Unable to load today\'s recovery queue. Please check connection.');
     } finally {
       setLoading(false);
     }
@@ -74,7 +90,7 @@ export const MobileQueue: React.FC<MobileQueueProps> = ({ user, onLogout }) => {
 
   const handleSaveCall = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedCallItem) return;
+    if (!selectedCallItem || savingCall) return;
     setSavingCall(true);
     try {
       await MobileApi.logCall({
@@ -104,7 +120,11 @@ export const MobileQueue: React.FC<MobileQueueProps> = ({ user, onLogout }) => {
 
   const handleSavePay = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedPayItem) return;
+    if (!selectedPayItem || savingPayment) return;
+    if (Number(payAmount) <= 0) {
+      alert('Please enter a valid payment amount greater than 0');
+      return;
+    }
     setSavingPayment(true);
     try {
       const res = await MobileApi.recordPayment({
@@ -113,6 +133,8 @@ export const MobileQueue: React.FC<MobileQueueProps> = ({ user, onLogout }) => {
         customerId: selectedPayItem.customerId,
         amount: Number(payAmount),
         paymentMode: payMode,
+        collectionSource: CollectionSource.RECOVERY_AGENT,
+        agentId: user.id,
         referenceNumber: refNo || undefined,
         idempotencyKey: `MOB_${selectedPayItem.installmentId}_${Date.now()}`,
       });
@@ -127,10 +149,22 @@ export const MobileQueue: React.FC<MobileQueueProps> = ({ user, onLogout }) => {
   };
 
   const sendWhatsApp = (item: IAgentQueueItem) => {
-    const clean = item.primaryPhone.replace(/\D/g, '');
+    const clean = item.primaryPhone ? item.primaryPhone.replace(/\D/g, '') : '';
     const amount = formatINR(item.remainingAmount + item.penaltyAmount);
     const msg = `Dear ${item.customerName}, your loan EMI of ${amount} for account ${item.loanAccountNo} is due on ${item.dueDate}. Please keep payment ready.`;
     window.open(`https://wa.me/${clean}?text=${encodeURIComponent(msg)}`, '_blank');
+  };
+
+  const handleShareReceipt = () => {
+    if (!receiptResult) return;
+    const text = `Alpha Mobile Gallery Receipt\nShubh Pvt Ltd\nReceipt: ${receiptResult.receiptNumber}\nAccount: ${receiptResult.loanAccountNo}\nAmount: ${formatINR(receiptResult.amountCollected)}\nCollected by: Recovery Agent (${user.fullName})`;
+    if (navigator.share) {
+      navigator.share({ title: 'Payment Receipt', text }).catch(() => {});
+    } else if (navigator.clipboard) {
+      navigator.clipboard.writeText(text);
+      setCopiedReceipt(true);
+      setTimeout(() => setCopiedReceipt(false), 2000);
+    }
   };
 
   return (
@@ -174,7 +208,13 @@ export const MobileQueue: React.FC<MobileQueueProps> = ({ user, onLogout }) => {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {fromCache && (
+          {!isOnline && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--danger-bg)', border: '1px solid var(--danger-border)', padding: '3px 6px', borderRadius: 4, fontSize: 10, color: 'var(--danger-text)', fontWeight: 600 }}>
+              <WifiOff size={11} />
+              <span>Offline</span>
+            </div>
+          )}
+          {fromCache && isOnline && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--warning-bg)', border: '1px solid var(--warning-border)', padding: '3px 6px', borderRadius: 4, fontSize: 10, color: 'var(--warning-text)', fontWeight: 600 }}>
               <WifiOff size={11} />
               <span>Offline Cache</span>
@@ -182,6 +222,24 @@ export const MobileQueue: React.FC<MobileQueueProps> = ({ user, onLogout }) => {
           )}
         </div>
       </header>
+
+      {/* Offline Alert Strip */}
+      {!isOnline && (
+        <div style={{ background: '#fef2f2', borderBottom: '1px solid #fee2e2', padding: '8px 16px', fontSize: 12, color: '#991b1b', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <AlertTriangle size={14} />
+          <span>No internet connection. Working in offline mode.</span>
+        </div>
+      )}
+
+      {/* Error Retry Strip */}
+      {errorMsg && (
+        <div style={{ background: 'var(--danger-bg)', borderBottom: '1px solid var(--danger-border)', padding: '10px 16px', fontSize: 12, color: 'var(--danger-text)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>{errorMsg}</span>
+          <button onClick={loadData} className="mobile-btn mobile-btn-secondary" style={{ minHeight: 28, padding: '2px 8px', fontSize: 11 }}>
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Progress Strip */}
       {stats && (
@@ -315,7 +373,7 @@ export const MobileQueue: React.FC<MobileQueueProps> = ({ user, onLogout }) => {
                 {/* 4 Quick Action Buttons */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1.2fr', gap: 6, paddingTop: 4 }}>
                   <a
-                    href={`tel:${item.primaryPhone}`}
+                    href={item.primaryPhone ? `tel:${item.primaryPhone.replace(/\D/g, '')}` : '#'}
                     className="mobile-btn mobile-btn-secondary"
                     style={{ textDecoration: 'none', color: 'var(--text-primary)', minHeight: 36 }}
                   >
@@ -425,6 +483,10 @@ export const MobileQueue: React.FC<MobileQueueProps> = ({ user, onLogout }) => {
             <div style={{ background: 'var(--bg-surface-secondary)', padding: 10, borderRadius: 8, fontSize: 12, marginBottom: 12 }}>
               <div>Borrower: <strong>{selectedPayItem.customerName}</strong></div>
               <div>Loan Acc: <span className="mono">{selectedPayItem.loanAccountNo}</span></div>
+              <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Channel:</span>
+                <span className="mobile-badge badge-paid">Recovery Agent ({user.fullName})</span>
+              </div>
             </div>
 
             <form onSubmit={handleSavePay} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -499,6 +561,9 @@ export const MobileQueue: React.FC<MobileQueueProps> = ({ user, onLogout }) => {
               }}
             >
               <div>Loan Acc: <span className="mono">{receiptResult.loanAccountNo}</span></div>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                Channel: <strong style={{ color: 'var(--text-primary)' }}>Recovery Agent ({user.fullName})</strong>
+              </div>
               <div style={{ fontWeight: 700, color: 'var(--success-text)' }}>
                 Amount: {formatINR(receiptResult.amountCollected)}
               </div>
@@ -507,9 +572,15 @@ export const MobileQueue: React.FC<MobileQueueProps> = ({ user, onLogout }) => {
               </div>
             </div>
 
-            <button onClick={() => setReceiptResult(null)} className="mobile-btn mobile-btn-primary" style={{ width: '100%' }}>
-              Done
-            </button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={handleShareReceipt} className="mobile-btn mobile-btn-secondary" style={{ flex: 1 }}>
+                <Share2 size={14} />
+                <span>{copiedReceipt ? 'Copied!' : 'Share'}</span>
+              </button>
+              <button onClick={() => setReceiptResult(null)} className="mobile-btn mobile-btn-primary" style={{ flex: 1 }}>
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}

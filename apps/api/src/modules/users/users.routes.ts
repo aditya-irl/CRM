@@ -31,13 +31,37 @@ const resetPasswordSchema = z.object({
   password: z.string().min(6, 'Password must be at least 6 characters'),
 });
 
-const createAgentSchema = z.object({
-  fullName: z.string().min(2, 'Full name must be at least 2 characters'),
-  phone: z.string().regex(/^[0-9+()-\s]{10,15}$/, 'Invalid phone number'),
-  loginId: z.string().min(3, 'Login ID must be at least 3 characters'),
+export const createAgentSchema = z.object({
+  fullName: z
+    .string({ required_error: 'Full name is required' })
+    .trim()
+    .min(2, 'Full name must be at least 2 characters'),
+  phone: z
+    .string({ required_error: 'Phone number is required' })
+    .trim()
+    .regex(/^[0-9+()-\s]{10,15}$/, 'Invalid phone number (10-15 digits required)'),
+  loginId: z
+    .string()
+    .trim()
+    .transform((val) => (val === '' ? undefined : val))
+    .optional()
+    .nullable()
+    .refine((val) => !val || val.length >= 3, {
+      message: 'Login ID must be at least 3 characters if provided',
+    }),
   status: z.nativeEnum(UserStatus).optional(),
-  assignedBranch: z.string().optional().nullable(),
-  areaRoute: z.string().optional().nullable(),
+  assignedBranch: z
+    .string()
+    .trim()
+    .transform((val) => (val === '' ? null : val))
+    .optional()
+    .nullable(),
+  areaRoute: z
+    .string()
+    .trim()
+    .transform((val) => (val === '' ? null : val))
+    .optional()
+    .nullable(),
 });
 
 const updateAgentStatusSchema = z.object({
@@ -52,10 +76,12 @@ router.post(
     try {
       const parsed = createAgentSchema.safeParse(req.body);
       if (!parsed.success) {
-        throw new ValidationError(
-          'Invalid request payload',
-          parsed.error.errors.map((e) => ({ field: e.path.join('.'), issue: e.message }))
-        );
+        const issues = parsed.error.errors.map((e) => ({
+          field: e.path.join('.') || 'payload',
+          issue: e.message,
+        }));
+        const summaryMsg = issues.map((i) => `${i.field}: ${i.issue}`).join('; ');
+        throw new ValidationError(`Invalid request payload: ${summaryMsg}`, issues);
       }
 
       const result = await UsersService.createAgent(parsed.data, req.user!);

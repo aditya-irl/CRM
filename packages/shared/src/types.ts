@@ -182,6 +182,9 @@ export interface ILoan {
   maturityDate: string;
   assignedAgentId?: string | null;
   assignedAgent?: IUser | null;
+  assignedAgentName?: string | null;
+  assignedAgentPhone?: string | null;
+  assignedAt?: string | null;
   dealerId?: string | null;
   dealer?: IDealer | null;
   dealerStoreName?: string | null;
@@ -429,6 +432,34 @@ export interface IAgentQueueItem {
   lastPaymentAmount?: number;
   lastCallOutcome?: CallOutcome | null;
   promisedPaymentDate?: string | null;
+  assignedAt?: string | null;
+  assignedBy?: string | null;
+  assignedByName?: string | null;
+  overdueEmisCount?: number;
+  deviceDetails?: string | null;
+}
+
+export interface IAssignLoanAgentRequest {
+  agentId: string;
+  notes?: string | null;
+}
+
+export interface IUnassignLoanAgentRequest {
+  reason?: string | null;
+}
+
+export interface ILoanAssignmentHistory {
+  id: string;
+  loanId: string;
+  agentId: string;
+  agentName: string;
+  agentPhone: string;
+  assignedBy: string;
+  assignedByName: string;
+  effectiveFrom: string;
+  effectiveTo?: string | null;
+  isActive: boolean;
+  createdAt: string;
 }
 
 // Dashboard Aggregates

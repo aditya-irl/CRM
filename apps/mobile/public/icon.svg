@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" fill="none">
+  <defs>
+    <linearGradient id="m-bg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#1e293b" />
+    </linearGradient>
+    <linearGradient id="m-terra" x1="256" y1="96" x2="384" y2="416" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#ea580c" />
+      <stop offset="100%" stop-color="#b8532f" />
+    </linearGradient>
+    <linearGradient id="m-gold" x1="192" y1="288" x2="320" y2="320" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#fb923c" />
+      <stop offset="100%" stop-color="#f59e0b" />
+    </linearGradient>
+  </defs>
+
+  <!-- PWA Container Tile -->
+  <rect width="512" height="512" rx="128" fill="url(#m-bg)"/>
+
+  <!-- Left Leg of 'A' / Device Frame -->
+  <path d="M128 392L230.4 100C233.6 89.6 243.2 83.2 254.4 83.2H257.6C268.8 83.2 278.4 89.6 281.6 100L384 392C388 404.8 378.4 416 364.8 416H326.4C316.8 416 308 409.6 304.8 400.8L280 328H232L207.2 400.8C204 409.6 195.2 416 185.6 416H147.2C133.6 416 124 404.8 128 392Z" fill="#334155"/>
+
+  <!-- Right Accent Leg (Terracotta) -->
+  <path d="M256 83.2H257.6C268.8 83.2 278.4 89.6 281.6 100L384 392C388 404.8 378.4 416 364.8 416H326.4C316.8 416 308 409.6 304.8 400.8L280 328H256V83.2Z" fill="url(#m-terra)"/>
+
+  <!-- Top Phone Notch / Camera -->
+  <rect x="232" y="112" width="48" height="16" rx="8" fill="#f8fafc" opacity="0.9"/>
+
+  <!-- Screen Cutout Core -->
+  <polygon points="256,160 296,280 216,280" fill="#0f172a"/>
+
+  <!-- EMI / Smart Chip Bar -->
+  <rect x="192" y="288" width="128" height="32" rx="16" fill="url(#m-gold)"/>
+  <circle cx="256" cy="304" r="12" fill="#ffffff"/>
+</svg>

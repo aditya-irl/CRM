@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { MobileApi } from '../services/mobileApi';
-import { ICustomer, formatINR, PaymentMode } from '@crm/shared';
+import { ICustomer, IUser, formatINR, PaymentMode, CollectionSource } from '@crm/shared';
 import {
   Search,
   Phone,
@@ -27,7 +27,11 @@ import {
 import { MobileEditCustomerModal } from '../components/MobileEditCustomerModal';
 import { compressImageFile } from '../utils/imageCompressor';
 
-export const MobileCustomersView: React.FC = () => {
+interface MobileCustomersViewProps {
+  user?: IUser | null;
+}
+
+export const MobileCustomersView: React.FC<MobileCustomersViewProps> = ({ user }) => {
   const [customers, setCustomers] = useState<ICustomer[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -54,20 +58,23 @@ export const MobileCustomersView: React.FC = () => {
   const [savingPayment, setSavingPayment] = useState(false);
   const [receiptResult, setReceiptResult] = useState<any | null>(null);
 
-  // Quick Direct Upload state
   const [uploadingDoc, setUploadingDoc] = useState(false);
   const [uploadingCategory, setUploadingCategory] = useState<string>('Aadhaar Front');
   const [selectedPreviewDoc, setSelectedPreviewDoc] = useState<any | null>(null);
+  const [copiedReceipt, setCopiedReceipt] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const directFileInputRef = useRef<HTMLInputElement>(null);
   const directCameraInputRef = useRef<HTMLInputElement>(null);
 
   const loadCustomers = async () => {
     setLoading(true);
+    setErrorMsg(null);
     try {
       const data = await MobileApi.getCustomers(search || undefined);
       setCustomers(data);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load customers', err);
+      setErrorMsg(err.message || 'Unable to load borrowers');
     } finally {
       setLoading(false);
     }
@@ -107,7 +114,7 @@ export const MobileCustomersView: React.FC = () => {
   };
 
   const sendWhatsApp = (cust: ICustomer) => {
-    const cleanPhone = cust.primaryPhone.replace(/\D/g, '');
+    const cleanPhone = cust.primaryPhone ? cust.primaryPhone.replace(/\D/g, '') : '';
     const msg = `Hello ${cust.fullName}, greeting from collection service. Please reach out if you have any questions regarding your EMI account.`;
     window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`, '_blank');
   };
@@ -122,7 +129,11 @@ export const MobileCustomersView: React.FC = () => {
 
   const handleSavePayment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedLoanForPay || !customerDetail) return;
+    if (!selectedLoanForPay || !customerDetail || savingPayment) return;
+    if (Number(payAmount) <= 0) {
+      alert('Please enter a valid collection amount greater than 0');
+      return;
+    }
     setSavingPayment(true);
     try {
       const idempotencyKey = `MOB_CUST_${customerDetail.customer.id}_${Date.now()}`;
@@ -133,6 +144,8 @@ export const MobileCustomersView: React.FC = () => {
         paymentMode: payMode,
         referenceNumber: refNo || undefined,
         idempotencyKey,
+        collectionSource: CollectionSource.RECOVERY_AGENT,
+        agentId: user?.id || MobileApi.getUser()?.id,
       });
       setShowPayModal(false);
       setReceiptResult(res);
@@ -141,6 +154,18 @@ export const MobileCustomersView: React.FC = () => {
       alert(err.message || 'Payment collection failed');
     } finally {
       setSavingPayment(false);
+    }
+  };
+
+  const handleShareReceipt = () => {
+    if (!receiptResult || !customerDetail) return;
+    const text = `Finance CRM Receipt\nReceipt: ${receiptResult.receiptNumber}\nCustomer: ${customerDetail.customer.fullName}\nAccount: ${receiptResult.loanAccountNo}\nAmount: ${formatINR(receiptResult.amountCollected)}\nCollected by: Recovery Agent (${user?.fullName || 'Self'})`;
+    if (navigator.share) {
+      navigator.share({ title: 'Payment Receipt', text }).catch(() => {});
+    } else if (navigator.clipboard) {
+      navigator.clipboard.writeText(text);
+      setCopiedReceipt(true);
+      setTimeout(() => setCopiedReceipt(false), 2000);
     }
   };
 
@@ -378,7 +403,7 @@ export const MobileCustomersView: React.FC = () => {
             {/* 3 Primary Action Buttons */}
             <div style={{ padding: '12px 18px', display: 'grid', gridTemplateColumns: '1fr 1fr 1.3fr', gap: 8, borderBottom: '1px solid var(--border-subtle)' }}>
               <a
-                href={`tel:${customerDetail.customer.primaryPhone}`}
+                href={customerDetail.customer.primaryPhone ? `tel:${customerDetail.customer.primaryPhone.replace(/\D/g, '')}` : '#'}
                 className="mobile-btn mobile-btn-secondary"
                 style={{ textDecoration: 'none', color: 'var(--text-primary)' }}
               >
@@ -551,6 +576,16 @@ export const MobileCustomersView: React.FC = () => {
 
                   <div style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 4 }}>
                     <div>Loan Acc: <span className="mono" style={{ fontWeight: 600 }}>{customerDetail.loans[0].loanAccountNo || customerDetail.loans[0].loan_account_no}</span></div>
+                    {(customerDetail.loans[0].dealerStoreName || (customerDetail.loans[0] as any).dealer_store_name) && (
+                      <div>
+                        Store: <strong>{customerDetail.loans[0].dealerStoreName || (customerDetail.loans[0] as any).dealer_store_name}</strong>
+                        {(customerDetail.loans[0].dealerCode || (customerDetail.loans[0] as any).dealer_code) && (
+                          <span className="mono" style={{ marginLeft: 6, fontSize: 10, color: 'var(--primary)' }}>
+                            ({customerDetail.loans[0].dealerCode || (customerDetail.loans[0] as any).dealer_code})
+                          </span>
+                        )}
+                      </div>
+                    )}
                     <div>Principal: <span className="mono">{formatINR(customerDetail.loans[0].principalAmount || customerDetail.loans[0].principal_amount)}</span></div>
                     <div>Monthly EMI: <strong className="mono" style={{ color: 'var(--success-text)' }}>{formatINR(customerDetail.loans[0].emiAmount || customerDetail.loans[0].emi_amount)}</strong></div>
                   </div>
@@ -649,6 +684,16 @@ export const MobileCustomersView: React.FC = () => {
             <form onSubmit={handleSavePayment} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
                 <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                  Collection Channel
+                </label>
+                <div style={{ background: 'var(--bg-surface-secondary)', padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border-subtle)', fontSize: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontWeight: 700, color: 'var(--primary)' }}>Recovery Agent</span>
+                  <span style={{ color: 'var(--text-secondary)' }}>{user?.fullName || MobileApi.getUser()?.fullName || 'Self'}</span>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
                   Collection Amount (₹)
                 </label>
                 <input
@@ -730,11 +775,20 @@ export const MobileCustomersView: React.FC = () => {
               <div>
                 Remaining Loan: <span className="mono">{formatINR(receiptResult.remainingLoanOutstanding)}</span>
               </div>
+              <div style={{ paddingTop: 4, borderTop: '1px dashed var(--border-subtle)', fontSize: 11, color: 'var(--text-secondary)' }}>
+                <span>Collected By: </span>
+                <strong>Recovery Agent ({receiptResult.agentName || user?.fullName || 'Rahul Singh'})</strong>
+              </div>
             </div>
 
-            <button onClick={() => setReceiptResult(null)} className="mobile-btn mobile-btn-primary" style={{ width: '100%' }}>
-              Done
-            </button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={handleShareReceipt} className="mobile-btn mobile-btn-secondary" style={{ flex: 1 }}>
+                <span>{copiedReceipt ? 'Copied!' : 'Share'}</span>
+              </button>
+              <button onClick={() => setReceiptResult(null)} className="mobile-btn mobile-btn-primary" style={{ flex: 1 }}>
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}

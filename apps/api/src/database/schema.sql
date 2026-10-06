@@ -204,6 +204,7 @@ CREATE INDEX IF NOT EXISTS idx_call_logs_follow_up ON call_logs(next_follow_up_d
 
 CREATE TABLE IF NOT EXISTS collection_assignments (
     id TEXT PRIMARY KEY,
+    loan_id TEXT REFERENCES loans(id) ON DELETE CASCADE,
     agent_id TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     customer_id TEXT REFERENCES customers(id) ON DELETE CASCADE,
     area_route TEXT,
@@ -214,6 +215,7 @@ CREATE TABLE IF NOT EXISTS collection_assignments (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_assignments_agent ON collection_assignments(agent_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_assignments_loan_active ON collection_assignments(loan_id, is_active);
 
 CREATE TABLE IF NOT EXISTS audit_logs (
     id TEXT PRIMARY KEY,

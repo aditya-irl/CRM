@@ -10,14 +10,16 @@ router.use(authenticate);
 
 // Agent Collection Queue
 router.get(
-  '/queue',
+  ['/queue', '/agent-queue'],
   requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER, UserRole.COLLECTION_AGENT),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const result = await EMIService.getAgentQueue(req.user!, req.query);
+      const isAgentQueue = req.path.endsWith('/agent-queue');
       return res.json({
         success: true,
-        data: result.items,
+        data: isAgentQueue ? { items: result.items, total: result.total } : result.items,
+        items: result.items,
         meta: {
           total: result.total,
           count: result.items.length,

@@ -121,21 +121,9 @@ export class PaymentService {
           source = CollectionSource.RECOVERY_AGENT;
           finalAgentId = user.id;
 
-          // Row-Level Access Control (RLAC) for Collection Agents
-          const isDirectAgent = loan.assigned_agent_id === user.id;
-          if (!isDirectAgent) {
-            const assignRes = await client.query(
-              `SELECT id FROM collection_assignments
-               WHERE agent_id = $1
-                 AND (customer_id = $2 OR area_route = (SELECT area_route FROM customers WHERE id = $2))
-                 AND is_active = TRUE
-                 AND (effective_to IS NULL OR effective_to >= CURRENT_DATE)
-               LIMIT 1`,
-              [user.id, data.customerId]
-            );
-            if (assignRes.rows.length === 0) {
-              throw new ForbiddenError('You are not authorized to collect payments for this customer or loan');
-            }
+          // Row-Level Access Control (RLAC) for Collection Agents: must be directly assigned to this loan
+          if (!loan.assigned_agent_id || loan.assigned_agent_id !== user.id) {
+            throw new ForbiddenError('You are not authorized to collect payments for this customer or loan');
           }
         } else if (user.role === UserRole.DEALER) {
           // Dealer can ONLY record DEALER payments for loans originated from their own store

@@ -8,6 +8,7 @@ import {
   LoanCalculationInput,
   LoanStatus,
   UserRole,
+  UserStatus,
   InterestMethod,
   RepaymentFrequency,
   EMIStatus,
@@ -666,6 +667,7 @@ export class LoanService {
              c.primary_phone,
              c.area_route,
              u.full_name as assigned_agent_name,
+             u.phone as assigned_agent_phone,
              d.store_name as dealer_store_name,
              d.dealer_code
       FROM loans l
@@ -685,20 +687,9 @@ export class LoanService {
       sql += ` AND l.dealer_id = $${paramIndex++}`;
       params.push(user.dealerId);
     } else if (user.role === UserRole.COLLECTION_AGENT) {
-      // Agent Row-Level Scoping: Agent only sees loans assigned to them OR within assigned route
-      sql += ` AND (
-        l.assigned_agent_id = $${paramIndex}
-        OR c.id IN (
-          SELECT customer_id FROM collection_assignments 
-          WHERE agent_id = $${paramIndex} AND is_active = TRUE AND (effective_to IS NULL OR effective_to >= CURRENT_DATE)
-        )
-        OR c.area_route IN (
-          SELECT area_route FROM collection_assignments 
-          WHERE agent_id = $${paramIndex} AND is_active = TRUE AND (effective_to IS NULL OR effective_to >= CURRENT_DATE)
-        )
-      )`;
+      // Agent Row-Level Scoping: Agent only sees loans assigned directly to them
+      sql += ` AND l.assigned_agent_id = $${paramIndex++}`;
       params.push(user.id);
-      paramIndex++;
     } else {
       if (query.agentId) {
         sql += ` AND l.assigned_agent_id = $${paramIndex++}`;
@@ -767,6 +758,7 @@ export class LoanService {
       maturityDate: l.maturity_date,
       assignedAgentId: l.assigned_agent_id,
       assignedAgentName: l.assigned_agent_name,
+      assignedAgentPhone: l.assigned_agent_phone,
       status: l.status,
       createdAt: l.created_at,
       updatedAt: l.updated_at,
@@ -793,6 +785,8 @@ export class LoanService {
              c.address_line1,
              c.area_route,
              u.full_name as assigned_agent_name,
+             u.phone as assigned_agent_phone,
+             (SELECT TO_CHAR(ca.created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') FROM collection_assignments ca WHERE ca.loan_id = l.id AND ca.is_active = TRUE LIMIT 1) as assigned_at,
              d.store_name as dealer_store_name,
              d.dealer_code
       FROM loans l
@@ -815,18 +809,8 @@ export class LoanService {
         throw new ForbiddenError('You do not have access to this loan account');
       }
     } else if (user.role === UserRole.COLLECTION_AGENT) {
-      const isDirectlyAssigned = loan.assigned_agent_id === user.id;
-      if (!isDirectlyAssigned) {
-        const assignmentRes = await queryPostgres(
-          `SELECT id FROM collection_assignments
-           WHERE agent_id = $1 AND (customer_id = $2 OR area_route = $3)
-             AND is_active = TRUE AND (effective_to IS NULL OR effective_to >= CURRENT_DATE)`,
-          [user.id, loan.customer_id, loan.area_route]
-        );
-
-        if (assignmentRes.rows.length === 0) {
-          throw new ForbiddenError('You do not have access to this loan account');
-        }
+      if (!loan.assigned_agent_id || loan.assigned_agent_id !== user.id) {
+        throw new ForbiddenError('You do not have access to this loan account');
       }
     }
 
@@ -895,10 +879,271 @@ export class LoanService {
       maturityDate: loan.maturity_date,
       assignedAgentId: loan.assigned_agent_id,
       assignedAgentName: loan.assigned_agent_name,
+      assignedAgentPhone: loan.assigned_agent_phone,
+      assignedAt: loan.assigned_at,
       status: loan.status,
       createdAt: loan.created_at,
       updatedAt: loan.updated_at,
       installments,
     };
+  }
+
+  /**
+   * Assign a loan recovery case to a specific active Collection Agent.
+   * Atomic PostgreSQL transaction with row-level lock and audit logging.
+   */
+  public static async assignAgent(
+    loanId: string,
+    agentId: string,
+    user: AuthenticatedUser,
+    notes?: string
+  ) {
+    if (
+      user.role !== UserRole.SUPER_ADMIN &&
+      user.role !== UserRole.ADMIN &&
+      user.role !== UserRole.BRANCH_MANAGER
+    ) {
+      throw new ForbiddenError('Only administrators and branch managers can assign collection recovery cases');
+    }
+
+    // Verify agent is an ACTIVE collection agent
+    const agentRes = await queryPostgres(
+      'SELECT id, full_name, role, status, phone FROM users WHERE id = $1 AND deleted_at IS NULL',
+      [agentId]
+    );
+
+    if (agentRes.rows.length === 0) {
+      throw new NotFoundError('Collection agent not found');
+    }
+
+    const agent = agentRes.rows[0];
+    if (agent.role !== UserRole.COLLECTION_AGENT) {
+      throw new AppError('Assigned user must have COLLECTION_AGENT role', 400);
+    }
+    if (agent.status !== UserStatus.ACTIVE) {
+      throw new AppError('Cannot assign case to an inactive collection agent', 400);
+    }
+
+    return await runPostgresTransaction(async (client) => {
+      // Row-level lock to prevent concurrent inconsistent assignments
+      const loanRes = await client.query(
+        `SELECT id, loan_account_no, customer_id, assigned_agent_id, status
+         FROM loans
+         WHERE id = $1 FOR UPDATE`,
+        [loanId]
+      );
+
+      if (loanRes.rows.length === 0) {
+        throw new NotFoundError('Loan account not found');
+      }
+
+      const loan = loanRes.rows[0];
+      const previousAgentId = loan.assigned_agent_id;
+      let previousAgentName: string | null = null;
+      if (previousAgentId) {
+        const prevAgentRes = await client.query('SELECT full_name FROM users WHERE id = $1', [previousAgentId]);
+        previousAgentName = prevAgentRes.rows[0]?.full_name || null;
+      }
+      const isReassignment = Boolean(previousAgentId && previousAgentId !== agentId);
+
+      // Deactivate any existing active assignment for this loan
+      await client.query(
+        `UPDATE collection_assignments
+         SET is_active = FALSE, effective_to = CURRENT_DATE
+         WHERE loan_id = $1 AND is_active = TRUE`,
+        [loanId]
+      );
+
+      // Insert new active assignment
+      const assignmentId = uuidv4();
+      await client.query(
+        `INSERT INTO collection_assignments (
+          id, loan_id, customer_id, agent_id, assigned_by, effective_from, is_active, created_at
+        ) VALUES ($1, $2, $3, $4, $5, CURRENT_DATE, TRUE, NOW())`,
+        [assignmentId, loanId, loan.customer_id, agentId, user.id]
+      );
+
+      // Update loans table
+      await client.query(
+        'UPDATE loans SET assigned_agent_id = $1, updated_at = NOW() WHERE id = $2',
+        [agentId, loanId]
+      );
+
+      // Log immutable audit entry
+      await AuditService.log({
+        userId: user.id,
+        action: isReassignment ? 'LOAN_RECOVERY_REASSIGNED' : 'LOAN_RECOVERY_ASSIGNED',
+        entity: 'Loan',
+        entityId: loanId,
+        previousState: {
+          loanId,
+          loanAccountNo: loan.loan_account_no,
+          assignedAgentId: previousAgentId || null,
+          assignedAgentName: previousAgentName || null,
+        },
+        newState: {
+          loanId,
+          loanAccountNo: loan.loan_account_no,
+          assignedAgentId: agentId,
+          assignedAgentName: agent.full_name,
+          assignedAgentPhone: agent.phone,
+          assignedBy: user.id,
+          assignmentId,
+          notes: notes || null,
+        },
+      });
+
+      return {
+        loanId,
+        loanAccountNo: loan.loan_account_no,
+        assignedAgentId: agentId,
+        assignedAgentName: agent.full_name,
+        assignedAgentPhone: agent.phone,
+        assignmentId,
+        isReassignment,
+        assignedAt: new Date().toISOString(),
+      };
+    });
+  }
+
+  /**
+   * Unassign a loan recovery case from its current agent.
+   * Atomic PostgreSQL transaction with row-level lock and audit logging.
+   */
+  public static async unassignAgent(
+    loanId: string,
+    user: AuthenticatedUser,
+    reason?: string
+  ) {
+    if (
+      user.role !== UserRole.SUPER_ADMIN &&
+      user.role !== UserRole.ADMIN &&
+      user.role !== UserRole.BRANCH_MANAGER
+    ) {
+      throw new ForbiddenError('Only administrators and branch managers can unassign collection recovery cases');
+    }
+
+    return await runPostgresTransaction(async (client) => {
+      const loanRes = await client.query(
+        `SELECT id, loan_account_no, customer_id, assigned_agent_id
+         FROM loans
+         WHERE id = $1 FOR UPDATE`,
+        [loanId]
+      );
+
+      if (loanRes.rows.length === 0) {
+        throw new NotFoundError('Loan account not found');
+      }
+
+      const loan = loanRes.rows[0];
+      const previousAgentId = loan.assigned_agent_id;
+      let previousAgentName: string | null = null;
+      if (previousAgentId) {
+        const prevAgentRes = await client.query('SELECT full_name FROM users WHERE id = $1', [previousAgentId]);
+        previousAgentName = prevAgentRes.rows[0]?.full_name || null;
+      }
+
+      if (!previousAgentId) {
+        return {
+          loanId,
+          loanAccountNo: loan.loan_account_no,
+          assignedAgentId: null,
+          message: 'Loan was already unassigned',
+        };
+      }
+
+      // Deactivate active assignments
+      await client.query(
+        `UPDATE collection_assignments
+         SET is_active = FALSE, effective_to = CURRENT_DATE
+         WHERE loan_id = $1 AND is_active = TRUE`,
+        [loanId]
+      );
+
+      // Set loan.assigned_agent_id to NULL
+      await client.query(
+        'UPDATE loans SET assigned_agent_id = NULL, updated_at = NOW() WHERE id = $1',
+        [loanId]
+      );
+
+      // Audit log
+      await AuditService.log({
+        userId: user.id,
+        action: 'LOAN_RECOVERY_UNASSIGNED',
+        entity: 'Loan',
+        entityId: loanId,
+        previousState: {
+          loanId,
+          loanAccountNo: loan.loan_account_no,
+          assignedAgentId: previousAgentId,
+          assignedAgentName: previousAgentName,
+        },
+        newState: {
+          loanId,
+          loanAccountNo: loan.loan_account_no,
+          assignedAgentId: null,
+          unassignedBy: user.id,
+          reason: reason || null,
+        },
+      });
+
+      return {
+        loanId,
+        loanAccountNo: loan.loan_account_no,
+        assignedAgentId: null,
+        previousAgentId,
+        previousAgentName,
+        unassignedAt: new Date().toISOString(),
+      };
+    });
+  }
+
+  /**
+   * Retrieve assignment history for a loan account.
+   */
+  public static async getLoanAssignmentHistory(loanId: string, user: AuthenticatedUser) {
+    if (user.role === UserRole.COLLECTION_AGENT) {
+      const accessCheck = await queryPostgres(
+        `SELECT id FROM loans WHERE id = $1 AND assigned_agent_id = $2`,
+        [loanId, user.id]
+      );
+      if (accessCheck.rows.length === 0) {
+        throw new ForbiddenError('You do not have access to assignment history for this loan');
+      }
+    }
+
+    const sql = `
+      SELECT ca.id,
+             ca.loan_id,
+             ca.agent_id,
+             u.full_name as agent_name,
+             u.phone as agent_phone,
+             ca.assigned_by,
+             assigner.full_name as assigned_by_name,
+             TO_CHAR(ca.effective_from, 'YYYY-MM-DD') as effective_from,
+             TO_CHAR(ca.effective_to, 'YYYY-MM-DD') as effective_to,
+             ca.is_active,
+             ca.created_at
+      FROM collection_assignments ca
+      JOIN users u ON ca.agent_id = u.id
+      JOIN users assigner ON ca.assigned_by = assigner.id
+      WHERE ca.loan_id = $1
+      ORDER BY ca.created_at DESC
+    `;
+
+    const res = await queryPostgres(sql, [loanId]);
+    return res.rows.map((row: any) => ({
+      id: row.id,
+      loanId: row.loan_id,
+      agentId: row.agent_id,
+      agentName: row.agent_name,
+      agentPhone: row.agent_phone,
+      assignedBy: row.assigned_by,
+      assignedByName: row.assigned_by_name,
+      effectiveFrom: row.effective_from,
+      effectiveTo: row.effective_to,
+      isActive: Boolean(row.is_active),
+      createdAt: row.created_at,
+    }));
   }
 }

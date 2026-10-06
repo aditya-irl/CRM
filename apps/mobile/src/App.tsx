@@ -22,6 +22,16 @@ export const App: React.FC = () => {
     setActiveTab('HOME');
   };
 
+  React.useEffect(() => {
+    const handleAuthExpired = () => {
+      setUser(null);
+    };
+    window.addEventListener('agent_auth_expired', handleAuthExpired);
+    return () => {
+      window.removeEventListener('agent_auth_expired', handleAuthExpired);
+    };
+  }, []);
+
   if (!user) {
     return <MobileLogin onSuccess={handleLoginSuccess} />;
   }
@@ -31,7 +41,7 @@ export const App: React.FC = () => {
       case 'HOME':
         return <MobileQueue user={user} onLogout={handleLogout} />;
       case 'CUSTOMERS':
-        return <MobileCustomersView />;
+        return <MobileCustomersView user={user} />;
       case 'ACTIVITY':
         return <MobileActivityView />;
       case 'PROFILE':

@@ -100,6 +100,9 @@ export const MobileProfileView: React.FC<MobileProfileViewProps> = ({ user, onLo
             </div>
             <span className="mobile-badge badge-paid">ACID SAFE</span>
           </div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8, borderTop: '1px solid var(--border-subtle)', paddingTop: 6, textAlign: 'center' }}>
+            Alpha Mobile Gallery • Shubh Pvt Ltd
+          </div>
         </div>
 
         {/* Logout Button */}

@@ -1,6 +1,21 @@
 import { IAgentQueueItem, IUser, ApiResponse, ICustomer } from '@crm/shared';
 
-const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '/api/v1';
+export function buildApiUrl(endpoint: string = ''): string {
+  let base = (import.meta as any).env?.VITE_API_BASE_URL;
+  if (!base || base === 'undefined' || base === 'null' || typeof base !== 'string') {
+    base = '/api/v1';
+  }
+  base = base.trim().replace(/\/+$/, '');
+  const trimmedEndpoint = (endpoint || '').trim();
+  const cleanEndpoint = trimmedEndpoint
+    ? trimmedEndpoint.startsWith('/')
+      ? trimmedEndpoint
+      : `/${trimmedEndpoint}`
+    : '';
+  return `${base}${cleanEndpoint}`.replace(/([^:]\/)\/+/g, '$1');
+}
+
+const API_BASE = buildApiUrl('');
 
 export class MobileApi {
   public static getToken(): string | null {
@@ -33,24 +48,57 @@ export class MobileApi {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
-    const res = await fetch(`${API_BASE}${endpoint}`, {
-      ...options,
-      headers,
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
 
-    if (res.status === 401) {
-      this.logout();
-      window.dispatchEvent(new Event('agent_auth_expired'));
-      throw new Error('Session expired. Please log in again.');
+    try {
+      const url = buildApiUrl(endpoint);
+      const res = await fetch(url, {
+        ...options,
+        headers,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (res.status === 401) {
+        this.logout();
+        if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+          window.dispatchEvent(new Event('agent_auth_expired'));
+        }
+        throw new Error('Session expired. Please log in again.');
+      }
+
+      if (res.status === 403) {
+        let errJson: any;
+        try { errJson = await res.json(); } catch {}
+        throw new Error(errJson?.error?.message || 'Access denied. You do not have permission for this action.');
+      }
+
+      let json: ApiResponse<T>;
+      try {
+        json = await res.json();
+      } catch {
+        throw new Error(
+          `Unable to reach the API server (HTTP ${res.status}). Please ensure the backend is running and try again.`
+        );
+      }
+
+      if (!res.ok || !json.success) {
+        throw new Error(json.error?.message || `Request failed with status ${res.status}`);
+      }
+
+      return json.data as T;
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      if (err.name === 'AbortError') {
+        throw new Error('Network request timed out. Please check your connection and try again.');
+      }
+      if (!navigator.onLine || err.message === 'Failed to fetch' || err.message?.includes('NetworkError')) {
+        throw new Error('No internet connection. Please reconnect and try again.');
+      }
+      throw err;
     }
-
-    const json: ApiResponse<T> = await res.json();
-
-    if (!res.ok || !json.success) {
-      throw new Error(json.error?.message || 'Network request failed');
-    }
-
-    return json.data as T;
   }
 
   public static async login(email: string, pass: string) {
@@ -120,7 +168,17 @@ export class MobileApi {
   }
 
   public static async getCustomerDetail(id: string) {
-    return this.request<{ customer: ICustomer; loans: any[]; kycDocuments: any[]; callLogs: any[] }>(`/customers/${id}`);
+    try {
+      const res = await this.request<{ customer: ICustomer; loans: any[]; kycDocuments: any[]; callLogs: any[] }>(`/customers/${id}`);
+      localStorage.setItem(`offline_cached_cust_${id}`, JSON.stringify(res));
+      return res;
+    } catch (err) {
+      const cached = localStorage.getItem(`offline_cached_cust_${id}`);
+      if (cached) {
+        return JSON.parse(cached);
+      }
+      throw err;
+    }
   }
 
   public static async getPayments(search?: string) {

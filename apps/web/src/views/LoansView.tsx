@@ -75,6 +75,125 @@ export const LoansView: React.FC = () => {
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
 
+  // Recovery Case Assignment States
+  const [assigningLoan, setAssigningLoan] = useState<any | null>(null);
+  const [activeAgentsList, setActiveAgentsList] = useState<any[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<string>('');
+  const [assignmentNotes, setAssignmentNotes] = useState<string>('');
+  const [submittingAssignment, setSubmittingAssignment] = useState(false);
+  const [assignmentError, setAssignmentError] = useState<string | null>(null);
+  const [assignmentSuccess, setAssignmentSuccess] = useState<string | null>(null);
+
+  // Assignment History Modal
+  const [historyLoan, setHistoryLoan] = useState<any | null>(null);
+  const [assignmentHistoryList, setAssignmentHistoryList] = useState<any[]>([]);
+  const [loadingAssignmentHistory, setLoadingAssignmentHistory] = useState(false);
+
+  const canManageAssignment =
+    currentUser?.role === UserRole.SUPER_ADMIN ||
+    currentUser?.role === UserRole.ADMIN ||
+    currentUser?.role === UserRole.BRANCH_MANAGER;
+
+  const handleOpenAssignModal = async (loan: any) => {
+    setAssigningLoan(loan);
+    setSelectedAgentId(loan.assignedAgentId || loan.assigned_agent_id || '');
+    setAssignmentNotes('');
+    setAssignmentError(null);
+    setAssignmentSuccess(null);
+    try {
+      const agents = await ApiClient.getAgents('ACTIVE');
+      setActiveAgentsList(agents || []);
+    } catch {
+      setActiveAgentsList([]);
+    }
+  };
+
+  const handleSubmitAssignment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!assigningLoan || !selectedAgentId) {
+      setAssignmentError('Please select an active collection agent');
+      return;
+    }
+
+    setSubmittingAssignment(true);
+    setAssignmentError(null);
+    setAssignmentSuccess(null);
+    try {
+      const res = await ApiClient.assignLoanAgent(assigningLoan.id, selectedAgentId, assignmentNotes || undefined);
+      setAssignmentSuccess('Recovery case assigned successfully');
+
+      // Update local loans state immediately
+      setLoans((prev) =>
+        prev.map((l) =>
+          l.id === assigningLoan.id
+            ? {
+                ...l,
+                assignedAgentId: res.data.assignedAgentId,
+                assignedAgentName: res.data.assignedAgentName,
+                assignedAgentPhone: res.data.assignedAgentPhone,
+              }
+            : l
+        )
+      );
+
+      // If loan detail modal is open, refresh it
+      if (selectedLoanDetail && selectedLoanDetail.loan.id === assigningLoan.id) {
+        await handleViewLoan(assigningLoan.id, loanModalTab);
+      }
+
+      setTimeout(() => {
+        setAssigningLoan(null);
+      }, 900);
+    } catch (err: any) {
+      setAssignmentError(err.message || 'Failed to assign collection agent');
+    } finally {
+      setSubmittingAssignment(false);
+    }
+  };
+
+  const handleUnassignLoan = async (loanId: string) => {
+    if (!window.confirm('Are you sure you want to unassign this recovery case from the current agent?')) {
+      return;
+    }
+    try {
+      await ApiClient.unassignLoanAgent(loanId);
+      alert('Loan unassigned successfully.');
+
+      // Update local loans state immediately
+      setLoans((prev) =>
+        prev.map((l) =>
+          l.id === loanId
+            ? {
+                ...l,
+                assignedAgentId: null,
+                assignedAgentName: null,
+                assignedAgentPhone: null,
+              }
+            : l
+        )
+      );
+
+      if (selectedLoanDetail && selectedLoanDetail.loan.id === loanId) {
+        await handleViewLoan(loanId, loanModalTab);
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to unassign recovery case');
+    }
+  };
+
+  const handleOpenAssignmentHistory = async (loan: any) => {
+    setHistoryLoan(loan);
+    setLoadingAssignmentHistory(true);
+    try {
+      const history = await ApiClient.getLoanAssignmentHistory(loan.id);
+      setAssignmentHistoryList(history || []);
+    } catch (err: any) {
+      alert(err.message || 'Failed to load assignment history');
+    } finally {
+      setLoadingAssignmentHistory(false);
+    }
+  };
+
   useEffect(() => {
     if (currentUser?.role === UserRole.DEALER || currentUser?.role === UserRole.SUPER_ADMIN) {
       ApiClient.getDealerPenaltySetting()
@@ -506,19 +625,20 @@ export const LoansView: React.FC = () => {
                 <th>Total Paid</th>
                 <th>Outstanding</th>
                 <th>Status</th>
+                <th>Assigned Agent</th>
                 <th>Action</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={10} style={{ textAlign: 'center', padding: 32, color: 'var(--text-secondary)' }}>
+                  <td colSpan={11} style={{ textAlign: 'center', padding: 32, color: 'var(--text-secondary)' }}>
                     Loading loan accounts...
                   </td>
                 </tr>
               ) : (activeStatusTab === 'ALL' ? loans : loans.filter((l) => (l.status || (l as any).status) === activeStatusTab)).length === 0 ? (
                 <tr>
-                  <td colSpan={10} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
+                  <td colSpan={11} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
                     No {activeStatusTab.toLowerCase()} loans found.
                   </td>
                 </tr>
@@ -528,6 +648,7 @@ export const LoansView: React.FC = () => {
                   const isPending = statusStr === 'PENDING_APPROVAL';
                   const isRejected = statusStr === 'REJECTED';
                   const reason = loan.rejectionReason || (loan as any).rejection_reason;
+                  const agentName = loan.assignedAgentName || (loan as any).assigned_agent_name;
                   return (
                     <tr key={loan.id}>
                       <td className="mono" style={{ fontWeight: 700, color: 'var(--primary)' }}>
@@ -555,6 +676,42 @@ export const LoansView: React.FC = () => {
                         {isRejected && reason && (
                           <div style={{ fontSize: 11, color: 'var(--danger-text)', marginTop: 2, maxWidth: 160 }} title={reason}>
                             {reason}
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        {agentName ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span className="badge badge-paid" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <UserCheck size={11} />
+                              <span>{agentName}</span>
+                            </span>
+                            {canManageAssignment && (
+                              <button
+                                onClick={() => handleOpenAssignModal(loan)}
+                                className="btn btn-secondary btn-sm"
+                                style={{ padding: '2px 6px', fontSize: 10 }}
+                                title="Reassign collection agent"
+                              >
+                                Reassign
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span className="badge" style={{ background: 'var(--bg-surface-secondary)', color: 'var(--text-muted)' }}>
+                              Unassigned
+                            </span>
+                            {canManageAssignment && (
+                              <button
+                                onClick={() => handleOpenAssignModal(loan)}
+                                className="btn btn-primary btn-sm"
+                                style={{ padding: '2px 6px', fontSize: 10 }}
+                                title="Assign collection agent"
+                              >
+                                Assign
+                              </button>
+                            )}
                           </div>
                         )}
                       </td>
@@ -854,6 +1011,104 @@ export const LoansView: React.FC = () => {
               <button onClick={() => setSelectedLoanDetail(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
                 <X size={20} />
               </button>
+            </div>
+
+            {/* Recovery Case Agent Assignment Banner */}
+            <div
+              style={{
+                background: 'var(--bg-surface-secondary)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '12px 16px',
+                marginBottom: 16,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: 12,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: '50%',
+                    background: (selectedLoanDetail.loan.assignedAgentName || (selectedLoanDetail.loan as any).assigned_agent_name)
+                      ? 'rgba(16, 185, 129, 0.15)'
+                      : 'rgba(156, 163, 175, 0.15)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: (selectedLoanDetail.loan.assignedAgentName || (selectedLoanDetail.loan as any).assigned_agent_name)
+                      ? 'var(--success)'
+                      : 'var(--text-muted)',
+                  }}
+                >
+                  <UserCheck size={18} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    Collection Recovery Agent
+                  </div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
+                    {(selectedLoanDetail.loan.assignedAgentName || (selectedLoanDetail.loan as any).assigned_agent_name) ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <span>{selectedLoanDetail.loan.assignedAgentName || (selectedLoanDetail.loan as any).assigned_agent_name}</span>
+                        {(selectedLoanDetail.loan.assignedAgentPhone || (selectedLoanDetail.loan as any).assigned_agent_phone) && (
+                          <span className="mono" style={{ fontSize: 12, fontWeight: 400, color: 'var(--text-secondary)' }}>
+                            • {selectedLoanDetail.loan.assignedAgentPhone || (selectedLoanDetail.loan as any).assigned_agent_phone}
+                          </span>
+                        )}
+                        {(selectedLoanDetail.loan.assignedAt || (selectedLoanDetail.loan as any).assigned_at) && (
+                          <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}>
+                            (since {new Date(selectedLoanDetail.loan.assignedAt || (selectedLoanDetail.loan as any).assigned_at).toLocaleDateString()})
+                          </span>
+                        )}
+                      </span>
+                    ) : (
+                      <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontWeight: 500 }}>
+                        Unassigned (No agent allocated for field recovery)
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => handleOpenAssignmentHistory(selectedLoanDetail.loan)}
+                  className="btn btn-secondary btn-sm"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}
+                  title="View assignment history audit"
+                >
+                  <History size={13} />
+                  <span>History</span>
+                </button>
+                {canManageAssignment && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenAssignModal(selectedLoanDetail.loan)}
+                      className="btn btn-primary btn-sm"
+                    >
+                      {(selectedLoanDetail.loan.assignedAgentId || (selectedLoanDetail.loan as any).assigned_agent_id)
+                        ? 'Reassign Agent'
+                        : 'Assign Agent'}
+                    </button>
+                    {(selectedLoanDetail.loan.assignedAgentId || (selectedLoanDetail.loan as any).assigned_agent_id) && (
+                      <button
+                        type="button"
+                        onClick={() => handleUnassignLoan(selectedLoanDetail.loan.id)}
+                        className="btn btn-danger btn-sm"
+                      >
+                        Unassign
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
 
             {/* Tab Switcher */}
@@ -1456,6 +1711,205 @@ export const LoansView: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* ─── RECOVERY CASE AGENT ASSIGNMENT MODAL ────────────────── */}
+      {assigningLoan && (
+        <div className="modal-overlay" style={{ zIndex: 3200 }} onClick={() => setAssigningLoan(null)}>
+          <div className="modal-content" style={{ width: '100%', maxWidth: 520, padding: 24 }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <UserCheck size={20} color="var(--primary)" />
+                <h3 style={{ fontSize: 17, fontWeight: 800, margin: 0 }}>
+                  {(assigningLoan.assignedAgentId || assigningLoan.assigned_agent_id)
+                    ? 'Reassign Recovery Agent'
+                    : 'Assign Recovery Agent'}
+                </h3>
+              </div>
+              <button onClick={() => setAssigningLoan(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Case Details Card */}
+            <div
+              style={{
+                background: 'var(--bg-surface-secondary)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '12px 14px',
+                marginBottom: 16,
+                fontSize: 12,
+                display: 'grid',
+                gridTemplateColumns: 'repeat(2, 1fr)',
+                gap: 8,
+              }}
+            >
+              <div>
+                <span style={{ color: 'var(--text-secondary)' }}>Loan Account:</span>{' '}
+                <strong className="mono">{assigningLoan.loanAccountNo || assigningLoan.loan_account_no}</strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-secondary)' }}>Customer:</span>{' '}
+                <strong>{assigningLoan.customerName || (assigningLoan as any).customer_name || assigningLoan.customer?.fullName}</strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-secondary)' }}>Outstanding Balance:</span>{' '}
+                <strong className="mono" style={{ color: 'var(--danger-text)' }}>
+                  {formatINR(assigningLoan.outstandingBalance || assigningLoan.outstanding_balance || 0)}
+                </strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-secondary)' }}>Current Agent:</span>{' '}
+                <strong>
+                  {assigningLoan.assignedAgentName || (assigningLoan as any).assigned_agent_name || (
+                    <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Unassigned</span>
+                  )}
+                </strong>
+              </div>
+            </div>
+
+            {assignmentError && (
+              <div style={{ padding: 10, background: 'var(--danger-bg)', border: '1px solid var(--danger-border)', borderRadius: 6, color: 'var(--danger-text)', fontSize: 12, marginBottom: 14 }}>
+                {assignmentError}
+              </div>
+            )}
+
+            {assignmentSuccess && (
+              <div style={{ padding: 10, background: 'var(--success-bg)', border: '1px solid var(--success-border)', borderRadius: 6, color: 'var(--success-text)', fontSize: 12, marginBottom: 14 }}>
+                {assignmentSuccess}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmitAssignment} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
+                  Select Active Collection Agent <span style={{ color: 'var(--danger)' }}>*</span>
+                </label>
+                <select
+                  className="form-input"
+                  value={selectedAgentId}
+                  onChange={(e) => setSelectedAgentId(e.target.value)}
+                  required
+                >
+                  <option value="">-- Choose active agent --</option>
+                  {activeAgentsList
+                    .filter((a) => (a.status || (a as any).status) === 'ACTIVE')
+                    .map((agent) => (
+                      <option key={agent.id} value={agent.id}>
+                        {agent.fullName || agent.full_name || agent.name} ({agent.phone || agent.loginId || agent.login_id})
+                      </option>
+                    ))}
+                </select>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                  Only active field collection agents can receive recovery assignments.
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
+                  Assignment Notes (Optional)
+                </label>
+                <textarea
+                  className="form-input"
+                  rows={2}
+                  placeholder="e.g. Priority recovery: customer reachable in evening after 6 PM"
+                  value={assignmentNotes}
+                  onChange={(e) => setAssignmentNotes(e.target.value)}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>
+                <button
+                  type="button"
+                  onClick={() => setAssigningLoan(null)}
+                  className="btn btn-secondary btn-sm"
+                  disabled={submittingAssignment}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary btn-sm"
+                  disabled={submittingAssignment || !selectedAgentId}
+                >
+                  {submittingAssignment
+                    ? 'Assigning...'
+                    : (assigningLoan.assignedAgentId || assigningLoan.assigned_agent_id)
+                    ? 'Confirm Reassignment'
+                    : 'Confirm Assignment'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── RECOVERY ASSIGNMENT HISTORY MODAL ────────────────────── */}
+      {historyLoan && (
+        <div className="modal-overlay" style={{ zIndex: 3200 }} onClick={() => setHistoryLoan(null)}>
+          <div className="modal-content" style={{ width: '100%', maxWidth: 700, padding: 24 }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div>
+                <h3 style={{ fontSize: 17, fontWeight: 800, margin: 0 }}>
+                  Assignment History Audit
+                </h3>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                  Loan: <strong className="mono">{historyLoan.loanAccountNo || historyLoan.loan_account_no}</strong>
+                </p>
+              </div>
+              <button onClick={() => setHistoryLoan(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            {loadingAssignmentHistory ? (
+              <div style={{ textAlign: 'center', padding: 30, color: 'var(--text-secondary)' }}>
+                Loading assignment audit history...
+              </div>
+            ) : assignmentHistoryList.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: 30, color: 'var(--text-muted)' }}>
+                No historical assignments recorded for this loan.
+              </div>
+            ) : (
+              <div className="table-container" style={{ maxHeight: 300, overflowY: 'auto' }}>
+                <table className="crm-table">
+                  <thead>
+                    <tr>
+                      <th>Agent</th>
+                      <th>Contact Phone</th>
+                      <th>Assigned By</th>
+                      <th>Effective From</th>
+                      <th>Effective To</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {assignmentHistoryList.map((hist) => (
+                      <tr key={hist.id}>
+                        <td style={{ fontWeight: 600 }}>{hist.agentName}</td>
+                        <td className="mono">{hist.agentPhone}</td>
+                        <td>{hist.assignedByName}</td>
+                        <td className="mono">{hist.effectiveFrom}</td>
+                        <td className="mono">{hist.effectiveTo || 'Present'}</td>
+                        <td>
+                          <span className={`badge ${hist.isActive ? 'badge-paid' : 'badge-upcoming'}`}>
+                            {hist.isActive ? 'ACTIVE' : 'HISTORICAL'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+              <button type="button" onClick={() => setHistoryLoan(null)} className="btn btn-secondary btn-sm">
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

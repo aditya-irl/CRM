@@ -8,6 +8,8 @@ import {
   approveLoanSchema,
   rejectLoanSchema,
   disburseLoanSchema,
+  assignLoanAgentSchema,
+  unassignLoanAgentSchema,
   UserRole,
 } from '@crm/shared';
 
@@ -175,6 +177,80 @@ router.post(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const result = await LoanService.disburseLoan(req.params.id, req.user!, req.body);
+      return res.json({
+        success: true,
+        data: result,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * POST /api/v1/loans/:id/assign
+ * Assign or reassign a loan recovery case to a specific active Collection Agent.
+ */
+router.post(
+  '/:id/assign',
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER),
+  validateBody(assignLoanAgentSchema),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await LoanService.assignAgent(
+        req.params.id,
+        req.body.agentId,
+        req.user!,
+        req.body.notes
+      );
+      return res.json({
+        success: true,
+        data: result,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * POST /api/v1/loans/:id/unassign
+ * Unassign a loan recovery case from its currently assigned agent.
+ */
+router.post(
+  '/:id/unassign',
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER),
+  validateBody(unassignLoanAgentSchema),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await LoanService.unassignAgent(
+        req.params.id,
+        req.user!,
+        req.body.reason
+      );
+      return res.json({
+        success: true,
+        data: result,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * GET /api/v1/loans/:id/assignments
+ * Fetch loan recovery assignment audit history.
+ */
+router.get(
+  '/:id/assignments',
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER, UserRole.COLLECTION_AGENT),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await LoanService.getLoanAssignmentHistory(req.params.id, req.user!);
       return res.json({
         success: true,
         data: result,

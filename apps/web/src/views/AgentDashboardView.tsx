@@ -495,7 +495,13 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
                             </span>
                             <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                               EMI #{item.installmentNumber}
+                              {item.overdueEmisCount && item.overdueEmisCount > 1 ? ` • ${item.overdueEmisCount} EMIs Overdue` : ''}
                             </div>
+                            {item.assignedByName && (
+                              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                                Assigned by {item.assignedByName}
+                              </div>
+                            )}
                           </div>
                         </td>
                         <td style={{ fontSize: 12 }}>

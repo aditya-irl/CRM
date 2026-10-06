@@ -346,7 +346,17 @@ export class ApiClient {
     }
 
     if (!res.ok || !json.success) {
-      throw new Error(json.error?.message || 'An error occurred during API request');
+      const detailsMsg = Array.isArray(json?.error?.details) && json.error.details.length > 0
+        ? json.error.details.map((d: any) => (d.field ? `${d.field}: ${d.issue || d.message}` : (d.issue || d.message))).join(', ')
+        : '';
+      const baseMsg = json?.error?.message || 'An error occurred during API request';
+      const fullMsg = detailsMsg && !baseMsg.includes(detailsMsg)
+        ? `${baseMsg} (${detailsMsg})`
+        : baseMsg;
+      const error = new Error(fullMsg);
+      (error as any).details = json?.error?.details;
+      (error as any).code = json?.error?.code;
+      throw error;
     }
 
     return json.data as T;
@@ -830,10 +840,18 @@ export class ApiClient {
     return Array.isArray(res) ? res : res?.users || [];
   }
 
+  public static async getAgents(status?: string, search?: string) {
+    const params = new URLSearchParams({ role: 'COLLECTION_AGENT' });
+    if (status) params.append('status', status);
+    if (search) params.append('search', search);
+    const res = await this.request<any>(`/users?${params.toString()}`);
+    return Array.isArray(res) ? res : res?.users || [];
+  }
+
   public static async createAgent(data: {
     fullName: string;
     phone: string;
-    loginId: string;
+    loginId?: string | null;
     status?: string;
     assignedBranch?: string | null;
     areaRoute?: string | null;
@@ -848,6 +866,24 @@ export class ApiClient {
       method: 'POST',
       body: JSON.stringify(data),
     });
+  }
+
+  public static async assignLoanAgent(loanId: string, agentId: string, notes?: string) {
+    return this.request<{ success: boolean; data: any }>(`/loans/${loanId}/assign`, {
+      method: 'POST',
+      body: JSON.stringify({ agentId, notes }),
+    });
+  }
+
+  public static async unassignLoanAgent(loanId: string, reason?: string) {
+    return this.request<{ success: boolean; data: any }>(`/loans/${loanId}/unassign`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  public static async getLoanAssignmentHistory(loanId: string) {
+    return this.request<any[]>(`/loans/${loanId}/assignments`);
   }
 
   public static async resetAgentPassword(agentId: string) {

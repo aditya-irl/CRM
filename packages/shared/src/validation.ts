@@ -266,6 +266,15 @@ export const createAssignmentSchema = z.object({
   effectiveTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
 });
 
+export const assignLoanAgentSchema = z.object({
+  agentId: z.string().uuid('Invalid agent ID'),
+  notes: z.string().optional().nullable(),
+});
+
+export const unassignLoanAgentSchema = z.object({
+  reason: z.string().optional().nullable(),
+});
+
 export const kycUploadInitSchema = z.object({
   customerId: z.string().uuid('Invalid customer ID'),
   docType: z.nativeEnum(KYCType),
