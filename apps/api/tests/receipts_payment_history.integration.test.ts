@@ -177,9 +177,13 @@ describe('TASK 7: Receipts & Payment History Integration Tests', () => {
 
     // Assign customer2 to agent1 for RLAC
     await queryPostgres(`
-      INSERT INTO collection_assignments (id, agent_id, customer_id, area_route, assigned_by, effective_from, is_active, created_at)
-      VALUES ($1, $2, $3, $4, $5, NOW(), TRUE, NOW())
-    `, [uuidv4(), agent1Id, customer2Id, `ROUTE-T7-${runId}`, adminId]);
+      INSERT INTO collection_assignments (id, agent_id, customer_id, loan_id, area_route, assigned_by, effective_from, is_active, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6, NOW(), TRUE, NOW())
+    `, [uuidv4(), agent1Id, customer2Id, loan2Id, `ROUTE-T7-${runId}`, adminId]);
+
+    await queryPostgres(`
+      UPDATE loans SET assigned_agent_id = $1 WHERE id = $2
+    `, [agent1Id, loan2Id]);
 
     // Record Payment 1: DIRECT_CUSTOMER (₹5,000, UPI)
     const p1Res = await request(app)

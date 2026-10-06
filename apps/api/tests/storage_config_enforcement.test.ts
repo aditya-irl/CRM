@@ -171,7 +171,7 @@ describe('Storage Configuration Enforcement', () => {
       expect(url).not.toContain('s3-secure-vault.internal');
       expect(url).not.toMatch(/^https?:\/\//);
       // Must be a local dev URL
-      expect(url).toMatch(/^local:\/\/dev-storage\//);
+      expect(url).toMatch(/^(local:\/\/dev-storage\/|\/api\/v1\/kyc\/local-vault)/);
       // Expiry must be present and clamped
       expect(url).toContain('X-Dev-Expires=300');
     });

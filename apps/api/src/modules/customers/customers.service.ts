@@ -161,7 +161,9 @@ export class CustomerService {
       const assignmentRes = await queryPostgres(
         `SELECT id FROM collection_assignments
          WHERE agent_id = $1 AND (customer_id = $2 OR area_route = $3) 
-           AND is_active = TRUE AND (effective_to IS NULL OR effective_to >= CURRENT_DATE)`,
+           AND is_active = TRUE AND (effective_to IS NULL OR effective_to >= CURRENT_DATE)
+         UNION
+         SELECT id FROM loans WHERE customer_id = $2 AND assigned_agent_id = $1`,
         [user.id, customer.id, customer.area_route]
       );
 
@@ -181,6 +183,9 @@ export class CustomerService {
     if (user.role === UserRole.DEALER) {
       loansSql += ' AND l.dealer_id = $2';
       loansParams.push(user.dealerId);
+    } else if (user.role === UserRole.COLLECTION_AGENT) {
+      loansSql += ' AND l.assigned_agent_id = $2';
+      loansParams.push(user.id);
     }
     loansSql += ' ORDER BY l.created_at DESC';
 

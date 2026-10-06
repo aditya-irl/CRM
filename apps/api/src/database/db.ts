@@ -83,6 +83,19 @@ export function initDatabase() {
     // Ignore if table doesn't exist yet
   }
 
+  // Ensure loan_id column exists in SQLite collection_assignments table
+  try {
+    const caTableInfo = db.pragma('table_info(collection_assignments)') as Array<{ name: string }>;
+    if (caTableInfo && caTableInfo.length > 0) {
+      const colNames = caTableInfo.map((c) => c.name);
+      if (!colNames.includes('loan_id')) {
+        db.exec('ALTER TABLE collection_assignments ADD COLUMN loan_id TEXT REFERENCES loans(id) ON DELETE CASCADE;');
+      }
+    }
+  } catch (err) {
+    // Ignore if table doesn't exist yet
+  }
+
   db.exec(schemaSql);
 }
 

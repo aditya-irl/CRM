@@ -216,6 +216,7 @@ CREATE TABLE IF NOT EXISTS collection_assignments (
 );
 CREATE INDEX IF NOT EXISTS idx_assignments_agent ON collection_assignments(agent_id, is_active);
 CREATE INDEX IF NOT EXISTS idx_assignments_loan_active ON collection_assignments(loan_id, is_active);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_active_loan_assignment ON collection_assignments(loan_id) WHERE is_active = 1 AND loan_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS audit_logs (
     id TEXT PRIMARY KEY,
