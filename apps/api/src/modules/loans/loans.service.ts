@@ -14,7 +14,7 @@ import {
   EMIStatus,
   IDeviceItem,
 } from '@crm/shared';
-import { AppError, NotFoundError, ForbiddenError } from '../../middlewares/error.middleware';
+import { AppError, NotFoundError, ForbiddenError, ConflictError } from '../../middlewares/error.middleware';
 import { AuthenticatedUser } from '../../middlewares/auth.middleware';
 import { AuditService } from '../audit/audit.service';
 
@@ -231,6 +231,54 @@ export class LoanService {
           ]);
         }
       }
+
+      // If loan requires approval (e.g. Dealer origination), generate in-app notification for Super Admin & Admin
+      if (targetStatus === LoanStatus.PENDING_APPROVAL) {
+        let dealerName = 'Direct / Dealer';
+        if (dealerId) {
+          const dRes = await client.query('SELECT store_name FROM dealers WHERE id = $1', [dealerId]);
+          if (dRes.rows.length > 0) {
+            dealerName = dRes.rows[0].store_name;
+          }
+        }
+
+        const adminUsers = await client.query(
+          "SELECT id FROM users WHERE role IN ('SUPER_ADMIN', 'ADMIN') AND status = 'ACTIVE'"
+        );
+
+        const title = `New Dealer Loan Approval Request: ${loanAccountNo}`;
+        const body = `Dealer "${dealerName}" has originated a new loan ${loanAccountNo} for customer ${customer.full_name} (${customer.customer_code}). Financed Amount: ₹${calc.netDisbursedAmount}, EMI: ₹${calc.emiAmount}/mo, Device: ${deviceName}. Pending Super Admin review.`;
+
+        for (const admin of adminUsers.rows) {
+          await client.query(
+            `INSERT INTO notifications (
+              id, recipient_user_id, channel, type, title, body, status, scheduled_for, metadata, created_at
+            ) VALUES ($1, $2, 'IN_APP', 'LOAN_APPROVAL_REQUEST', $3, $4, 'PENDING', NOW(), $5, NOW())`,
+            [
+              uuidv4(),
+              admin.id,
+              title,
+              body,
+              JSON.stringify({
+                loanId,
+                loanAccountNo,
+                customerId: customer.id,
+                customerName: customer.full_name,
+                customerCode: customer.customer_code,
+                dealerId,
+                dealerName,
+                deviceName,
+                deviceBrand,
+                deviceModel,
+                netDisbursedAmount: calc.netDisbursedAmount,
+                emiAmount: calc.emiAmount,
+                tenureMonths: calc.tenureMonths,
+                kycStatus: 'PENDING',
+              }),
+            ]
+          );
+        }
+      }
     });
 
     // 6. Dual-write to SQLite for transitional backward compatibility
@@ -348,6 +396,125 @@ export class LoanService {
       status: targetStatus,
       createdAt: now,
       installments: calc.schedule,
+    };
+  }
+
+  /**
+   * Submit a loan for Super Admin / Admin approval.
+   * Enforces Dealer RLAC: Dealers can only submit their own dealer loans.
+   */
+  public static async submitForApproval(id: string, user: AuthenticatedUser, notes?: string) {
+    const loanRes = await queryPostgres(
+      `SELECT l.*, c.full_name as customer_name, c.customer_code, d.store_name as dealer_store_name
+       FROM loans l
+       JOIN customers c ON l.customer_id = c.id
+       LEFT JOIN dealers d ON l.dealer_id = d.id
+       WHERE l.id = $1`,
+      [id]
+    );
+
+    if (loanRes.rows.length === 0) {
+      throw new NotFoundError('Loan not found');
+    }
+
+    const loan = loanRes.rows[0];
+
+    // Dealer RLAC: Dealers can only submit their own dealer loans
+    if (user.role === UserRole.DEALER) {
+      if (!user.dealerId) {
+        throw new ForbiddenError('Dealer context missing');
+      }
+      if (!loan.dealer_id || loan.dealer_id !== user.dealerId) {
+        throw new ForbiddenError('You can only submit approval requests for your own dealer loans');
+      }
+    }
+
+    // Status validations
+    if (loan.status === LoanStatus.PENDING_APPROVAL) {
+      throw new ConflictError('Loan has already been submitted for approval and is currently pending review');
+    }
+
+    if (loan.status === LoanStatus.APPROVED || loan.status === LoanStatus.ACTIVE) {
+      throw new ConflictError('Loan is already approved or active');
+    }
+
+    if (loan.status === LoanStatus.REJECTED || loan.status === LoanStatus.CLOSED) {
+      throw new AppError(`Cannot submit loan with status '${loan.status}' for approval`, 400);
+    }
+
+    // Atomic transaction
+    await runPostgresTransaction(async (client) => {
+      await client.query(
+        'UPDATE loans SET status = $1, approval_notes = COALESCE($2, approval_notes), updated_at = NOW() WHERE id = $3',
+        [LoanStatus.PENDING_APPROVAL, notes || null, id]
+      );
+
+      const kycRes = await client.query(
+        'SELECT status FROM kyc_documents WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 1',
+        [loan.customer_id]
+      );
+      const kycStatus = kycRes.rows[0]?.status || 'PENDING';
+
+      const adminUsers = await client.query(
+        "SELECT id FROM users WHERE role IN ('SUPER_ADMIN', 'ADMIN') AND status = 'ACTIVE'"
+      );
+
+      const dealerName = loan.dealer_store_name || 'Dealer';
+      const deviceName = loan.device_name || `${loan.device_brand || ''} ${loan.device_model || ''}`.trim() || 'Smart Device';
+      const title = `New Loan Approval Request: ${loan.loan_account_no}`;
+      const body = `Loan ${loan.loan_account_no} for customer ${loan.customer_name} (${loan.customer_code}) submitted by ${dealerName}. Financed Amount: ₹${loan.net_disbursed_amount}, EMI: ₹${loan.emi_amount}/mo, Device: ${deviceName}. Pending review.`;
+
+      for (const admin of adminUsers.rows) {
+        await client.query(
+          `INSERT INTO notifications (
+            id, recipient_user_id, channel, type, title, body, status, scheduled_for, metadata, created_at
+          ) VALUES ($1, $2, 'IN_APP', 'LOAN_APPROVAL_REQUEST', $3, $4, 'PENDING', NOW(), $5, NOW())`,
+          [
+            uuidv4(),
+            admin.id,
+            title,
+            body,
+            JSON.stringify({
+              loanId: id,
+              loanAccountNo: loan.loan_account_no,
+              customerId: loan.customer_id,
+              customerName: loan.customer_name,
+              customerCode: loan.customer_code,
+              dealerId: loan.dealer_id,
+              dealerName,
+              deviceName,
+              deviceBrand: loan.device_brand,
+              deviceModel: loan.device_model,
+              netDisbursedAmount: Number(loan.net_disbursed_amount),
+              emiAmount: Number(loan.emi_amount),
+              tenureMonths: Number(loan.tenure_months),
+              kycStatus,
+            }),
+          ]
+        );
+      }
+    });
+
+    try {
+      db.prepare('UPDATE loans SET status = ?, updated_at = ? WHERE id = ?').run(
+        LoanStatus.PENDING_APPROVAL, new Date().toISOString(), id
+      );
+    } catch {}
+
+    await AuditService.log({
+      userId: user.id,
+      action: 'LOAN_SUBMITTED_FOR_APPROVAL',
+      entity: 'Loan',
+      entityId: id,
+      previousState: { status: loan.status },
+      newState: { status: LoanStatus.PENDING_APPROVAL, notes: notes || null },
+    });
+
+    return {
+      id,
+      loanAccountNo: loan.loan_account_no,
+      status: LoanStatus.PENDING_APPROVAL,
+      notes: notes || null,
     };
   }
 

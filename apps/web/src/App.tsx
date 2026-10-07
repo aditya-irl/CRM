@@ -1,28 +1,39 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { IUser, UserRole } from '@crm/shared';
 import { ApiClient } from './services/api';
 import { Navbar } from './components/Navbar';
 import { Sidebar, NavTab } from './components/Sidebar';
 import { LoginView } from './views/LoginView';
-import { DashboardView } from './views/DashboardView';
-import { DealersView } from './views/DealersView';
-import { DealerCollectionsView } from './views/DealerCollectionsView';
-import { DealerSettlementsView } from './views/DealerSettlementsView';
-import { AgentCollectionsView } from './views/AgentCollectionsView';
-import { DirectCollectionsView } from './views/DirectCollectionsView';
-import { QueueView } from './views/QueueView';
-import { LoansView } from './views/LoansView';
-import { CustomersView } from './views/CustomersView';
-import { DevicesView } from './views/DevicesView';
-import { PaymentsView } from './views/PaymentsView';
-import { ReportsView } from './views/ReportsView';
-import { AuditView } from './views/AuditView';
-import { AddCustomerWizard } from './components/AddCustomerWizard';
-import { CustomerPortalView } from './views/CustomerPortalView';
-import { DealerDashboardView } from './views/DealerDashboardView';
-import { AgentDashboardView } from './views/AgentDashboardView';
-import { AgentsView } from './views/AgentsView';
 import { ChangePasswordView } from './views/ChangePasswordView';
+import { DealerDashboardView } from './views/DealerDashboardView';
+
+// Route-level code splitting for optimized bundle delivery
+const DashboardView = lazy(() => import('./views/DashboardView').then((m) => ({ default: m.DashboardView })));
+const DealersView = lazy(() => import('./views/DealersView').then((m) => ({ default: m.DealersView })));
+const DealerCollectionsView = lazy(() => import('./views/DealerCollectionsView').then((m) => ({ default: m.DealerCollectionsView })));
+const DealerSettlementsView = lazy(() => import('./views/DealerSettlementsView').then((m) => ({ default: m.DealerSettlementsView })));
+const AgentCollectionsView = lazy(() => import('./views/AgentCollectionsView').then((m) => ({ default: m.AgentCollectionsView })));
+const DirectCollectionsView = lazy(() => import('./views/DirectCollectionsView').then((m) => ({ default: m.DirectCollectionsView })));
+const QueueView = lazy(() => import('./views/QueueView').then((m) => ({ default: m.QueueView })));
+const LoansView = lazy(() => import('./views/LoansView').then((m) => ({ default: m.LoansView })));
+const CustomersView = lazy(() => import('./views/CustomersView').then((m) => ({ default: m.CustomersView })));
+const DevicesView = lazy(() => import('./views/DevicesView').then((m) => ({ default: m.DevicesView })));
+const PaymentsView = lazy(() => import('./views/PaymentsView').then((m) => ({ default: m.PaymentsView })));
+const ReportsView = lazy(() => import('./views/ReportsView').then((m) => ({ default: m.ReportsView })));
+const AuditView = lazy(() => import('./views/AuditView').then((m) => ({ default: m.AuditView })));
+const AddCustomerWizard = lazy(() => import('./components/AddCustomerWizard').then((m) => ({ default: m.AddCustomerWizard })));
+const CustomerPortalView = lazy(() => import('./views/CustomerPortalView').then((m) => ({ default: m.CustomerPortalView })));
+const AgentDashboardView = lazy(() => import('./views/AgentDashboardView').then((m) => ({ default: m.AgentDashboardView })));
+const AgentsView = lazy(() => import('./views/AgentsView').then((m) => ({ default: m.AgentsView })));
+
+const ViewFallback: React.FC = () => (
+  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 320, color: 'var(--text-muted)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+      <div className="animate-spin" style={{ width: 22, height: 22, border: '2px solid var(--border-subtle)', borderTopColor: 'var(--primary)', borderRadius: '50%' }} />
+      <span style={{ fontSize: 12, fontWeight: 500 }}>Loading section...</span>
+    </div>
+  </div>
+);
 
 export const App: React.FC = () => {
   // Public Customer Payment Portal Routing Check
@@ -114,7 +125,7 @@ export const App: React.FC = () => {
     // If dealer attempts to access unauthorized admin view, redirect to store dashboard
     if (
       isDealer &&
-      !['dashboard', 'customers', 'loans', 'dealer-collections', 'dealer-settlements'].includes(activeTab)
+      !['dashboard', 'customers', 'devices', 'dealer-collections', 'dealer-settlements'].includes(activeTab)
     ) {
       return <DealerDashboardView onNavigateToTab={(t) => setActiveTab(t as NavTab)} />;
     }
@@ -199,20 +210,24 @@ export const App: React.FC = () => {
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         <Sidebar activeTab={activeTab} onSelectTab={setActiveTab} user={user} />
         <main style={{ flex: 1, padding: 24, overflowY: 'auto', background: 'var(--bg-app)' }}>
-          {renderView()}
+          <Suspense fallback={<ViewFallback />}>
+            {renderView()}
+          </Suspense>
         </main>
       </div>
 
       {/* Global Add Customer Wizard */}
-      <AddCustomerWizard
-        isOpen={showAddCustomerWizard}
-        onClose={() => setShowAddCustomerWizard(false)}
-        onSuccess={() => {
-          setShowAddCustomerWizard(false);
-          setCustomersRefreshTrigger((prev) => prev + 1);
-          setActiveTab('customers');
-        }}
-      />
+      <Suspense fallback={null}>
+        <AddCustomerWizard
+          isOpen={showAddCustomerWizard}
+          onClose={() => setShowAddCustomerWizard(false)}
+          onSuccess={() => {
+            setShowAddCustomerWizard(false);
+            setCustomersRefreshTrigger((prev) => prev + 1);
+            setActiveTab('customers');
+          }}
+        />
+      </Suspense>
     </div>
   );
 };

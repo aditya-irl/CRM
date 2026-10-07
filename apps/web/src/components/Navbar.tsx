@@ -11,7 +11,7 @@ interface NavbarProps {
   onOpenAddCustomer?: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({
+const NavbarComponent: React.FC<NavbarProps> = ({
   user,
   onLogout,
   onRefreshData,
@@ -25,7 +25,14 @@ export const Navbar: React.FC<NavbarProps> = ({
     setJobNotice(null);
     try {
       const res = await ApiClient.triggerBackgroundJobs();
-      setJobNotice(`Jobs processed: ${res.transition.dueTodayUpdated} Due Today, ${res.transition.overdueUpdated} Overdue.`);
+      if (res.skipped) {
+        setJobNotice(res.message || 'Execution skipped: background job is already in progress.');
+      } else {
+        const dueToday = res.transition?.dueTodayUpdated ?? 0;
+        const overdue = res.transition?.overdueUpdated ?? 0;
+        const total = res.processed ?? (dueToday + overdue);
+        setJobNotice(`Jobs processed: ${total} items (${dueToday} Due Today, ${overdue} Overdue).`);
+      }
       if (onRefreshData) onRefreshData();
       setTimeout(() => setJobNotice(null), 5000);
     } catch (err: any) {
@@ -164,3 +171,5 @@ export const Navbar: React.FC<NavbarProps> = ({
     </header>
   );
 };
+
+export const Navbar = React.memo(NavbarComponent);

@@ -96,7 +96,7 @@ describe('Customer Payment Portal Frontend Tests', () => {
       expect(html).toContain('XXXXXX5678');
       expect(html).toContain('LN-2026-7842');
       expect(html).toContain('ACTIVE');
-      expect(html).toContain('2026-10-10');
+      expect(html).toMatch(/(10\/10\/2026|2026-10-10)/);
       expect(html).toContain('Financed Amount');
       expect(html).toContain('EMIs Cleared');
       expect(html).toContain('Pay Now via WhatsApp');

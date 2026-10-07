@@ -492,6 +492,13 @@ export class ApiClient {
     });
   }
 
+  public static async submitLoanForApproval(id: string, notes?: string) {
+    return this.request<any>(`/loans/${id}/submit-approval`, {
+      method: 'POST',
+      body: JSON.stringify({ notes }),
+    });
+  }
+
   public static async approveLoan(id: string, notes?: string) {
     return this.request<any>(`/loans/${id}/approve`, {
       method: 'POST',

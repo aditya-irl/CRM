@@ -100,6 +100,7 @@ export enum NotificationType {
   DUE_TODAY = 'DUE_TODAY',
   OVERDUE = 'OVERDUE',
   PAYMENT_RECEIPT = 'PAYMENT_RECEIPT',
+  LOAN_APPROVAL_REQUEST = 'LOAN_APPROVAL_REQUEST',
 }
 
 export enum NotificationStatus {

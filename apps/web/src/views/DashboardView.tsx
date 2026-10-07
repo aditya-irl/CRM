@@ -130,27 +130,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     }
   };
 
+  // Mount-only reference data fetching (avoid repeated calls on preset switches)
   useEffect(() => {
-    fetchDashboardData(preset);
-
-    // Load pending approvals count for alert banner
     ApiClient.getPendingApprovals()
       .then((data) => setPendingApprovalsCount(Array.isArray(data) ? data.length : 0))
       .catch(() => setPendingApprovalsCount(0));
 
-    // Load active dealers for analytics dropdown
     ApiClient.getDealers(undefined, 'ACTIVE')
       .then((data) => setDealersList(Array.isArray(data) ? data : []))
       .catch(() => setDealersList([]));
+  }, []);
 
+  // Fetch metrics whenever preset changes (single authoritative request)
+  useEffect(() => {
+    fetchDashboardData(preset);
     fetchDealerAnalytics(selectedDealerId, dealerAnalyticsPreset);
   }, [preset]);
 
   const handlePresetChange = (newPreset: string) => {
     setPreset(newPreset);
-    if (newPreset !== 'custom') {
-      fetchDashboardData(newPreset);
-    }
   };
 
   const handleCustomApply = () => {

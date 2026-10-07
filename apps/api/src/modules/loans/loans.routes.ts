@@ -146,6 +146,28 @@ router.post(
 );
 
 /**
+ * POST /api/v1/loans/:id/submit-approval
+ * POST /api/v1/loans/:id/request-approval
+ * Submit a loan application for Super Admin / Admin approval.
+ */
+router.post(
+  ['/:id/submit-approval', '/:id/request-approval'],
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER, UserRole.DEALER),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await LoanService.submitForApproval(req.params.id, req.user!, req.body?.notes);
+      return res.json({
+        success: true,
+        data: result,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
  * POST /api/v1/loans/:id/approve
  * Approve a pending loan application.
  */

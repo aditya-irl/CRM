@@ -290,22 +290,31 @@ export const LoansView: React.FC = () => {
     }
   };
 
+  const ensureCustomersLoaded = async () => {
+    if (customers.length === 0) {
+      try {
+        const custData = await ApiClient.getCustomers();
+        setCustomers(custData);
+        if (custData.length > 0 && !selectedCustomerId) {
+          setSelectedCustomerId(custData[0].id);
+        }
+      } catch (err) {
+        console.error('Failed to load customers for loan origination', err);
+      }
+    }
+  };
+
   const loadData = async () => {
     setLoading(true);
     try {
-      const [loansData, custData, pendingData] = await Promise.all([
+      const [loansData, pendingData] = await Promise.all([
         ApiClient.getLoans(search || undefined),
-        ApiClient.getCustomers(),
         (currentUser?.role === UserRole.SUPER_ADMIN || currentUser?.role === UserRole.ADMIN || currentUser?.role === UserRole.BRANCH_MANAGER)
           ? ApiClient.getPendingApprovals().catch(() => [])
           : Promise.resolve([]),
       ]);
       setLoans(loansData);
-      setCustomers(custData);
       setPendingApprovalsList(pendingData || []);
-      if (custData.length > 0 && !selectedCustomerId) {
-        setSelectedCustomerId(custData[0].id);
-      }
     } catch (err) {
       console.error('Failed to load loans', err);
     } finally {
@@ -491,7 +500,16 @@ export const LoansView: React.FC = () => {
           </p>
         </div>
 
-        <button onClick={() => { setShowOriginationModal(true); setPreviewSchedule(null); setEmiStartDate(''); setOriginationError(null); }} className="btn btn-primary">
+        <button
+          onClick={() => {
+            ensureCustomersLoaded();
+            setShowOriginationModal(true);
+            setPreviewSchedule(null);
+            setEmiStartDate('');
+            setOriginationError(null);
+          }}
+          className="btn btn-primary"
+        >
           <Plus size={15} />
           <span>Originate New Loan</span>
         </button>

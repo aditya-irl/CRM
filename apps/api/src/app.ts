@@ -25,6 +25,8 @@ import portalRoutes from './modules/portal/portal.routes';
 import settingsRoutes from './modules/settings/settings.routes';
 import { EMIStateEngineJob } from './jobs/emi-state-engine.job';
 import { ReminderDispatcherJob } from './jobs/reminder-dispatcher.job';
+import { BackgroundScheduler } from './jobs/scheduler';
+import { AuditService } from './modules/audit/audit.service';
 import { authenticate, requireRole } from './middlewares/auth.middleware';
 import { UserRole } from '@crm/shared';
 
@@ -100,27 +102,91 @@ app.use('/api/v1/audit-logs', auditRoutes);
 app.use('/api/v1/portal', portalRoutes);
 app.use('/api/v1/settings', settingsRoutes);
 
-// Admin trigger endpoint for manual execution of background jobs
+// Admin trigger endpoint for manual execution of background jobs (Midnight Engine)
 app.post(
   '/api/v1/system/trigger-jobs',
   authenticate,
   requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN),
   async (req, res, next) => {
     try {
-      const { simulatedDate } = req.body;
-      const transitionResult = await EMIStateEngineJob.runDailyTransition(simulatedDate);
-      const reminderResult = await ReminderDispatcherJob.runReminderGeneration(simulatedDate);
+      const { simulatedDate } = req.body || {};
+      const maintenanceResult = await BackgroundScheduler.executeDailyMaintenance(simulatedDate);
 
-      res.json({
+      if (maintenanceResult.skipped) {
+        return res.json({
+          success: true,
+          processed: 0,
+          skipped: 1,
+          failed: 0,
+          message: 'Midnight Engine execution skipped: daily maintenance is already running on another pod/worker.',
+          data: {
+            skipped: true,
+            reason: maintenanceResult.reason,
+            transition: {
+              dueTodayUpdated: 0,
+              overdueUpdated: 0,
+              paidCorrected: 0,
+              agingRefreshed: 0,
+              unchanged: 0,
+              totalEvaluated: 0,
+              executedForDate: simulatedDate || new Date().toISOString().split('T')[0],
+            },
+            reminders: {
+              executedForDate: simulatedDate || new Date().toISOString().split('T')[0],
+              totalCandidates: 0,
+              newRemindersCreated: 0,
+              duplicateRemindersSuppressed: 0,
+              enqueuedJobsCount: 0,
+            },
+          },
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      const tResult = maintenanceResult.transitionResult;
+      const rResult = maintenanceResult.reminderResult;
+      const processedCount = tResult
+        ? (tResult.dueTodayUpdated + tResult.overdueUpdated + tResult.paidCorrected + tResult.agingRefreshed)
+        : 0;
+
+      await AuditService.log({
+        userId: req.user!.id,
+        action: 'MIDNIGHT_ENGINE_TRIGGERED_MANUAL',
+        entity: 'System',
+        entityId: 'midnight-engine',
+        newState: {
+          simulatedDate: simulatedDate || null,
+          processed: processedCount,
+          totalEvaluated: tResult?.totalEvaluated || 0,
+          remindersCreated: rResult?.newRemindersCreated || 0,
+        },
+      });
+
+      return res.json({
         success: true,
+        processed: processedCount,
+        skipped: 0,
+        failed: 0,
         data: {
-          transition: transitionResult,
-          reminders: reminderResult,
+          skipped: false,
+          transition: tResult,
+          reminders: rResult,
         },
         timestamp: new Date().toISOString(),
       });
-    } catch (err) {
-      next(err);
+    } catch (err: any) {
+      console.error('[MidnightEngine] Manual trigger execution error:', err.message);
+      return res.status(500).json({
+        success: false,
+        processed: 0,
+        skipped: 0,
+        failed: 1,
+        error: {
+          code: 'MIDNIGHT_ENGINE_FAILED',
+          message: 'Failed to complete daily maintenance execution. Please try again.',
+        },
+        timestamp: new Date().toISOString(),
+      });
     }
   }
 );

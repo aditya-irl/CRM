@@ -450,9 +450,17 @@ export class CustomerService {
     return await runPostgresTransaction(async (client) => {
       // 1. Create customer
       const customerId = uuidv4();
-      const countRes = await client.query<{ count: string }>('SELECT COUNT(*) as count FROM customers');
-      const totalCount = parseInt(countRes.rows[0]?.count || '0', 10);
-      const customerCode = `CUST-2026-${(1000 + totalCount + 1).toString()}`;
+      // Generate unique customer code using max sequence to prevent unique constraint collisions
+      const maxCustRes = await client.query<{ max_num: number }>(
+        `SELECT COALESCE(MAX(CAST(SUBSTRING(customer_code FROM '[0-9]+$') AS INTEGER)), 1000) as max_num
+         FROM customers WHERE customer_code ~ '^CUST-2026-[0-9]+$'`
+      );
+      const nextCustNum = (Number(maxCustRes.rows[0]?.max_num) || 1000) + 1;
+      let customerCode = `CUST-2026-${nextCustNum}`;
+      const existsCustCheck = await client.query('SELECT 1 FROM customers WHERE customer_code = $1', [customerCode]);
+      if (existsCustCheck.rows.length > 0) {
+        customerCode = `CUST-2026-${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 90 + 10)}`;
+      }
 
       const insertCustomerSql = `
         INSERT INTO customers (
@@ -538,9 +546,17 @@ export class CustomerService {
         const loanId = uuidv4();
         const targetStatus = user.role === UserRole.DEALER ? LoanStatus.PENDING_APPROVAL : (data.loan.status || LoanStatus.ACTIVE);
 
-        const countLoanRes = await client.query<{ count: string }>('SELECT COUNT(*) as count FROM loans');
-        const totalLoanCount = parseInt(countLoanRes.rows[0]?.count || '0', 10);
-        const loanAccountNo = `LN-2026-${(1000 + totalLoanCount + 1).toString()}`;
+        // Generate unique loan account number using max sequence to prevent unique constraint collisions
+        const maxLoanRes = await client.query<{ max_num: number }>(
+          `SELECT COALESCE(MAX(CAST(SUBSTRING(loan_account_no FROM '[0-9]+$') AS INTEGER)), 1000) as max_num
+           FROM loans WHERE loan_account_no ~ '^LN-2026-[0-9]+$'`
+        );
+        const nextLoanNum = (Number(maxLoanRes.rows[0]?.max_num) || 1000) + 1;
+        let loanAccountNo = `LN-2026-${nextLoanNum}`;
+        const existsLoanCheck = await client.query('SELECT 1 FROM loans WHERE loan_account_no = $1', [loanAccountNo]);
+        if (existsLoanCheck.rows.length > 0) {
+          loanAccountNo = `LN-2026-${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 90 + 10)}`;
+        }
 
         const deviceBrand = data.loan.deviceBrand || (data as any).productBrand || null;
         const deviceModel = data.loan.deviceModel || (data as any).productModel || null;
@@ -620,6 +636,54 @@ export class CustomerService {
               emi.remainingAmount,
               emi.status,
             ]);
+          }
+        }
+
+        // If loan requires approval (e.g. Dealer origination), generate in-app notification for Super Admin & Admin
+        if (targetStatus === LoanStatus.PENDING_APPROVAL) {
+          let dealerName = 'Direct / Dealer';
+          if (dealerId) {
+            const dRes = await client.query('SELECT store_name FROM dealers WHERE id = $1', [dealerId]);
+            if (dRes.rows.length > 0) {
+              dealerName = dRes.rows[0].store_name;
+            }
+          }
+
+          const adminUsers = await client.query(
+            "SELECT id FROM users WHERE role IN ('SUPER_ADMIN', 'ADMIN') AND status = 'ACTIVE'"
+          );
+
+          const title = `New Dealer Loan Approval Request: ${loanAccountNo}`;
+          const body = `Dealer "${dealerName}" has originated a new loan ${loanAccountNo} for customer ${createdCustomer.full_name} (${customerCode}). Financed Amount: ₹${calc.netDisbursedAmount}, EMI: ₹${calc.emiAmount}/mo, Device: ${deviceName}. Pending Super Admin review.`;
+
+          for (const admin of adminUsers.rows) {
+            await client.query(
+              `INSERT INTO notifications (
+                id, recipient_user_id, channel, type, title, body, status, scheduled_for, metadata, created_at
+              ) VALUES ($1, $2, 'IN_APP', 'LOAN_APPROVAL_REQUEST', $3, $4, 'PENDING', NOW(), $5, NOW())`,
+              [
+                uuidv4(),
+                admin.id,
+                title,
+                body,
+                JSON.stringify({
+                  loanId,
+                  loanAccountNo,
+                  customerId,
+                  customerName: createdCustomer.full_name,
+                  customerCode,
+                  dealerId,
+                  dealerName,
+                  deviceName,
+                  deviceBrand,
+                  deviceModel,
+                  netDisbursedAmount: calc.netDisbursedAmount,
+                  emiAmount: calc.emiAmount,
+                  tenureMonths: calc.tenureMonths,
+                  kycStatus: 'PENDING',
+                }),
+              ]
+            );
           }
         }
       }

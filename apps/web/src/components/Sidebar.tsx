@@ -39,7 +39,7 @@ interface SidebarProps {
   user: IUser;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onSelectTab, user }) => {
+const SidebarComponent: React.FC<SidebarProps> = ({ activeTab, onSelectTab, user }) => {
   const isAgent = user.role === UserRole.COLLECTION_AGENT;
   const isDealer = user.role === UserRole.DEALER;
 
@@ -47,7 +47,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onSelectTab, user }
     'dashboard',
     'customers',
     'devices',
-    'loans',
     'dealer-collections',
     'dealer-settlements',
   ];
@@ -95,7 +94,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onSelectTab, user }
     },
     {
       id: 'loans',
-      label: isDealer ? 'Financed Devices' : isAgent ? 'My Loans' : 'Loans & EMI Terms',
+      label: isAgent ? 'My Loans' : 'Loans & EMI Terms',
       icon: <CreditCard size={17} />,
     },
     { id: 'payments', label: 'Payments Ledger', icon: <Receipt size={17} />, hiddenForAgent: true },
@@ -214,3 +213,5 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onSelectTab, user }
     </aside>
   );
 };
+
+export const Sidebar = React.memo(SidebarComponent);

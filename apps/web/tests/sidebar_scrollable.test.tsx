@@ -52,21 +52,40 @@ describe('TASK 2 — Scrollable Operational Menu Regression Tests', () => {
 
     expect(html).toContain('Loans &amp; EMI Terms');
     expect(html).toContain('var(--primary-subtle)');
-    expect(html).toContain('Customers &amp; Devices');
+    expect(html).toContain('Customers &amp; Profiles');
     expect(html).toContain('Dealer Stores');
     expect(html).toContain('Reports &amp; Analytics');
     expect(html).toContain('Audit Trail &amp; Logs');
   });
 
-  test('3. Dealer Partner Terminal displays partner-scoped navigation with fixed footer', () => {
+  test('3. Dealer Partner Terminal displays partner-scoped navigation with exactly ONE Financed Devices entry', () => {
     const html = renderToString(
       <Sidebar activeTab="dashboard" onSelectTab={(_tab: NavTab) => {}} user={dealerUser} />
     );
 
     expect(html).toContain('Partner Terminal');
     expect(html).toContain('Store Isolation Enforced');
-    expect(html).toContain('Financed Devices');
+    expect(html).toContain('Store Customers');
+    expect(html).toContain('Store Collections');
+    expect(html).toContain('Store Settlements');
+
+    // Exactly ONE Financed Devices item in Dealer sidebar (regression check for duplicate entry)
+    const financedDevicesMatches = html.match(/Financed Devices/g) || [];
+    expect(financedDevicesMatches.length).toBe(1);
+
+    expect(html).not.toContain('Loans &amp; EMI Terms');
+    expect(html).not.toContain('My Loans');
     expect(html).not.toContain('Audit Trail &amp; Logs');
     expect(html).not.toContain('Field Agents');
+  });
+
+  test('4. Dealer sidebar highlights Financed Devices when active', () => {
+    const html = renderToString(
+      <Sidebar activeTab="devices" onSelectTab={(_tab: NavTab) => {}} user={dealerUser} />
+    );
+
+    expect(html).toContain('Financed Devices');
+    expect(html).toContain('var(--primary-subtle)');
+    expect(html).toContain('var(--primary-border)');
   });
 });
