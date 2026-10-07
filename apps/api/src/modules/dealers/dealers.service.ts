@@ -223,9 +223,16 @@ export class DealerService {
     const id = uuidv4();
 
     // Generate unique sequential dealer code: DLR-000001
-    const countRes = await queryPostgres<{ count: string }>('SELECT COUNT(*) as count FROM dealers');
-    const totalCount = parseInt(countRes.rows[0]?.count || '0', 10);
-    const dealerCode = `DLR-${String(totalCount + 1).padStart(6, '0')}`;
+    const maxRes = await queryPostgres<{ max_num: number }>(
+      `SELECT COALESCE(MAX(CAST(SUBSTRING(dealer_code FROM '[0-9]+$') AS INTEGER)), 0) as max_num
+       FROM dealers WHERE dealer_code ~ '^DLR-[0-9]+$'`
+    );
+    const nextNum = (Number(maxRes.rows[0]?.max_num) || 0) + 1;
+    let dealerCode = `DLR-${String(nextNum).padStart(6, '0')}`;
+    const existsCheck = await queryPostgres('SELECT 1 FROM dealers WHERE dealer_code = $1', [dealerCode]);
+    if (existsCheck.rows.length > 0) {
+      dealerCode = `DLR-${Date.now().toString().slice(-6)}`;
+    }
 
     const status = data.status || DealerStatus.ACTIVE;
 

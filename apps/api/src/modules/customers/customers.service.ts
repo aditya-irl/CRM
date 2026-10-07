@@ -271,9 +271,16 @@ export class CustomerService {
     const id = uuidv4();
 
     // Generate human-readable customer code
-    const countRes = await queryPostgres<{ count: string }>('SELECT COUNT(*) as count FROM customers');
-    const totalCount = parseInt(countRes.rows[0]?.count || '0', 10);
-    const customerCode = `CUST-2026-${(1000 + totalCount + 1).toString()}`;
+    const maxRes = await queryPostgres<{ max_num: number }>(
+      `SELECT COALESCE(MAX(CAST(SUBSTRING(customer_code FROM '[0-9]+$') AS INTEGER)), 1000) as max_num
+       FROM customers WHERE customer_code ~ '^CUST-2026-[0-9]+$'`
+    );
+    const nextNum = (Number(maxRes.rows[0]?.max_num) || 1000) + 1;
+    let customerCode = `CUST-2026-${nextNum}`;
+    const existsCheck = await queryPostgres('SELECT 1 FROM customers WHERE customer_code = $1', [customerCode]);
+    if (existsCheck.rows.length > 0) {
+      customerCode = `CUST-2026-${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 90 + 10)}`;
+    }
 
     const sql = `
       INSERT INTO customers (

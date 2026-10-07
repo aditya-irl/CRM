@@ -1006,7 +1006,7 @@ export const LoansView: React.FC = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <div>
                 <h3 style={{ fontSize: 17, fontWeight: 800 }}>Loan Account: {selectedLoanDetail.loan.loanAccountNo || (selectedLoanDetail.loan as any).loan_account_no}</h3>
-                <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Borrower: {(selectedLoanDetail.loan as any).customer_name} • {(selectedLoanDetail.loan as any).area_route}</p>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Borrower: {selectedLoanDetail.loan.customerName || (selectedLoanDetail.loan as any).customer_name} • {selectedLoanDetail.loan.areaRoute || (selectedLoanDetail.loan as any).area_route}</p>
               </div>
               <button onClick={() => setSelectedLoanDetail(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
                 <X size={20} />
@@ -1155,30 +1155,37 @@ export const LoansView: React.FC = () => {
                   </thead>
                   <tbody>
                     {selectedLoanDetail.installments.map((inst) => {
-                      const totalDue = Number(inst.remaining_amount) + Number(inst.penalty_amount || 0);
-                      const isOverdue = inst.status === 'OVERDUE' || (inst.days_overdue && inst.days_overdue > 0);
+                      const instNumber = inst.installmentNumber ?? inst.installment_number;
+                      const dueDate = inst.dueDate ? String(inst.dueDate).split('T')[0] : (inst.due_date ? String(inst.due_date).split('T')[0] : '-');
+                      const expectedAmount = Number(inst.expectedAmount ?? inst.expected_amount ?? 0);
+                      const penaltyAmount = Number(inst.penaltyAmount ?? inst.penalty_amount ?? 0);
+                      const paidAmount = Number(inst.paidAmount ?? inst.paid_amount ?? 0);
+                      const remainingAmount = Number(inst.remainingAmount ?? inst.remaining_amount ?? 0);
+                      const daysOverdue = Number(inst.daysOverdue ?? inst.days_overdue ?? 0);
+                      const totalDue = remainingAmount + penaltyAmount;
+                      const isOverdue = inst.status === 'OVERDUE' || daysOverdue > 0;
                       const canAddPenaltyRole =
                         currentUser?.role === UserRole.SUPER_ADMIN ||
                         currentUser?.role === UserRole.ADMIN ||
                         (currentUser?.role === UserRole.DEALER &&
-                          selectedLoanDetail.loan.dealer_id === currentUser.dealerId);
+                          (selectedLoanDetail.loan.dealerId ?? selectedLoanDetail.loan.dealer_id) === currentUser.dealerId);
 
                       return (
                         <tr key={inst.id}>
-                          <td className="mono">{inst.installment_number}</td>
-                          <td className="mono">{inst.due_date}</td>
-                          <td className="mono">{formatINR(inst.expected_amount)}</td>
+                          <td className="mono">{instNumber}</td>
+                          <td className="mono">{dueDate}</td>
+                          <td className="mono">{formatINR(expectedAmount)}</td>
                           <td
                             className="mono"
                             style={{
-                              color: Number(inst.penalty_amount || 0) > 0 ? 'var(--danger-text)' : 'inherit',
-                              fontWeight: Number(inst.penalty_amount || 0) > 0 ? 700 : 400,
+                              color: penaltyAmount > 0 ? 'var(--danger-text)' : 'inherit',
+                              fontWeight: penaltyAmount > 0 ? 700 : 400,
                             }}
                           >
-                            {formatINR(inst.penalty_amount || 0)}
+                            {formatINR(penaltyAmount)}
                           </td>
                           <td className="mono" style={{ color: 'var(--success-text)' }}>
-                            {formatINR(inst.paid_amount)}
+                            {formatINR(paidAmount)}
                           </td>
                           <td
                             className="mono"
@@ -1206,7 +1213,7 @@ export const LoansView: React.FC = () => {
                           </td>
                           <td style={{ textAlign: 'right' }}>
                             <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                              {isOverdue && inst.status !== 'PAID' && Number(inst.remaining_amount) > 0 && canAddPenaltyRole && (
+                              {isOverdue && inst.status !== 'PAID' && remainingAmount > 0 && canAddPenaltyRole && (
                                 <button
                                   type="button"
                                   onClick={() => handleOpenAddPenalty(inst)}
@@ -1231,7 +1238,7 @@ export const LoansView: React.FC = () => {
                                 </button>
                               )}
 
-                              {Number(inst.penalty_amount || 0) > 0 && (
+                              {penaltyAmount > 0 && (
                                 <button
                                   type="button"
                                   onClick={() => handleOpenPenaltyHistory(inst)}
@@ -1345,8 +1352,8 @@ export const LoansView: React.FC = () => {
               <PortalLinkManager
                 loanId={selectedLoanDetail.loan.id}
                 loanAccountNo={selectedLoanDetail.loan.loanAccountNo || (selectedLoanDetail.loan as any).loan_account_no}
-                customerName={(selectedLoanDetail.loan as any).customer_name}
-                primaryPhone={(selectedLoanDetail.loan as any).primary_phone || (selectedLoanDetail.loan as any).phone}
+                customerName={selectedLoanDetail.loan.customerName || (selectedLoanDetail.loan as any).customer_name}
+                primaryPhone={selectedLoanDetail.loan.primaryPhone || (selectedLoanDetail.loan as any).primary_phone || (selectedLoanDetail.loan as any).phone}
                 userRole={currentUser?.role}
               />
             )}
@@ -1450,22 +1457,22 @@ export const LoansView: React.FC = () => {
             >
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: 'var(--text-secondary)' }}>EMI:</span>
-                <span style={{ fontWeight: 700 }}>#{penaltyModalEmi.installment_number}</span>
+                <span style={{ fontWeight: 700 }}>#{penaltyModalEmi.installmentNumber ?? penaltyModalEmi.installment_number}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: 'var(--text-secondary)' }}>Original EMI:</span>
-                <span style={{ fontWeight: 600 }}>{formatINR(penaltyModalEmi.expected_amount)}</span>
+                <span style={{ fontWeight: 600 }}>{formatINR(penaltyModalEmi.expectedAmount ?? penaltyModalEmi.expected_amount ?? 0)}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: 'var(--text-secondary)' }}>Outstanding:</span>
                 <span style={{ fontWeight: 700, color: 'var(--danger-text)' }}>
-                  {formatINR(penaltyModalEmi.remaining_amount)}
+                  {formatINR(penaltyModalEmi.remainingAmount ?? penaltyModalEmi.remaining_amount ?? 0)}
                 </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: 'var(--text-secondary)' }}>Days Overdue:</span>
                 <span style={{ fontWeight: 700, color: 'var(--danger)' }}>
-                  {penaltyModalEmi.days_overdue || Math.max(1, Math.round((new Date().getTime() - new Date(penaltyModalEmi.due_date).getTime()) / (1000 * 3600 * 24)))} days
+                  {(penaltyModalEmi.daysOverdue ?? penaltyModalEmi.days_overdue) || Math.max(1, Math.round((new Date().getTime() - new Date(penaltyModalEmi.dueDate || penaltyModalEmi.due_date).getTime()) / (1000 * 3600 * 24)))} days
                 </span>
               </div>
             </div>
@@ -1560,10 +1567,10 @@ export const LoansView: React.FC = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <div>
                 <h3 style={{ fontSize: 17, fontWeight: 700, margin: 0 }}>
-                  Penalty History — EMI #{historyModalEmi.installment_number}
+                  Penalty History — EMI #{historyModalEmi.installmentNumber ?? historyModalEmi.installment_number}
                 </h3>
                 <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                  Total Active Penalties: {formatINR(penaltyHistory?.activePenaltyTotal || historyModalEmi.penalty_amount || 0)}
+                  Total Active Penalties: {formatINR(penaltyHistory?.activePenaltyTotal ?? historyModalEmi.penaltyAmount ?? historyModalEmi.penalty_amount ?? 0)}
                 </span>
               </div>
               <button type="button" onClick={() => setHistoryModalEmi(null)} className="btn-icon">

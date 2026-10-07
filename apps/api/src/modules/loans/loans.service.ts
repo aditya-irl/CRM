@@ -130,9 +130,16 @@ export class LoanService {
     const targetStatus = user.role === UserRole.DEALER ? LoanStatus.PENDING_APPROVAL : (data.status || LoanStatus.ACTIVE);
 
     // 5. Generate unique loan account number
-    const countRes = await queryPostgres<{ count: string }>('SELECT COUNT(*) as count FROM loans');
-    const totalCount = parseInt(countRes.rows[0]?.count || '0', 10);
-    const loanAccountNo = `LN-2026-${(1000 + totalCount + 1).toString()}`;
+    const maxRes = await queryPostgres<{ max_num: number }>(
+      `SELECT COALESCE(MAX(CAST(SUBSTRING(loan_account_no FROM '[0-9]+$') AS INTEGER)), 1000) as max_num
+       FROM loans WHERE loan_account_no ~ '^LN-2026-[0-9]+$'`
+    );
+    const nextNum = (Number(maxRes.rows[0]?.max_num) || 1000) + 1;
+    let loanAccountNo = `LN-2026-${nextNum}`;
+    const existsCheck = await queryPostgres('SELECT 1 FROM loans WHERE loan_account_no = $1', [loanAccountNo]);
+    if (existsCheck.rows.length > 0) {
+      loanAccountNo = `LN-2026-${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 90 + 10)}`;
+    }
     const now = new Date().toISOString();
 
     // 6. Execute atomic PostgreSQL transaction
@@ -833,57 +840,114 @@ export class LoanService {
         businessToday,
       });
 
+      const dueDateStr = e.due_date instanceof Date ? e.due_date.toISOString().split('T')[0] : String(e.due_date).split('T')[0];
+      const instNum = Number(e.installment_number);
+      const expAmt = Number(e.expected_amount);
+      const paidAmt = Number(e.paid_amount);
+      const remAmt = Number(e.remaining_amount);
+      const penAmt = Number(e.penalty_amount || 0);
+      const princComp = Number(e.principal_component);
+      const intComp = Number(e.interest_component);
+
       return {
         id: e.id,
-        installmentNumber: Number(e.installment_number),
-        dueDate: e.due_date,
-        principalComponent: Number(e.principal_component),
-        interestComponent: Number(e.interest_component),
-        expectedAmount: Number(e.expected_amount),
-        paidAmount: Number(e.paid_amount),
-        remainingAmount: Number(e.remaining_amount),
-        penaltyAmount: Number(e.penalty_amount || 0),
+        installmentNumber: instNum,
+        dueDate: dueDateStr,
+        principalComponent: princComp,
+        interestComponent: intComp,
+        expectedAmount: expAmt,
+        paidAmount: paidAmt,
+        remainingAmount: remAmt,
+        penaltyAmount: penAmt,
         status: evalResult.status,
         daysOverdue: evalResult.daysOverdue,
         lastPaymentDate: e.last_payment_date,
+
+        // Dual-compatibility snake_case aliases for client compatibility
+        installment_number: instNum,
+        due_date: dueDateStr,
+        principal_component: princComp,
+        interest_component: intComp,
+        expected_amount: expAmt,
+        paid_amount: paidAmt,
+        remaining_amount: remAmt,
+        penalty_amount: penAmt,
+        days_overdue: evalResult.daysOverdue,
       };
     });
+
+    const disbDateStr = loan.disbursement_date instanceof Date ? loan.disbursement_date.toISOString().split('T')[0] : (loan.disbursement_date ? String(loan.disbursement_date).split('T')[0] : loan.disbursement_date);
+    const firstEmiDateStr = loan.first_emi_date instanceof Date ? loan.first_emi_date.toISOString().split('T')[0] : (loan.first_emi_date ? String(loan.first_emi_date).split('T')[0] : loan.first_emi_date);
+    const matDateStr = loan.maturity_date instanceof Date ? loan.maturity_date.toISOString().split('T')[0] : (loan.maturity_date ? String(loan.maturity_date).split('T')[0] : loan.maturity_date);
 
     return {
       id: loan.id,
       loanAccountNo: loan.loan_account_no,
+      loan_account_no: loan.loan_account_no,
       customerId: loan.customer_id,
+      customer_id: loan.customer_id,
       customerName: loan.customer_name,
+      customer_name: loan.customer_name,
       customerCode: loan.customer_code,
+      customer_code: loan.customer_code,
       primaryPhone: loan.primary_phone,
+      primary_phone: loan.primary_phone,
+      phone: loan.primary_phone,
       addressLine1: loan.address_line1,
+      address_line1: loan.address_line1,
       areaRoute: loan.area_route,
+      area_route: loan.area_route,
       dealerId: loan.dealer_id,
+      dealer_id: loan.dealer_id,
       dealerStoreName: loan.dealer_store_name,
+      dealer_store_name: loan.dealer_store_name,
       dealerCode: loan.dealer_code,
+      dealer_code: loan.dealer_code,
       principalAmount: Number(loan.principal_amount),
+      principal_amount: Number(loan.principal_amount),
       downPayment: Number(loan.down_payment),
+      down_payment: Number(loan.down_payment),
       netDisbursedAmount: Number(loan.net_disbursed_amount),
+      net_disbursed_amount: Number(loan.net_disbursed_amount),
       annualInterestRate: Number(loan.annual_interest_rate),
+      annual_interest_rate: Number(loan.annual_interest_rate),
       interestCalcMethod: loan.interest_calc_method,
+      interest_calc_method: loan.interest_calc_method,
       tenureMonths: Number(loan.tenure_months),
+      tenure_months: Number(loan.tenure_months),
       installmentFrequency: loan.installment_frequency,
+      installment_frequency: loan.installment_frequency,
       totalInstallments: Number(loan.total_installments),
+      total_installments: Number(loan.total_installments),
       emiAmount: Number(loan.emi_amount),
+      emi_amount: Number(loan.emi_amount),
       totalInterest: Number(loan.total_interest),
+      total_interest: Number(loan.total_interest),
       totalPayable: Number(loan.total_payable),
+      total_payable: Number(loan.total_payable),
       totalPaid: Number(loan.total_paid),
+      total_paid: Number(loan.total_paid),
       outstandingBalance: Number(loan.outstanding_balance),
-      disbursementDate: loan.disbursement_date,
-      firstEmiDate: loan.first_emi_date,
-      maturityDate: loan.maturity_date,
+      outstanding_balance: Number(loan.outstanding_balance),
+      disbursementDate: disbDateStr,
+      disbursement_date: disbDateStr,
+      firstEmiDate: firstEmiDateStr,
+      first_emi_date: firstEmiDateStr,
+      maturityDate: matDateStr,
+      maturity_date: matDateStr,
       assignedAgentId: loan.assigned_agent_id,
+      assigned_agent_id: loan.assigned_agent_id,
       assignedAgentName: loan.assigned_agent_name,
+      assigned_agent_name: loan.assigned_agent_name,
       assignedAgentPhone: loan.assigned_agent_phone,
+      assigned_agent_phone: loan.assigned_agent_phone,
       assignedAt: loan.assigned_at,
+      assigned_at: loan.assigned_at,
       status: loan.status,
       createdAt: loan.created_at,
+      created_at: loan.created_at,
       updatedAt: loan.updated_at,
+      updated_at: loan.updated_at,
       installments,
     };
   }

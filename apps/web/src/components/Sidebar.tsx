@@ -99,12 +99,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onSelectTab, user }
     <aside
       style={{
         width: 240,
+        height: '100%',
         background: '#ffffff',
         borderRight: '1px solid var(--border-subtle)',
         display: 'flex',
         flexDirection: 'column',
         padding: '16px 12px',
         flexShrink: 0,
+        overflow: 'hidden',
+        boxSizing: 'border-box',
       }}
     >
       <div
@@ -115,12 +118,25 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onSelectTab, user }
           color: 'var(--text-muted)',
           textTransform: 'uppercase',
           letterSpacing: '0.04em',
+          flexShrink: 0,
         }}
       >
         {isDealer ? 'Partner Terminal' : 'Operations Menu'}
       </div>
 
-      <nav style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <nav
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 3,
+          flex: 1,
+          minHeight: 0,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          paddingRight: 4,
+          scrollbarWidth: 'thin',
+        }}
+      >
         {items.map((item) => {
           if (isAgent && item.hiddenForAgent) return null;
           if (isDealer && !dealerAllowedTabs.includes(item.id)) return null;
@@ -144,6 +160,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onSelectTab, user }
                 fontWeight: isActive ? 700 : 500,
                 fontSize: 13,
                 transition: 'all 0.12s ease',
+                flexShrink: 0,
               }}
               onMouseEnter={(e) => {
                 if (!isActive) {
@@ -168,7 +185,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onSelectTab, user }
       {/* Security & Ledger Status */}
       <div
         style={{
-          marginTop: 'auto',
+          marginTop: 12,
+          flexShrink: 0,
           padding: 12,
           background: 'var(--bg-surface-secondary)',
           borderRadius: 'var(--radius-md)',
