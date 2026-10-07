@@ -1,6 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { ApiClient } from '../services/api';
-import { IAgentQueueItem, formatINR, EMIStatus, CallOutcome, PaymentMode, CollectionSource, IDealer } from '@crm/shared';
+import {
+  IAgentQueueItem,
+  formatINR,
+  formatDateDDMMYYYY,
+  normalizeNumericLeadingZeros,
+  EMIStatus,
+  CallOutcome,
+  PaymentMode,
+  CollectionSource,
+  IDealer,
+} from '@crm/shared';
 import {
   Phone,
   MessageCircle,
@@ -172,7 +182,7 @@ export const QueueView: React.FC = () => {
   const sendWhatsAppReminder = (item: IAgentQueueItem) => {
     const cleanPhone = item.primaryPhone.replace(/\D/g, '');
     const amountStr = formatINR(item.remainingAmount + item.penaltyAmount);
-    const msg = `Dear ${item.customerName}, this is a gentle reminder that your EMI installment of ${amountStr} for Loan ${item.loanAccountNo} is due on ${item.dueDate}. Please keep payment ready.`;
+    const msg = `Dear ${item.customerName}, this is a gentle reminder that your EMI installment of ${amountStr} for Loan ${item.loanAccountNo} is due on ${formatDateDDMMYYYY(item.dueDate)}. Please keep payment ready.`;
     window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
@@ -305,7 +315,7 @@ export const QueueView: React.FC = () => {
                       <div>{item.areaRoute}</div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{item.addressSummary}</div>
                     </td>
-                    <td className="mono" style={{ fontSize: 12 }}>{item.dueDate}</td>
+                    <td className="mono" style={{ fontSize: 12 }}>{formatDateDDMMYYYY(item.dueDate)}</td>
                     <td className="mono" style={{ fontSize: 12 }}>
                       #{item.installmentNumber} / {item.totalInstallments}
                     </td>
@@ -484,6 +494,7 @@ export const QueueView: React.FC = () => {
                   style={{ fontSize: 16, fontWeight: 700 }}
                   value={paymentAmount}
                   onChange={(e) => setPaymentAmount(Number(e.target.value))}
+                  onBlur={(e) => setPaymentAmount(Number(normalizeNumericLeadingZeros(e.target.value)))}
                   required
                 />
               </div>

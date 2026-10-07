@@ -4,6 +4,7 @@ import {
   IDirectCollectionRecord,
   IDirectCollectionDetail,
   formatINR,
+  formatDateDDMMYYYY,
   PaymentMode,
   PaymentStatus,
 } from '@crm/shared';
@@ -489,7 +490,7 @@ export const DirectCollectionsView: React.FC = () => {
                 {records.map((r) => (
                   <tr key={r.id}>
                     <td className="mono" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                      <div>{new Date(r.paymentTimestamp).toLocaleDateString('en-IN')}</div>
+                      <div>{formatDateDDMMYYYY(r.paymentTimestamp)}</div>
                       <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
                         {new Date(r.paymentTimestamp).toLocaleTimeString('en-IN', { hour12: true })}
                       </div>
@@ -705,8 +706,8 @@ export const DirectCollectionsView: React.FC = () => {
                       </span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--text-secondary)' }}>Date & Time:</span>
-                      <span className="mono">{new Date(detailData.paymentTimestamp).toLocaleString('en-IN', { hour12: true })}</span>
+                      <span style={{ color: 'var(--text-secondary)' }}>Date:</span>
+                      <span className="mono">{formatDateDDMMYYYY(detailData.paymentTimestamp)}</span>
                     </div>
                     {detailData.referenceNumber && (
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -796,7 +797,7 @@ export const DirectCollectionsView: React.FC = () => {
                 {selectedReceipt.receiptNumber}
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                {new Date(selectedReceipt.paymentTimestamp).toLocaleString('en-IN', { hour12: true })}
+                {formatDateDDMMYYYY(selectedReceipt.paymentTimestamp)}
               </div>
             </div>
 

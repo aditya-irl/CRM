@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { IUser, UserRole } from '@crm/shared';
+import { IUser, UserRole, formatDateDDMMYYYY } from '@crm/shared';
 import { ApiClient } from '../services/api';
 import { LogOut, Play, CheckCircle2, Shield, Plus, Calendar, Store } from 'lucide-react';
 import { BrandLogo } from './BrandLogo';
@@ -50,12 +50,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     }
   };
 
-  const todayDateStr = new Date().toLocaleDateString('en-IN', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
+  const todayDateStr = formatDateDDMMYYYY(new Date().toISOString());
 
   return (
     <header

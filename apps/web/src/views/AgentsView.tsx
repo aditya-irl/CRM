@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../services/api';
+import { formatDateDDMMYYYY } from '@crm/shared';
 import { CredentialModal } from '../components/CredentialModal';
 import {
   UserCheck,
@@ -366,10 +367,10 @@ export const AgentsView: React.FC = () => {
                         )}
                       </td>
                       <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                        {lastLogin ? new Date(lastLogin).toLocaleString() : 'Never'}
+                        {lastLogin ? formatDateDDMMYYYY(lastLogin) : 'Never'}
                       </td>
                       <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                        {ag.createdAt || ag.created_at ? new Date(ag.createdAt || ag.created_at!).toLocaleDateString() : '—'}
+                        {ag.createdAt || ag.created_at ? formatDateDDMMYYYY(ag.createdAt || ag.created_at!) : '—'}
                       </td>
                       <td style={{ textAlign: 'right' }}>
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>

@@ -555,3 +555,41 @@ export function computeEmiStatus(input: EmiEvaluationInput): EmiEvaluationResult
   };
 }
 
+/**
+ * Normalizes user numeric input by stripping unnecessary leading zeros
+ * while preserving decimal precision and zero values.
+ *
+ * Examples:
+ *   "02345"  -> "2345"
+ *   "000500" -> "500"
+ *   "000"    -> "0"
+ *   "00125"  -> "125"
+ *   "001.50" -> "1.50"
+ *   "000.50" -> "0.50"
+ *   "000.00" -> "0.00"
+ */
+export function normalizeNumericLeadingZeros(value: string | number | null | undefined): string {
+  if (value === null || value === undefined) return '';
+  const str = String(value).trim();
+  if (!str) return '';
+
+  // Only normalize strictly numeric / decimal values
+  if (!/^-?\d*(\.\d*)?$/.test(str) || str === '-' || str === '.') {
+    return str;
+  }
+
+  const isNegative = str.startsWith('-');
+  const clean = isNegative ? str.slice(1) : str;
+
+  if (clean.includes('.')) {
+    const [intPart, fracPart] = clean.split('.');
+    const normalizedInt = intPart.replace(/^0+(?=\d)/, '');
+    const safeInt = normalizedInt === '' || normalizedInt === '0' ? '0' : normalizedInt;
+    const result = `${safeInt}.${fracPart}`;
+    return isNegative ? `-${result}` : result;
+  }
+
+  const normalized = clean.replace(/^0+(?=\d)/, '');
+  const safe = normalized === '' ? '0' : normalized;
+  return isNegative ? `-${safe}` : safe;
+}

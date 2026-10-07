@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { ApiClient, IPortalLinkStatus } from '../services/api';
-import { UserRole } from '@crm/shared';
+import { UserRole, formatDateDDMMYYYY } from '@crm/shared';
 import {
   Link as LinkIcon,
   Copy,
@@ -290,11 +290,7 @@ export const PortalLinkManager: React.FC<PortalLinkManagerProps> = ({
             <div>
               <span style={{ color: 'var(--text-secondary)', display: 'block' }}>Created On:</span>
               <strong style={{ color: 'var(--text-primary)' }}>
-                {new Date(status.createdAt).toLocaleDateString('en-IN', {
-                  day: 'numeric',
-                  month: 'short',
-                  year: 'numeric',
-                })}
+                {formatDateDDMMYYYY(status.createdAt)}
               </strong>
             </div>
           )}
@@ -302,12 +298,7 @@ export const PortalLinkManager: React.FC<PortalLinkManagerProps> = ({
             <span style={{ color: 'var(--text-secondary)', display: 'block' }}>Customer Last Access:</span>
             <strong style={{ color: status.lastAccessedAt ? 'var(--primary)' : 'var(--text-muted)' }}>
               {status.lastAccessedAt
-                ? new Date(status.lastAccessedAt).toLocaleDateString('en-IN', {
-                    day: 'numeric',
-                    month: 'short',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })
+                ? formatDateDDMMYYYY(status.lastAccessedAt)
                 : 'Not yet opened'}
             </strong>
           </div>

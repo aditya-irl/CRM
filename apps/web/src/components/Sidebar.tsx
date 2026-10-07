@@ -14,6 +14,7 @@ import {
   CreditCard,
   UserCheck,
   Building2,
+  Smartphone,
 } from 'lucide-react';
 
 export type NavTab =
@@ -25,6 +26,7 @@ export type NavTab =
   | 'agent-collections'
   | 'direct-collections'
   | 'customers'
+  | 'devices'
   | 'queue'
   | 'loans'
   | 'payments'
@@ -44,6 +46,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onSelectTab, user }
   const dealerAllowedTabs: NavTab[] = [
     'dashboard',
     'customers',
+    'devices',
     'loans',
     'dealer-collections',
     'dealer-settlements',
@@ -77,8 +80,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onSelectTab, user }
     { id: 'direct-collections', label: 'Direct Collections', icon: <Building2 size={17} />, hiddenForAgent: true },
     {
       id: 'customers',
-      label: isDealer ? 'Store Customers' : isAgent ? 'My Customers' : 'Customers & Devices',
+      label: isDealer ? 'Store Customers' : isAgent ? 'My Customers' : 'Customers & Profiles',
       icon: <Users size={17} />,
+    },
+    {
+      id: 'devices',
+      label: 'Financed Devices',
+      icon: <Smartphone size={17} />,
     },
     {
       id: 'queue',

@@ -9,6 +9,7 @@ import {
   SettlementPaymentMethod,
   DealerStatus,
   getBusinessDate,
+  formatDateDDMMYYYY,
 } from '@crm/shared';
 import { ApiClient } from '../services/api';
 import {
@@ -44,15 +45,7 @@ const formatINR = (amount: number) => {
 
 const formatDate = (dateStr?: string | null) => {
   if (!dateStr) return '—';
-  try {
-    return new Date(dateStr).toLocaleDateString('en-IN', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    });
-  } catch {
-    return dateStr;
-  }
+  return formatDateDDMMYYYY(dateStr);
 };
 
 type DateRangePreset = 'ALL' | 'TODAY' | 'YESTERDAY' | 'THIS_WEEK' | 'THIS_MONTH' | 'CUSTOM';

@@ -97,6 +97,12 @@ export const onboardCustomerSchema = z.object({
     emiStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'EMI Start Date must be YYYY-MM-DD').optional(),
     dealerId: z.string().uuid('Invalid dealer ID').optional().nullable(),
     assignedAgentId: z.string().uuid('Invalid agent ID').optional().nullable(),
+    deviceBrand: z.string().max(100).optional().nullable(),
+    deviceModel: z.string().max(100).optional().nullable(),
+    deviceName: z.string().max(150).optional().nullable(),
+    imei1: z.string().max(50).optional().nullable(),
+    imei2: z.string().max(50).optional().nullable(),
+    deviceStatus: z.string().max(50).optional().nullable(),
     status: z.nativeEnum(LoanStatus).optional(),
   }).superRefine((data, ctx) => {
     if (!isValidCalendarDate(data.disbursementDate)) {
@@ -171,6 +177,12 @@ export const createLoanSchema = z.object({
   customerId: z.string().uuid('Invalid customer ID'),
   assignedAgentId: z.string().uuid('Invalid agent ID').optional().nullable(),
   dealerId: z.string().uuid('Invalid dealer ID').optional().nullable(),
+  deviceBrand: z.string().max(100).optional().nullable(),
+  deviceModel: z.string().max(100).optional().nullable(),
+  deviceName: z.string().max(150).optional().nullable(),
+  imei1: z.string().max(50).optional().nullable(),
+  imei2: z.string().max(50).optional().nullable(),
+  deviceStatus: z.string().max(50).optional().nullable(),
   status: z.nativeEnum(LoanStatus).optional(),
 }).superRefine(refineLoanDates);
 

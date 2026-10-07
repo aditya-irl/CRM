@@ -12,6 +12,7 @@ import {
   InterestMethod,
   RepaymentFrequency,
   EMIStatus,
+  IDeviceItem,
 } from '@crm/shared';
 import { AppError, NotFoundError, ForbiddenError } from '../../middlewares/error.middleware';
 import { AuthenticatedUser } from '../../middlewares/auth.middleware';
@@ -30,6 +31,12 @@ export interface CreateLoanDTO {
   emiStartDate?: string;
   assignedAgentId?: string | null;
   dealerId?: string | null;
+  deviceBrand?: string | null;
+  deviceModel?: string | null;
+  deviceName?: string | null;
+  imei1?: string | null;
+  imei2?: string | null;
+  deviceStatus?: string | null;
   status?: LoanStatus;
 }
 
@@ -144,18 +151,27 @@ export class LoanService {
 
     // 6. Execute atomic PostgreSQL transaction
     await runPostgresTransaction(async (client) => {
+      const deviceBrand = data.deviceBrand || null;
+      const deviceModel = data.deviceModel || null;
+      const deviceName = data.deviceName || (deviceBrand && deviceModel ? `${deviceBrand} ${deviceModel}` : 'Smart Device');
+      const imei1 = data.imei1 || null;
+      const imei2 = data.imei2 || null;
+      const deviceStatus = data.deviceStatus || 'ACTIVE';
+
       // Insert Loan record
       const insertLoanSql = `
         INSERT INTO loans (
-          id, loan_account_no, customer_id, dealer_id, principal_amount, down_payment, net_disbursed_amount,
+          id, loan_account_no, customer_id, dealer_id,
+          device_brand, device_model, device_name, imei1, imei2, device_status,
+          principal_amount, down_payment, net_disbursed_amount,
           annual_interest_rate, interest_calc_method, tenure_months, installment_frequency,
           total_installments, emi_amount, total_interest, total_payable, total_paid,
           outstanding_balance, disbursement_date, first_emi_date, maturity_date,
           assigned_agent_id, status, created_by, created_at, updated_at
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-          $11, $12, $13, $14, $15, 0.00, $16, $17, $18, $19,
-          $20, $21, $22, NOW(), NOW()
+          $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+          $21, 0.00, $22, $23, $24, $25, $26, $27, $28, NOW(), NOW()
         )
       `;
 
@@ -164,6 +180,12 @@ export class LoanService {
         loanAccountNo,
         customer.id,
         dealerId,
+        deviceBrand,
+        deviceModel,
+        deviceName,
+        imei1,
+        imei2,
+        deviceStatus,
         calc.principalAmount,
         calc.downPayment,
         calc.netDisbursedAmount,
@@ -299,6 +321,13 @@ export class LoanService {
       dealerId,
       dealerStoreName: dealerInfo?.store_name || null,
       dealerCode: dealerInfo?.dealer_code || null,
+      deviceBrand: data.deviceBrand || null,
+      deviceModel: data.deviceModel || null,
+      deviceName: data.deviceName || (data.deviceBrand && data.deviceModel ? `${data.deviceBrand} ${data.deviceModel}` : 'Smart Device'),
+      imei1: data.imei1 || null,
+      imei2: data.imei2 || null,
+      deviceStatus: data.deviceStatus || 'ACTIVE',
+      financingSource: dealerId ? 'DEALER' : 'DIRECT',
       principalAmount: calc.principalAmount,
       downPayment: calc.downPayment,
       netDisbursedAmount: calc.netDisbursedAmount,
@@ -747,6 +776,13 @@ export class LoanService {
       dealerId: l.dealer_id,
       dealerStoreName: l.dealer_store_name,
       dealerCode: l.dealer_code,
+      deviceBrand: l.device_brand || 'Smart Device',
+      deviceModel: l.device_model || (l.principal_amount ? `Asset (${l.loan_account_no})` : 'Standard Handset'),
+      deviceName: l.device_name || (l.device_brand && l.device_model ? `${l.device_brand} ${l.device_model}` : 'Smart Device'),
+      imei1: l.imei1 || `IMEI-${l.loan_account_no.replace(/[^0-9]/g, '').padEnd(15, '0')}`,
+      imei2: l.imei2 || null,
+      deviceStatus: l.device_status || 'ACTIVE',
+      financingSource: l.dealer_id ? 'DEALER' : 'DIRECT',
       principalAmount: Number(l.principal_amount),
       downPayment: Number(l.down_payment),
       netDisbursedAmount: Number(l.net_disbursed_amount),
@@ -903,6 +939,18 @@ export class LoanService {
       dealer_store_name: loan.dealer_store_name,
       dealerCode: loan.dealer_code,
       dealer_code: loan.dealer_code,
+      deviceBrand: loan.device_brand || 'Smart Device',
+      device_brand: loan.device_brand || 'Smart Device',
+      deviceModel: loan.device_model || (loan.principal_amount ? `Asset (${loan.loan_account_no})` : 'Standard Handset'),
+      device_model: loan.device_model || (loan.principal_amount ? `Asset (${loan.loan_account_no})` : 'Standard Handset'),
+      deviceName: loan.device_name || (loan.device_brand && loan.device_model ? `${loan.device_brand} ${loan.device_model}` : 'Smart Device'),
+      device_name: loan.device_name || (loan.device_brand && loan.device_model ? `${loan.device_brand} ${loan.device_model}` : 'Smart Device'),
+      imei1: loan.imei1 || `IMEI-${loan.loan_account_no.replace(/[^0-9]/g, '').padEnd(15, '0')}`,
+      imei2: loan.imei2 || null,
+      deviceStatus: loan.device_status || 'ACTIVE',
+      device_status: loan.device_status || 'ACTIVE',
+      financingSource: loan.dealer_id ? 'DEALER' : 'DIRECT',
+      financing_source: loan.dealer_id ? 'DEALER' : 'DIRECT',
       principalAmount: Number(loan.principal_amount),
       principal_amount: Number(loan.principal_amount),
       downPayment: Number(loan.down_payment),
@@ -1210,4 +1258,159 @@ export class LoanService {
       createdAt: row.created_at,
     }));
   }
+
+  /**
+   * Retrieve list of financed devices with complete customer, dealer, financing, and repayment context.
+   * Strict Row-Level Access Control (RLAC) for Dealers and Collection Agents.
+   */
+  public static async getFinancedDevices(
+    query: {
+      page?: number | string;
+      limit?: number | string;
+      search?: string;
+      dealerId?: string;
+      financingSource?: string;
+      deviceStatus?: string;
+    },
+    user: AuthenticatedUser
+  ) {
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(query.limit) || 25));
+    const offset = (page - 1) * limit;
+
+    let sql = `
+      SELECT l.*,
+             c.full_name as customer_name,
+             c.customer_code,
+             c.primary_phone,
+             c.address_line1,
+             d.store_name as dealer_store_name,
+             d.dealer_code,
+             (
+               SELECT json_build_object(
+                 'nextDueDate', (SELECT TO_CHAR(ei.due_date, 'YYYY-MM-DD') FROM emi_installments ei WHERE ei.loan_id = l.id AND ei.status IN ('UPCOMING', 'DUE_TODAY', 'OVERDUE') ORDER BY ei.due_date ASC LIMIT 1),
+                 'overdueCount', (SELECT COUNT(*)::int FROM emi_installments ei WHERE ei.loan_id = l.id AND ei.status = 'OVERDUE'),
+                 'maxDaysOverdue', (SELECT COALESCE(MAX(ei.days_overdue), 0)::int FROM emi_installments ei WHERE ei.loan_id = l.id),
+                 'totalPenalty', (SELECT COALESCE(SUM(ei.penalty_amount), 0)::numeric FROM emi_installments ei WHERE ei.loan_id = l.id)
+               )
+             ) as emi_summary
+      FROM loans l
+      JOIN customers c ON l.customer_id = c.id
+      LEFT JOIN dealers d ON l.dealer_id = d.id
+      WHERE c.deleted_at IS NULL
+    `;
+    const params: any[] = [];
+    let paramIndex = 1;
+
+    // RLAC: Dealer only sees devices for loans belonging to their store
+    if (user.role === UserRole.DEALER) {
+      if (!user.dealerId) throw new ForbiddenError('Dealer context missing');
+      sql += ` AND l.dealer_id = $${paramIndex++}`;
+      params.push(user.dealerId);
+    } else if (user.role === UserRole.COLLECTION_AGENT) {
+      sql += ` AND l.assigned_agent_id = $${paramIndex++}`;
+      params.push(user.id);
+    } else {
+      if (query.dealerId) {
+        sql += ` AND l.dealer_id = $${paramIndex++}`;
+        params.push(query.dealerId);
+      }
+      if (query.financingSource === 'DEALER') {
+        sql += ` AND l.dealer_id IS NOT NULL`;
+      } else if (query.financingSource === 'DIRECT') {
+        sql += ` AND l.dealer_id IS NULL`;
+      }
+    }
+
+    if (query.deviceStatus) {
+      sql += ` AND COALESCE(l.device_status, 'ACTIVE') = $${paramIndex++}`;
+      params.push(query.deviceStatus);
+    }
+
+    if (query.search) {
+      sql += ` AND (
+        COALESCE(l.device_brand, '') ILIKE $${paramIndex}
+        OR COALESCE(l.device_model, '') ILIKE $${paramIndex}
+        OR COALESCE(l.device_name, '') ILIKE $${paramIndex}
+        OR COALESCE(l.imei1, '') ILIKE $${paramIndex}
+        OR COALESCE(l.imei2, '') ILIKE $${paramIndex}
+        OR l.loan_account_no ILIKE $${paramIndex}
+        OR c.full_name ILIKE $${paramIndex}
+        OR c.customer_code ILIKE $${paramIndex}
+        OR c.primary_phone ILIKE $${paramIndex}
+        OR COALESCE(d.store_name, '') ILIKE $${paramIndex}
+      )`;
+      params.push(`%${query.search}%`);
+      paramIndex++;
+    }
+
+    const countSql = `SELECT COUNT(*) as total FROM (${sql}) sub`;
+    const countRes = await queryPostgres<{ total: string }>(countSql, params);
+    const total = parseInt(countRes.rows[0]?.total || '0', 10);
+
+    sql += ` ORDER BY l.created_at DESC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
+    params.push(limit, offset);
+
+    const result = await queryPostgres(sql, params);
+
+    const devices: IDeviceItem[] = result.rows.map((r: any) => {
+      const emiSum = r.emi_summary || {};
+      const brand = r.device_brand || 'Smart Device';
+      const model = r.device_model || (r.principal_amount ? `Asset (${r.loan_account_no})` : 'Standard Handset');
+      const name = r.device_name || `${brand} ${model}`.trim();
+      const imei = r.imei1 || `IMEI-${r.loan_account_no.replace(/[^0-9]/g, '').padEnd(15, '0')}`;
+      const retailPrice = Number(r.principal_amount);
+      const downPayment = Number(r.down_payment);
+      const financedAmount = Number(r.net_disbursed_amount || (retailPrice - downPayment));
+      const totalPayable = Number(r.total_payable);
+      const totalPaid = Number(r.total_paid);
+      const outstanding = Number(r.outstanding_balance);
+      const pendingAmount = Math.max(0, totalPayable - totalPaid);
+
+      return {
+        id: r.id,
+        loanId: r.id,
+        loanAccountNo: r.loan_account_no,
+        customerId: r.customer_id,
+        customerName: r.customer_name,
+        customerCode: r.customer_code,
+        primaryPhone: r.primary_phone,
+        dealerId: r.dealer_id,
+        dealerStoreName: r.dealer_store_name || null,
+        dealerCode: r.dealer_code || null,
+        financingSource: r.dealer_id ? 'DEALER' : 'DIRECT',
+        deviceBrand: brand,
+        deviceModel: model,
+        deviceName: name,
+        imei1: imei,
+        imei2: r.imei2 || null,
+        retailPrice,
+        downPayment,
+        financedAmount,
+        emiAmount: Number(r.emi_amount),
+        tenureMonths: Number(r.tenure_months),
+        annualInterestRate: Number(r.annual_interest_rate),
+        loanStatus: r.status,
+        deviceStatus: r.device_status || 'ACTIVE',
+        outstandingBalance: outstanding,
+        totalPaid,
+        pendingAmount,
+        nextDueDate: emiSum.nextDueDate || null,
+        overdueCount: Number(emiSum.overdueCount || 0),
+        daysOverdue: Number(emiSum.maxDaysOverdue || 0),
+        penaltyAmount: Number(emiSum.totalPenalty || 0),
+        disbursementDate: r.disbursement_date instanceof Date ? r.disbursement_date.toISOString().split('T')[0] : String(r.disbursement_date).split('T')[0],
+        firstEmiDate: r.first_emi_date instanceof Date ? r.first_emi_date.toISOString().split('T')[0] : String(r.first_emi_date).split('T')[0],
+      };
+    });
+
+    return {
+      devices,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
 }
+

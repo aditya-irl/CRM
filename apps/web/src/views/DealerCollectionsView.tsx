@@ -4,6 +4,7 @@ import {
   IDealerCollectionSummary,
   IDealerCollectionRecord,
   formatINR,
+  formatDateDDMMYYYY,
   PaymentMode,
   PaymentStatus,
 } from '@crm/shared';
@@ -558,7 +559,7 @@ export const DealerCollectionsView: React.FC<DealerCollectionsViewProps> = ({
                       onClick={() => setSelectedRecord(r)}
                     >
                       <td style={{ fontSize: 12 }}>
-                        <div>{new Date(r.paymentTimestamp).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+                        <div>{formatDateDDMMYYYY(r.paymentTimestamp)}</div>
                         <div className="mono" style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                           {new Date(r.paymentTimestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
                         </div>
@@ -804,7 +805,7 @@ export const DealerCollectionsView: React.FC<DealerCollectionsViewProps> = ({
                 </div>
                 <div>
                   <div style={{ color: 'var(--text-secondary)' }}>Payment Timestamp</div>
-                  <div>{new Date(selectedRecord.paymentTimestamp).toLocaleString('en-IN')}</div>
+                  <div>{formatDateDDMMYYYY(selectedRecord.paymentTimestamp)}</div>
                 </div>
                 {selectedRecord.referenceNumber && (
                   <div>

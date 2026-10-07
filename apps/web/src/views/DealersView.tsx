@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { IDealer, DealerStatus, UserRole } from '@crm/shared';
+import { IDealer, DealerStatus, UserRole, formatDateDDMMYYYY } from '@crm/shared';
 import { ApiClient } from '../services/api';
 import {
   Store,
@@ -40,15 +40,7 @@ const formatINR = (amount: number) => {
 
 const formatDate = (dateStr?: string) => {
   if (!dateStr) return '—';
-  try {
-    return new Date(dateStr).toLocaleDateString('en-IN', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    });
-  } catch {
-    return dateStr;
-  }
+  return formatDateDDMMYYYY(dateStr);
 };
 
 interface DealersViewProps {

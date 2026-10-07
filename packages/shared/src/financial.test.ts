@@ -1,4 +1,5 @@
-import { generateAmortizationSchedule, allocatePaymentWaterfall, toFixed2 } from './financial';
+import { generateAmortizationSchedule, allocatePaymentWaterfall, toFixed2, normalizeNumericLeadingZeros } from './financial';
+import { formatDateDDMMYYYY, parseDisplayDateToISO } from './datetime';
 import { InterestMethod, RepaymentFrequency, EMIStatus } from './enums';
 
 describe('Financial Calculation Engine', () => {
@@ -476,4 +477,56 @@ describe('Financial Calculation Engine', () => {
       expect(res12.maturityDate).toBe('2027-10-05');
     });
   });
+
+  describe('Numeric Input Leading Zero Normalization', () => {
+    test('Normalizes integers with leading zeros correctly', () => {
+      expect(normalizeNumericLeadingZeros('02345')).toBe('2345');
+      expect(normalizeNumericLeadingZeros('000500')).toBe('500');
+      expect(normalizeNumericLeadingZeros('000')).toBe('0');
+      expect(normalizeNumericLeadingZeros('00125')).toBe('125');
+      expect(normalizeNumericLeadingZeros('0')).toBe('0');
+      expect(normalizeNumericLeadingZeros(500)).toBe('500');
+      expect(normalizeNumericLeadingZeros(0)).toBe('0');
+    });
+
+    test('Normalizes decimals with leading zeros correctly without precision loss', () => {
+      expect(normalizeNumericLeadingZeros('001.50')).toBe('1.50');
+      expect(normalizeNumericLeadingZeros('000.50')).toBe('0.50');
+      expect(normalizeNumericLeadingZeros('000.00')).toBe('0.00');
+      expect(normalizeNumericLeadingZeros('0.75')).toBe('0.75');
+      expect(normalizeNumericLeadingZeros('00125.99')).toBe('125.99');
+    });
+
+    test('Handles negative values, empty input, and non-numeric safely', () => {
+      expect(normalizeNumericLeadingZeros('-0050')).toBe('-50');
+      expect(normalizeNumericLeadingZeros('-000.25')).toBe('-0.25');
+      expect(normalizeNumericLeadingZeros('')).toBe('');
+      expect(normalizeNumericLeadingZeros(null)).toBe('');
+      expect(normalizeNumericLeadingZeros(undefined)).toBe('');
+      expect(normalizeNumericLeadingZeros('invalid')).toBe('invalid');
+    });
+  });
+
+  describe('Global Date Formatting & Parsing (DD/MM/YYYY)', () => {
+    test('Renders date-only ISO strings as DD/MM/YYYY without timezone shift', () => {
+      expect(formatDateDDMMYYYY('2026-10-07')).toBe('07/10/2026');
+      expect(formatDateDDMMYYYY('2026-01-05')).toBe('05/01/2026');
+      expect(formatDateDDMMYYYY('2026-12-31')).toBe('31/12/2026');
+      expect(formatDateDDMMYYYY('2026-02-28')).toBe('28/02/2026');
+    });
+
+    test('Parses DD/MM/YYYY back into ISO YYYY-MM-DD cleanly', () => {
+      expect(parseDisplayDateToISO('07/10/2026')).toBe('2026-10-07');
+      expect(parseDisplayDateToISO('05/01/2026')).toBe('2026-01-05');
+      expect(parseDisplayDateToISO('31/12/2026')).toBe('2026-12-31');
+    });
+
+    test('Handles null, undefined, empty safely', () => {
+      expect(formatDateDDMMYYYY(null)).toBe('-');
+      expect(formatDateDDMMYYYY(undefined)).toBe('-');
+      expect(formatDateDDMMYYYY('')).toBe('-');
+      expect(parseDisplayDateToISO('')).toBe('');
+    });
+  });
 });
+

@@ -1,6 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { ApiClient } from '../services/api';
-import { ILoan, ICustomer, formatINR, InterestMethod, RepaymentFrequency, LoanStatus, UserRole } from '@crm/shared';
+import {
+  ILoan,
+  ICustomer,
+  formatINR,
+  formatDateDDMMYYYY,
+  normalizeNumericLeadingZeros,
+  InterestMethod,
+  RepaymentFrequency,
+  LoanStatus,
+  UserRole,
+} from '@crm/shared';
 import {
   Plus,
   Search,
@@ -19,8 +29,10 @@ import {
   Link as LinkIcon,
   AlertTriangle,
   History,
+  CreditCard,
 } from 'lucide-react';
 import { PortalLinkManager } from '../components/PortalLinkManager';
+import { RecordPaymentModal } from '../components/RecordPaymentModal';
 
 export const LoansView: React.FC = () => {
   const currentUser = ApiClient.getUser();
@@ -68,6 +80,10 @@ export const LoansView: React.FC = () => {
   const [submittingPenalty, setSubmittingPenalty] = useState(false);
   const [penaltyError, setPenaltyError] = useState<string | null>(null);
   const [penaltySuccess, setPenaltySuccess] = useState<string | null>(null);
+
+  // Record Payment Modal State
+  const [showRecordPaymentModal, setShowRecordPaymentModal] = useState(false);
+  const [selectedInstallmentForPayment, setSelectedInstallmentForPayment] = useState<any | null>(null);
 
   // Penalty History & Waiver States
   const [historyModalEmi, setHistoryModalEmi] = useState<any | null>(null);
@@ -573,7 +589,7 @@ export const LoansView: React.FC = () => {
                     <td className="mono font-bold" style={{ color: 'var(--warning-text)' }}>
                       {formatINR(loan.emiAmount)}
                     </td>
-                    <td className="mono">{loan.firstEmiDate || 'Next month'}</td>
+                    <td className="mono">{loan.firstEmiDate ? formatDateDDMMYYYY(loan.firstEmiDate) : 'Next month'}</td>
                     <td>
                       <span className={`badge ${loan.kycStatus === 'VERIFIED' ? 'badge-paid' : 'badge-warning'}`}>
                         {loan.kycStatus || 'SUBMITTED'}
@@ -802,6 +818,7 @@ export const LoansView: React.FC = () => {
                     className="form-input mono"
                     value={principalAmount}
                     onChange={(e) => setPrincipalAmount(Number(e.target.value))}
+                    onBlur={(e) => setPrincipalAmount(Number(normalizeNumericLeadingZeros(e.target.value)))}
                     required
                   />
                 </div>
@@ -813,6 +830,7 @@ export const LoansView: React.FC = () => {
                     className="form-input mono"
                     value={downPayment}
                     onChange={(e) => setDownPayment(Number(e.target.value))}
+                    onBlur={(e) => setDownPayment(Number(normalizeNumericLeadingZeros(e.target.value)))}
                   />
                 </div>
 
@@ -826,6 +844,7 @@ export const LoansView: React.FC = () => {
                     className="form-input mono"
                     value={annualRate}
                     onChange={(e) => setAnnualRate(Number(e.target.value))}
+                    onBlur={(e) => setAnnualRate(Number(normalizeNumericLeadingZeros(e.target.value)))}
                     required
                   />
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
@@ -1062,7 +1081,7 @@ export const LoansView: React.FC = () => {
                         )}
                         {(selectedLoanDetail.loan.assignedAt || (selectedLoanDetail.loan as any).assigned_at) && (
                           <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}>
-                            (since {new Date(selectedLoanDetail.loan.assignedAt || (selectedLoanDetail.loan as any).assigned_at).toLocaleDateString()})
+                            (since {formatDateDDMMYYYY(selectedLoanDetail.loan.assignedAt || (selectedLoanDetail.loan as any).assigned_at)})
                           </span>
                         )}
                       </span>
@@ -1112,30 +1131,50 @@ export const LoansView: React.FC = () => {
             </div>
 
             {/* Tab Switcher */}
-            <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                onClick={() => setLoanModalTab('schedule')}
-                className={`btn btn-sm ${loanModalTab === 'schedule' ? 'btn-primary' : 'btn-secondary'}`}
-              >
-                Amortization Schedule ({selectedLoanDetail.installments.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setLoanModalTab('payments')}
-                className={`btn btn-sm ${loanModalTab === 'payments' ? 'btn-primary' : 'btn-secondary'}`}
-              >
-                Payment History ({selectedLoanDetail.payments.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setLoanModalTab('portal')}
-                className={`btn btn-sm ${loanModalTab === 'portal' ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
-              >
-                <LinkIcon size={13} />
-                <span>Customer Portal Link</span>
-              </button>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => setLoanModalTab('schedule')}
+                  className={`btn btn-sm ${loanModalTab === 'schedule' ? 'btn-primary' : 'btn-secondary'}`}
+                >
+                  Amortization Schedule ({selectedLoanDetail.installments.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLoanModalTab('payments')}
+                  className={`btn btn-sm ${loanModalTab === 'payments' ? 'btn-primary' : 'btn-secondary'}`}
+                >
+                  Payment History ({selectedLoanDetail.payments.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLoanModalTab('portal')}
+                  className={`btn btn-sm ${loanModalTab === 'portal' ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                >
+                  <LinkIcon size={13} />
+                  <span>Customer Portal Link</span>
+                </button>
+              </div>
+
+              {(currentUser?.role === UserRole.SUPER_ADMIN ||
+                currentUser?.role === UserRole.ADMIN ||
+                (currentUser?.role === UserRole.DEALER &&
+                  (selectedLoanDetail.loan.dealerId ?? selectedLoanDetail.loan.dealer_id) === currentUser.dealerId)) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedInstallmentForPayment(null);
+                    setShowRecordPaymentModal(true);
+                  }}
+                  className="btn btn-sm btn-primary"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                >
+                  <CreditCard size={13} />
+                  <span>+ Record Payment</span>
+                </button>
+              )}
             </div>
 
             {loanModalTab === 'schedule' ? (
@@ -1156,7 +1195,7 @@ export const LoansView: React.FC = () => {
                   <tbody>
                     {selectedLoanDetail.installments.map((inst) => {
                       const instNumber = inst.installmentNumber ?? inst.installment_number;
-                      const dueDate = inst.dueDate ? String(inst.dueDate).split('T')[0] : (inst.due_date ? String(inst.due_date).split('T')[0] : '-');
+                      const dueDate = inst.dueDate || inst.due_date ? formatDateDDMMYYYY(inst.dueDate || inst.due_date) : '-';
                       const expectedAmount = Number(inst.expectedAmount ?? inst.expected_amount ?? 0);
                       const penaltyAmount = Number(inst.penaltyAmount ?? inst.penalty_amount ?? 0);
                       const paidAmount = Number(inst.paidAmount ?? inst.paid_amount ?? 0);
@@ -1213,6 +1252,21 @@ export const LoansView: React.FC = () => {
                           </td>
                           <td style={{ textAlign: 'right' }}>
                             <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                              {inst.status !== 'PAID' && remainingAmount > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedInstallmentForPayment(inst);
+                                    setShowRecordPaymentModal(true);
+                                  }}
+                                  className="btn btn-xs btn-primary"
+                                  style={{ fontSize: 11, padding: '2px 8px' }}
+                                  title="Record payment for this installment"
+                                >
+                                  Collect
+                                </button>
+                              )}
+
                               {isOverdue && inst.status !== 'PAID' && remainingAmount > 0 && canAddPenaltyRole && (
                                 <button
                                   type="button"
@@ -1286,7 +1340,7 @@ export const LoansView: React.FC = () => {
                               {p.receiptNumber || p.receipt_number}
                             </td>
                             <td className="mono" style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                              {new Date(p.paymentTimestamp || p.payment_timestamp).toLocaleDateString('en-IN')}
+                              {formatDateDDMMYYYY(p.paymentTimestamp || p.payment_timestamp)}
                             </td>
                             <td
                               className="mono"
@@ -1302,17 +1356,17 @@ export const LoansView: React.FC = () => {
                               {source === 'DEALER' ? (
                                 <span className="badge badge-terracotta" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                                   <Store size={10} />
-                                  <span>Partner Store</span>
+                                  <span>DEALER</span>
                                 </span>
                               ) : source === 'RECOVERY_AGENT' ? (
                                 <span className="badge badge-due-today" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                                   <UserCheck size={10} />
-                                  <span>Recovery Agent</span>
+                                  <span>RECOVERY AGENT</span>
                                 </span>
                               ) : (
                                 <span className="badge badge-paid" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                                   <Building2 size={10} />
-                                  <span>Direct Customer</span>
+                                  <span>DIRECT</span>
                                 </span>
                               )}
                             </td>
@@ -1520,6 +1574,7 @@ export const LoansView: React.FC = () => {
                   className="form-input"
                   value={penaltyAmount}
                   onChange={(e) => setPenaltyAmount(e.target.value)}
+                  onBlur={(e) => setPenaltyAmount(normalizeNumericLeadingZeros(e.target.value))}
                   placeholder="e.g. 500"
                 />
               </div>
@@ -1919,6 +1974,25 @@ export const LoansView: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {showRecordPaymentModal && (
+        <RecordPaymentModal
+          isOpen={showRecordPaymentModal}
+          onClose={() => {
+            setShowRecordPaymentModal(false);
+            setSelectedInstallmentForPayment(null);
+          }}
+          onSuccess={() => {
+            if (selectedLoanDetail) {
+              handleViewLoan(selectedLoanDetail.loan.id, 'payments');
+            }
+            ApiClient.listLoans().then(setLoans).catch(console.error);
+          }}
+          user={currentUser}
+          preselectedLoan={selectedLoanDetail?.loan}
+          preselectedInstallment={selectedInstallmentForPayment}
+        />
       )}
     </div>
   );

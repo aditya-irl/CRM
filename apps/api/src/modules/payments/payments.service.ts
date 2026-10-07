@@ -130,8 +130,11 @@ export class PaymentService {
           if (!user.dealerId) {
             throw new ForbiddenError('Dealer context missing');
           }
-          if (loan.dealer_id !== user.dealerId) {
+          if (!loan.dealer_id || loan.dealer_id !== user.dealerId) {
             throw new ForbiddenError('You are not authorized to collect payments for this loan account');
+          }
+          if (data.dealerId && data.dealerId !== user.dealerId) {
+            throw new ForbiddenError('You cannot record payments on behalf of another dealer');
           }
           if (source && source !== CollectionSource.DEALER) {
             throw new ForbiddenError('Partner stores can only record payments through DEALER collection source');

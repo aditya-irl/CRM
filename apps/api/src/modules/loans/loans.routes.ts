@@ -84,6 +84,29 @@ router.get(
 );
 
 /**
+ * GET /api/v1/loans/devices
+ * List financed devices with customer, dealer, loan, and repayment context.
+ */
+router.get('/devices', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await LoanService.getFinancedDevices(req.query, req.user!);
+    return res.json({
+      success: true,
+      data: result.devices,
+      meta: {
+        page: result.page,
+        limit: result.limit,
+        total: result.total,
+        totalPages: result.totalPages,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * GET /api/v1/loans/:id
  * Fetch loan details and full EMI amortization schedule (with IDOR protection).
  */

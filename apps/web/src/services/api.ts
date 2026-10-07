@@ -531,6 +531,31 @@ export class ApiClient {
     return this.request<{ loan: ILoan; installments: any[]; payments: any[] }>(`/loans/${id}`);
   }
 
+  public static async getLoanById(id: string) {
+    return this.getLoanDetail(id);
+  }
+
+  public static async listLoans(filters?: any, page = 1, limit = 50) {
+    if (typeof filters === 'string') {
+      return this.getLoans(filters, undefined, page, limit);
+    }
+    const search = filters?.search;
+    const status = filters?.status;
+    return this.getLoans(search, status, page, limit);
+  }
+
+  // Financed Devices
+  public static async getFinancedDevices(filters: any = {}) {
+    const params = new URLSearchParams();
+    if (filters.page) params.append('page', String(filters.page));
+    if (filters.limit) params.append('limit', String(filters.limit));
+    if (filters.search) params.append('search', filters.search);
+    if (filters.dealerId) params.append('dealerId', filters.dealerId);
+    if (filters.financingSource && filters.financingSource !== 'ALL') params.append('financingSource', filters.financingSource);
+    if (filters.deviceStatus && filters.deviceStatus !== 'ALL') params.append('deviceStatus', filters.deviceStatus);
+    return this.request<{ data: any[]; meta: any }>(`/loans/devices?${params.toString()}`);
+  }
+
   // Agent Queue
   public static async getAgentQueue(status?: string, route?: string, search?: string) {
     const params = new URLSearchParams();

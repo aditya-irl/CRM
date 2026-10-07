@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { IDealerDashboardMetrics, formatINR } from '@crm/shared';
+import { IDealerDashboardMetrics, formatINR, formatDateDDMMYYYY } from '@crm/shared';
 import { ApiClient } from '../services/api';
 import {
   Store,
@@ -18,6 +18,7 @@ import {
   UserPlus,
 } from 'lucide-react';
 import { AddCustomerWizard } from '../components/AddCustomerWizard';
+import { RecordPaymentModal } from '../components/RecordPaymentModal';
 
 interface DealerDashboardViewProps {
   onNavigateToTab?: (tab: string) => void;
@@ -26,6 +27,8 @@ interface DealerDashboardViewProps {
 export const DealerDashboardView: React.FC<DealerDashboardViewProps> = ({ onNavigateToTab }) => {
   const [data, setData] = useState<IDealerDashboardMetrics | null>(null);
   const [showOnboardWizard, setShowOnboardWizard] = useState(false);
+  const [showRecordPaymentModal, setShowRecordPaymentModal] = useState(false);
+  const [selectedLoanForPayment, setSelectedLoanForPayment] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeSubTab, setActiveSubTab] = useState<'loans' | 'collections' | 'settlements'>('loans');
 
@@ -47,15 +50,7 @@ export const DealerDashboardView: React.FC<DealerDashboardViewProps> = ({ onNavi
 
   const formatDate = (dateStr?: string) => {
     if (!dateStr) return '—';
-    try {
-      return new Date(dateStr).toLocaleDateString('en-IN', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-      });
-    } catch {
-      return dateStr;
-    }
+    return formatDateDDMMYYYY(dateStr);
   };
 
   return (
@@ -134,8 +129,19 @@ export const DealerDashboardView: React.FC<DealerDashboardViewProps> = ({ onNavi
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <button
-            onClick={() => setShowOnboardWizard(true)}
+            onClick={() => {
+              setSelectedLoanForPayment(null);
+              setShowRecordPaymentModal(true);
+            }}
             className="btn btn-primary btn-sm"
+            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+          >
+            <CreditCard size={14} />
+            <span>Record EMI Payment</span>
+          </button>
+          <button
+            onClick={() => setShowOnboardWizard(true)}
+            className="btn btn-secondary btn-sm"
             style={{ display: 'flex', alignItems: 'center', gap: 6 }}
           >
             <UserPlus size={14} />
@@ -430,6 +436,7 @@ export const DealerDashboardView: React.FC<DealerDashboardViewProps> = ({ onNavi
                       <th>Outstanding</th>
                       <th>Status</th>
                       <th>Disbursed On</th>
+                      <th style={{ textAlign: 'right' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -464,6 +471,21 @@ export const DealerDashboardView: React.FC<DealerDashboardViewProps> = ({ onNavi
                           </span>
                         </td>
                         <td>{formatDate(l.disbursementDate)}</td>
+                        <td style={{ textAlign: 'right' }}>
+                          {(l.status === 'ACTIVE' || Number(l.outstandingBalance) > 0) && (
+                            <button
+                              onClick={() => {
+                                setSelectedLoanForPayment(l);
+                                setShowRecordPaymentModal(true);
+                              }}
+                              className="btn btn-primary btn-xs"
+                              style={{ fontSize: 11, padding: '3px 8px' }}
+                              title="Record EMI payment collected at store"
+                            >
+                              Record EMI
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -628,6 +650,23 @@ export const DealerDashboardView: React.FC<DealerDashboardViewProps> = ({ onNavi
             setShowOnboardWizard(false);
             fetchDashboardData();
           }}
+        />
+      )}
+
+      {showRecordPaymentModal && (
+        <RecordPaymentModal
+          isOpen={showRecordPaymentModal}
+          onClose={() => {
+            setShowRecordPaymentModal(false);
+            setSelectedLoanForPayment(null);
+          }}
+          onSuccess={() => {
+            fetchDashboardData();
+          }}
+          preselectedLoan={selectedLoanForPayment}
+          isDealerContext={true}
+          dealerId={data?.dealer?.id}
+          dealerStoreName={data?.dealer?.storeName}
         />
       )}
     </div>

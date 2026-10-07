@@ -80,6 +80,12 @@ CREATE TABLE IF NOT EXISTS loans (
     loan_account_no TEXT UNIQUE NOT NULL,
     customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
     dealer_id TEXT REFERENCES dealers(id),
+    device_brand TEXT,
+    device_model TEXT,
+    device_name TEXT,
+    imei1 TEXT,
+    imei2 TEXT,
+    device_status TEXT DEFAULT 'ACTIVE',
     principal_amount REAL NOT NULL,
     down_payment REAL NOT NULL DEFAULT 0.0,
     net_disbursed_amount REAL NOT NULL,
@@ -109,6 +115,8 @@ CREATE INDEX IF NOT EXISTS idx_loans_dealer ON loans(dealer_id);
 CREATE INDEX IF NOT EXISTS idx_loans_agent ON loans(assigned_agent_id);
 CREATE INDEX IF NOT EXISTS idx_loans_status ON loans(status);
 CREATE INDEX IF NOT EXISTS idx_loans_acc_no ON loans(loan_account_no);
+CREATE INDEX IF NOT EXISTS idx_loans_imei1 ON loans(imei1);
+CREATE INDEX IF NOT EXISTS idx_loans_device_brand ON loans(device_brand);
 
 CREATE TABLE IF NOT EXISTS emi_installments (
     id TEXT PRIMARY KEY,

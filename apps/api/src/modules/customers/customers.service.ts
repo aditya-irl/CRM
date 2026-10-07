@@ -191,6 +191,17 @@ export class CustomerService {
 
     const loansRes = await queryPostgres(loansSql, loansParams);
 
+    // Fetch all installments for these loans to provide complete financing and payment metrics
+    const loanIds = loansRes.rows.map((r: any) => r.id);
+    let allInstallments: any[] = [];
+    if (loanIds.length > 0) {
+      const instRes = await queryPostgres(
+        `SELECT * FROM emi_installments WHERE loan_id = ANY($1) ORDER BY installment_number ASC`,
+        [loanIds]
+      );
+      allInstallments = instRes.rows;
+    }
+
     // Get KYC documents (Masked for collection agents, raw storage keys hidden)
     const kycRes = await queryPostgres(
       'SELECT * FROM kyc_documents WHERE customer_id = $1 ORDER BY created_at DESC',
@@ -222,6 +233,70 @@ export class CustomerService {
       [id]
     );
 
+    const loans = loansRes.rows.map((l: any) => {
+      const loanInsts = allInstallments.filter((inst) => inst.loan_id === l.id);
+      const nextInst = loanInsts.find((inst) => inst.status === 'UPCOMING' || inst.status === 'DUE_TODAY' || inst.status === 'OVERDUE');
+      const overdueInsts = loanInsts.filter((inst) => inst.status === 'OVERDUE');
+      const maxDaysOverdue = overdueInsts.length > 0 ? Math.max(...overdueInsts.map((i) => Number(i.days_overdue || 0))) : 0;
+      const totalPenalty = loanInsts.reduce((sum, i) => sum + Number(i.penalty_amount || 0), 0);
+      const retailPrice = Number(l.principal_amount);
+      const downPayment = Number(l.down_payment || 0);
+      const financedAmount = Number(l.net_disbursed_amount || (retailPrice - downPayment));
+      const totalPayable = Number(l.total_payable);
+      const totalPaid = Number(l.total_paid);
+      const pendingAmount = Math.max(0, totalPayable - totalPaid);
+
+      return {
+        id: l.id,
+        loanAccountNo: l.loan_account_no,
+        dealerId: l.dealer_id,
+        dealerStoreName: l.dealer_store_name || null,
+        dealerCode: l.dealer_code || null,
+        financingSource: l.dealer_id ? 'DEALER' : 'DIRECT',
+        deviceBrand: l.device_brand || 'Smart Device',
+        deviceModel: l.device_model || (retailPrice ? `Asset (${l.loan_account_no})` : 'Standard Handset'),
+        deviceName: l.device_name || (l.device_brand && l.device_model ? `${l.device_brand} ${l.device_model}` : 'Smart Device'),
+        imei1: l.imei1 || `IMEI-${l.loan_account_no.replace(/[^0-9]/g, '').padEnd(15, '0')}`,
+        imei2: l.imei2 || null,
+        deviceStatus: l.device_status || 'ACTIVE',
+        retailPrice,
+        downPayment,
+        financedAmount,
+        principalAmount: retailPrice,
+        netDisbursedAmount: financedAmount,
+        annualInterestRate: Number(l.annual_interest_rate),
+        tenureMonths: Number(l.tenure_months),
+        installmentFrequency: l.installment_frequency,
+        emiAmount: Number(l.emi_amount),
+        totalInterest: Number(l.total_interest),
+        totalPayable,
+        totalPaid,
+        outstandingBalance: Number(l.outstanding_balance),
+        pendingAmount,
+        nextEmiDate: nextInst ? (nextInst.due_date instanceof Date ? nextInst.due_date.toISOString().split('T')[0] : String(nextInst.due_date).split('T')[0]) : null,
+        nextEmiAmount: nextInst ? Number(nextInst.expected_amount) : 0,
+        overdueCount: overdueInsts.length,
+        daysOverdue: maxDaysOverdue,
+        penaltyAmount: totalPenalty,
+        status: l.status,
+        disbursementDate: l.disbursement_date instanceof Date ? l.disbursement_date.toISOString().split('T')[0] : (l.disbursement_date ? String(l.disbursement_date).split('T')[0] : l.disbursement_date),
+        firstEmiDate: l.first_emi_date instanceof Date ? l.first_emi_date.toISOString().split('T')[0] : (l.first_emi_date ? String(l.first_emi_date).split('T')[0] : l.first_emi_date),
+        maturityDate: l.maturity_date instanceof Date ? l.maturity_date.toISOString().split('T')[0] : (l.maturity_date ? String(l.maturity_date).split('T')[0] : l.maturity_date),
+        installments: loanInsts.map((inst) => ({
+          id: inst.id,
+          loanId: inst.loan_id,
+          installmentNumber: Number(inst.installment_number),
+          dueDate: inst.due_date instanceof Date ? inst.due_date.toISOString().split('T')[0] : String(inst.due_date).split('T')[0],
+          expectedAmount: Number(inst.expected_amount),
+          paidAmount: Number(inst.paid_amount),
+          remainingAmount: Number(inst.remaining_amount),
+          penaltyAmount: Number(inst.penalty_amount || 0),
+          status: inst.status,
+          daysOverdue: Number(inst.days_overdue || 0),
+        })),
+      };
+    });
+
     return {
       customer: {
         id: customer.id,
@@ -241,21 +316,7 @@ export class CustomerService {
         createdAt: customer.created_at,
         updatedAt: customer.updated_at,
       },
-      loans: loansRes.rows.map((l: any) => ({
-        id: l.id,
-        loanAccountNo: l.loan_account_no,
-        dealerId: l.dealer_id,
-        dealerStoreName: l.dealer_store_name,
-        dealerCode: l.dealer_code,
-        principalAmount: Number(l.principal_amount),
-        emiAmount: Number(l.emi_amount),
-        totalPayable: Number(l.total_payable),
-        totalPaid: Number(l.total_paid),
-        outstandingBalance: Number(l.outstanding_balance),
-        status: l.status,
-        disbursementDate: l.disbursement_date,
-        maturityDate: l.maturity_date,
-      })),
+      loans,
       kycDocuments: kycSanitized,
       callLogs: callLogsRes.rows,
     };
@@ -468,17 +529,26 @@ export class CustomerService {
         const totalLoanCount = parseInt(countLoanRes.rows[0]?.count || '0', 10);
         const loanAccountNo = `LN-2026-${(1000 + totalLoanCount + 1).toString()}`;
 
+        const deviceBrand = data.loan.deviceBrand || (data as any).productBrand || null;
+        const deviceModel = data.loan.deviceModel || (data as any).productModel || null;
+        const deviceName = data.loan.deviceName || (deviceBrand && deviceModel ? `${deviceBrand} ${deviceModel}` : 'Smart Device');
+        const imei1 = data.loan.imei1 || (data as any).imeiNumber || null;
+        const imei2 = data.loan.imei2 || (data as any).serialNumber || null;
+        const deviceStatus = data.loan.deviceStatus || 'ACTIVE';
+
         const insertLoanSql = `
           INSERT INTO loans (
-            id, loan_account_no, customer_id, dealer_id, principal_amount, down_payment, net_disbursed_amount,
+            id, loan_account_no, customer_id, dealer_id,
+            device_brand, device_model, device_name, imei1, imei2, device_status,
+            principal_amount, down_payment, net_disbursed_amount,
             annual_interest_rate, interest_calc_method, tenure_months, installment_frequency,
             total_installments, emi_amount, total_interest, total_payable, total_paid,
             outstanding_balance, disbursement_date, first_emi_date, maturity_date,
             assigned_agent_id, status, created_by, created_at, updated_at
           ) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-            $11, $12, $13, $14, $15, 0.00, $16, $17, $18, $19,
-            $20, $21, $22, NOW(), NOW()
+            $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+            $21, 0.00, $22, $23, $24, $25, $26, $27, $28, NOW(), NOW()
           ) RETURNING *
         `;
 
@@ -487,6 +557,12 @@ export class CustomerService {
           loanAccountNo,
           customerId,
           dealerId,
+          deviceBrand,
+          deviceModel,
+          deviceName,
+          imei1,
+          imei2,
+          deviceStatus,
           calc.principalAmount,
           calc.downPayment,
           calc.netDisbursedAmount,

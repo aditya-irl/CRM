@@ -9,6 +9,7 @@ import {
   ILoan,
   IDealer,
   UserRole,
+  normalizeNumericLeadingZeros,
 } from '@crm/shared';
 import { MediaUploader, MediaUploadResult } from './MediaUploader';
 import { DynamicAttachmentManager, AttachmentItem } from './DynamicAttachmentManager';
@@ -351,6 +352,12 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
           disbursementDate,
           firstEmiDate: firstEmiDate || undefined,
           dealerId: effectiveDealerId || undefined,
+          deviceBrand: productBrand.trim() || undefined,
+          deviceModel: productModel.trim() || undefined,
+          deviceName: `${productBrand} ${productModel}`.trim() || undefined,
+          imei1: imeiNumber.trim() || undefined,
+          imei2: serialNumber.trim() || undefined,
+          deviceStatus: 'ACTIVE',
         },
       });
 
@@ -835,6 +842,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                         className="form-input mono"
                         value={productPrice}
                         onChange={(e) => setProductPrice(Number(e.target.value))}
+                        onBlur={(e) => setProductPrice(Number(normalizeNumericLeadingZeros(e.target.value) || 0))}
                         required
                       />
                     </div>
@@ -895,6 +903,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                         className="form-input mono"
                         value={downPayment}
                         onChange={(e) => setDownPayment(Number(e.target.value))}
+                        onBlur={(e) => setDownPayment(Number(normalizeNumericLeadingZeros(e.target.value) || 0))}
                       />
                     </div>
                     <div>
@@ -981,6 +990,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                         className="form-input mono"
                         value={annualRate}
                         onChange={(e) => setAnnualRate(Number(e.target.value))}
+                        onBlur={(e) => setAnnualRate(Number(normalizeNumericLeadingZeros(e.target.value) || 0))}
                       />
                       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
                         Monthly flat simple rate (e.g. 1.0% or 1.5% per month)

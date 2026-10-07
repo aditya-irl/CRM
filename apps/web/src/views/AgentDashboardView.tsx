@@ -3,6 +3,8 @@ import { ApiClient } from '../services/api';
 import {
   IAgentQueueItem,
   formatINR,
+  formatDateDDMMYYYY,
+  normalizeNumericLeadingZeros,
   PaymentMode,
   CollectionSource,
   IUser,
@@ -154,7 +156,7 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
     const cleanPhone = rawPhone.replace(/\D/g, '');
     const phoneWithCode = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
     const dueAmt = formatINR((item.remainingAmount || item.expectedAmount || 0) + (item.penaltyAmount || 0));
-    const msg = `Namaste ${item.customerName}, this is a gentle reminder from Alpha Mobile Gallery / Shubh Pvt Ltd regarding your EMI payment of ${dueAmt} for Loan Account ${item.loanAccountNo} (Due: ${new Date(item.dueDate).toLocaleDateString()}). Please make the payment promptly to avoid late fees. Thank you.`;
+    const msg = `Namaste ${item.customerName}, this is a gentle reminder from Alpha Mobile Gallery / Shubh Pvt Ltd regarding your EMI payment of ${dueAmt} for Loan Account ${item.loanAccountNo} (Due: ${formatDateDDMMYYYY(item.dueDate)}). Please make the payment promptly to avoid late fees. Thank you.`;
     window.open(`https://wa.me/${phoneWithCode}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
@@ -505,7 +507,7 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
                           </div>
                         </td>
                         <td style={{ fontSize: 12 }}>
-                          {new Date(item.dueDate).toLocaleDateString()}
+                          {formatDateDDMMYYYY(item.dueDate)}
                         </td>
                         <td className="mono" style={{ fontWeight: 600, fontSize: 13 }}>
                           {formatINR(item.expectedAmount || item.remainingAmount || 0)}
@@ -538,7 +540,7 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
                           <td style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
                             {item.lastPaymentDate ? (
                               <div>
-                                <div>{new Date(item.lastPaymentDate).toLocaleDateString()}</div>
+                                <div>{formatDateDDMMYYYY(item.lastPaymentDate)}</div>
                                 <div className="mono" style={{ fontWeight: 600 }}>{formatINR(item.lastPaymentAmount || 0)}</div>
                               </div>
                             ) : (
@@ -703,6 +705,7 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
                   style={{ fontSize: 16, fontWeight: 700 }}
                   value={paymentAmount}
                   onChange={(e) => setPaymentAmount(parseFloat(e.target.value) || 0)}
+                  onBlur={(e) => setPaymentAmount(parseFloat(normalizeNumericLeadingZeros(e.target.value)) || 0)}
                   required
                 />
               </div>

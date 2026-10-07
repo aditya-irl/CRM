@@ -4,6 +4,7 @@ import {
   IAgentCollectionSummary,
   IAgentCollectionRecord,
   formatINR,
+  formatDateDDMMYYYY,
   PaymentMode,
   PaymentStatus,
 } from '@crm/shared';
@@ -600,7 +601,7 @@ export const AgentCollectionsView: React.FC<AgentCollectionsViewProps> = ({
                 {records.map((r) => (
                   <tr key={r.id}>
                     <td className="mono" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                      <div>{new Date(r.paymentTimestamp).toLocaleDateString('en-IN')}</div>
+                      <div>{formatDateDDMMYYYY(r.paymentTimestamp)}</div>
                       <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
                         {new Date(r.paymentTimestamp).toLocaleTimeString('en-IN', { hour12: true })}
                       </div>
@@ -815,8 +816,8 @@ export const AgentCollectionsView: React.FC<AgentCollectionsViewProps> = ({
                     <strong>{selectedRecord.agentName}</strong>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Date & Time:</span>
-                    <span className="mono">{new Date(selectedRecord.paymentTimestamp).toLocaleString('en-IN', { hour12: true })}</span>
+                    <span style={{ color: 'var(--text-secondary)' }}>Date:</span>
+                    <span className="mono">{formatDateDDMMYYYY(selectedRecord.paymentTimestamp)}</span>
                   </div>
                   {selectedRecord.referenceNumber && (
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -872,7 +873,7 @@ export const AgentCollectionsView: React.FC<AgentCollectionsViewProps> = ({
                 {selectedReceipt.receiptNumber}
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                {new Date(selectedReceipt.paymentTimestamp).toLocaleString('en-IN', { hour12: true })}
+                {formatDateDDMMYYYY(selectedReceipt.paymentTimestamp)}
               </div>
             </div>
 

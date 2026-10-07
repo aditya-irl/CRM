@@ -4,6 +4,7 @@ import {
   IPaymentDetail,
   IPaymentsSummary,
   formatINR,
+  formatDateDDMMYYYY,
   IUser,
   UserRole,
   CollectionSource,
@@ -36,6 +37,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { BrandLogo } from '../components/BrandLogo';
+import { RecordPaymentModal } from '../components/RecordPaymentModal';
 
 interface PaymentsViewProps {
   user: IUser;
@@ -77,6 +79,9 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({ user }) => {
   const [selectedPaymentForReversal, setSelectedPaymentForReversal] = useState<IPaymentDetail | null>(null);
   const [reversalReason, setReversalReason] = useState('');
   const [submittingReversal, setSubmittingReversal] = useState(false);
+
+  // Record Payment Modal State
+  const [showRecordPaymentModal, setShowRecordPaymentModal] = useState(false);
 
   // Helper to compute date range strings in Asia/Kolkata
   const computeDateRange = (preset: DatePreset): { start?: string; end?: string } => {
@@ -232,6 +237,18 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({ user }) => {
             Centralized collection ledger across Direct Customer, Partner Store, and Field Recovery Agent channels.
           </p>
         </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {isAdmin && (
+            <button
+              onClick={() => setShowRecordPaymentModal(true)}
+              className="btn btn-primary btn-sm"
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              <CreditCard size={14} />
+              <span>Record Payment</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* KPI Cards */}
@@ -312,7 +329,7 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({ user }) => {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span className="badge badge-paid" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                 <Building2 size={11} />
-                <span>Direct Customer</span>
+                <span>DIRECT</span>
               </span>
               <strong className="mono">{formatINR(summary.sourceBreakdown.directCustomer.amount)}</strong>
               <span style={{ color: 'var(--text-muted)' }}>({summary.sourceBreakdown.directCustomer.count})</span>
@@ -321,7 +338,7 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({ user }) => {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span className="badge badge-terracotta" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                 <Store size={11} />
-                <span>Partner Store</span>
+                <span>DEALER</span>
               </span>
               <strong className="mono">{formatINR(summary.sourceBreakdown.dealer.amount)}</strong>
               <span style={{ color: 'var(--text-muted)' }}>({summary.sourceBreakdown.dealer.count})</span>
@@ -330,7 +347,7 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({ user }) => {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span className="badge badge-due-today" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                 <UserCheck size={11} />
-                <span>Recovery Agent</span>
+                <span>RECOVERY AGENT</span>
               </span>
               <strong className="mono">{formatINR(summary.sourceBreakdown.recoveryAgent.amount)}</strong>
               <span style={{ color: 'var(--text-muted)' }}>({summary.sourceBreakdown.recoveryAgent.count})</span>
@@ -509,7 +526,7 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({ user }) => {
                       {p.receiptNumber}
                     </td>
                     <td className="mono" style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                      {new Date(p.paymentTimestamp).toLocaleString('en-IN', { hour12: true })}
+                      {formatDateDDMMYYYY(p.paymentTimestamp)}
                     </td>
                     <td>
                       <div style={{ fontWeight: 600 }}>{p.customerName || (p as any).customer_name}</div>
@@ -532,17 +549,17 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({ user }) => {
                       {source === 'DIRECT_CUSTOMER' ? (
                         <span className="badge badge-paid" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                           <Building2 size={11} />
-                          <span>Direct Customer</span>
+                          <span>DIRECT</span>
                         </span>
                       ) : source === 'DEALER' ? (
                         <span className="badge badge-terracotta" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                           <Store size={11} />
-                          <span>Partner Store</span>
+                          <span>DEALER</span>
                         </span>
                       ) : (
                         <span className="badge badge-due-today" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                           <UserCheck size={11} />
-                          <span>Recovery Agent</span>
+                          <span>RECOVERY AGENT</span>
                         </span>
                       )}
                     </td>
@@ -911,7 +928,7 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({ user }) => {
                             <div style={{ color: 'var(--text-secondary)', marginTop: 2 }}>{event.description}</div>
                           </div>
                           <div className="mono" style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                            {new Date(event.timestamp).toLocaleString('en-IN', { hour12: true })}
+                            {formatDateDDMMYYYY(event.timestamp)}
                           </div>
                         </div>
                       ))}
@@ -1048,7 +1065,7 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({ user }) => {
                 Receipt No: {selectedReceipt.receiptNumber}
               </div>
               <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
-                Date: {new Date(selectedReceipt.paymentTimestamp).toLocaleString('en-IN', { hour12: true })}
+                Date: {formatDateDDMMYYYY(selectedReceipt.paymentTimestamp)}
               </div>
             </div>
 
@@ -1181,6 +1198,18 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({ user }) => {
             </div>
           </div>
         </div>
+      )}
+
+      {showRecordPaymentModal && (
+        <RecordPaymentModal
+          isOpen={showRecordPaymentModal}
+          onClose={() => setShowRecordPaymentModal(false)}
+          onSuccess={() => {
+            loadData(1);
+            loadSummary();
+          }}
+          user={user}
+        />
       )}
     </div>
   );

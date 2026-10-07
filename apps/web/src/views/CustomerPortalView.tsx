@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { ApiClient, ICustomerPortalLoanData } from '../services/api';
-import { formatINR } from '@crm/shared';
+import { formatINR, formatDateDDMMYYYY } from '@crm/shared';
 import {
   ShieldCheck,
   Calendar,
@@ -77,7 +77,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
 
     const payAmount = customAmount !== undefined ? customAmount : data.emiAmount;
     const formattedAmount = formatINR(payAmount);
-    const dueDate = data.nextDueDate || 'Immediate';
+    const dueDate = data.nextDueDate ? formatDateDDMMYYYY(data.nextDueDate) : 'Immediate';
     const lines = [
       'Hello, I want to make my EMI payment.',
       '',
@@ -328,7 +328,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                     <span>Next Due Date</span>
                   </div>
                   <div style={{ fontSize: 16, fontWeight: 800, marginTop: 4, color: 'var(--text-primary)' }}>
-                    {data.nextDueDate || 'Fully Paid'}
+                    {data.nextDueDate ? formatDateDDMMYYYY(data.nextDueDate) : 'Fully Paid'}
                   </div>
                 </div>
 
@@ -532,7 +532,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, fontSize: 13 }}>
                               <div>
                                 <span style={{ color: 'var(--text-secondary)', fontSize: 11, display: 'block' }}>Due Date</span>
-                                <span style={{ fontWeight: 600 }}>{inst.dueDate}</span>
+                                <span style={{ fontWeight: 600 }}>{formatDateDDMMYYYY(inst.dueDate)}</span>
                               </div>
                               <div>
                                 <span style={{ color: 'var(--text-secondary)', fontSize: 11, display: 'block' }}>Original EMI</span>
@@ -725,7 +725,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                               }}
                             >
                               <td style={{ padding: '12px', fontWeight: 700 }}>{inst.installmentNumber}</td>
-                              <td style={{ padding: '12px' }}>{inst.dueDate}</td>
+                              <td style={{ padding: '12px' }}>{formatDateDDMMYYYY(inst.dueDate)}</td>
                               <td style={{ padding: '12px', textAlign: 'right', fontWeight: 600 }}>{formatINR(inst.expectedAmount)}</td>
                               <td style={{ padding: '12px', textAlign: 'right', color: (inst.penaltyAmount || 0) > 0 ? 'var(--danger)' : 'var(--text-muted)', fontWeight: (inst.penaltyAmount || 0) > 0 ? 700 : 400 }}>
                                 {formatINR(inst.penaltyAmount || 0)}
@@ -775,11 +775,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                               </span>
                             </td>
                             <td style={{ padding: '12px', color: 'var(--text-secondary)' }}>
-                              {new Date(pmt.paymentDate).toLocaleDateString('en-IN', {
-                                day: 'numeric',
-                                month: 'short',
-                                year: 'numeric',
-                              })}
+                              {formatDateDDMMYYYY(pmt.paymentDate)}
                             </td>
                             <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: 'var(--success-text)' }}>
                               {formatINR(pmt.amount)}

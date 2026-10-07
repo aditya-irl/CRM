@@ -188,12 +188,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     window.print();
   };
 
-  const businessDateFormatted = new Date().toLocaleDateString('en-IN', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
+  const businessDateFormatted = formatDisplayDate(new Date().toISOString());
 
   if (loading && !stats) {
     return (

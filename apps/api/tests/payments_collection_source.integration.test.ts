@@ -173,7 +173,7 @@ describe('TASK 2: Payment Collection Source Integration Tests', () => {
         dealerId: activeDealerId,
         principalAmount: 10000,
         downPayment: 0,
-        annualInterestRate: 24,
+        annualInterestRate: 2,
         interestCalcMethod: InterestMethod.FLAT_RATE,
         tenureMonths: 4,
         installmentFrequency: RepaymentFrequency.MONTHLY,

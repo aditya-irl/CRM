@@ -189,12 +189,61 @@ export interface ILoan {
   dealer?: IDealer | null;
   dealerStoreName?: string | null;
   dealerCode?: string | null;
+  deviceBrand?: string | null;
+  deviceModel?: string | null;
+  deviceName?: string | null;
+  imei1?: string | null;
+  imei2?: string | null;
+  deviceStatus?: string | null;
+  financingSource?: 'DEALER' | 'DIRECT' | null;
+  pendingAmount?: number | string;
+  nextEmiDate?: string | null;
+  nextEmiAmount?: number | string;
+  overdueCount?: number;
+  daysOverdue?: number;
+  penaltyAmount?: number | string;
   status: LoanStatus;
   rejectionReason?: string | null;
   createdBy?: string | null;
   createdAt: string;
   updatedAt: string;
   installments?: IEMIInstallment[];
+}
+
+export interface IDeviceItem {
+  id: string; // unique key (loanId or loanId-device)
+  loanId: string;
+  loanAccountNo: string;
+  customerId: string;
+  customerName: string;
+  customerCode: string;
+  primaryPhone: string;
+  dealerId?: string | null;
+  dealerStoreName?: string | null;
+  dealerCode?: string | null;
+  financingSource: 'DEALER' | 'DIRECT';
+  deviceBrand: string;
+  deviceModel: string;
+  deviceName: string;
+  imei1: string;
+  imei2?: string | null;
+  retailPrice: number;
+  downPayment: number;
+  financedAmount: number;
+  emiAmount: number;
+  tenureMonths: number;
+  annualInterestRate: number;
+  loanStatus: string;
+  deviceStatus: string;
+  outstandingBalance: number;
+  totalPaid: number;
+  pendingAmount: number;
+  nextDueDate?: string | null;
+  overdueCount: number;
+  daysOverdue: number;
+  penaltyAmount: number;
+  disbursementDate: string;
+  firstEmiDate: string;
 }
 
 export interface IEMIInstallment {

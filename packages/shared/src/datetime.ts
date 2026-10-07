@@ -23,17 +23,62 @@ export function getBusinessTimestamp(date: Date = new Date()): string {
 }
 
 /**
- * Format a date string or object to Indian Standard Display format (DD/MM/YYYY).
+ * Format a date string or object to DD/MM/YYYY presentation format.
+ * Prevents timezone shifting bugs for date-only strings (e.g. 2026-10-07 -> 07/10/2026).
  */
-export function formatDisplayDate(date: string | Date): string {
+export function formatDateDDMMYYYY(date: string | Date | null | undefined): string {
   if (!date) return '-';
-  const d = typeof date === 'string' ? new Date(date) : date;
+
+  if (typeof date === 'string') {
+    const trimmed = date.trim();
+    if (!trimmed) return '-';
+
+    // Date-only string or ISO with midnight UTC: directly split without timezone drift
+    const dateMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (dateMatch && (!trimmed.includes('T') || trimmed.endsWith('T00:00:00.000Z') || trimmed.endsWith('T00:00:00Z'))) {
+      const [, y, m, d] = dateMatch;
+      return `${d}/${m}/${y}`;
+    }
+
+    // Timestamp with time component
+    const parsed = new Date(trimmed);
+    if (isNaN(parsed.getTime())) return trimmed;
+    return new Intl.DateTimeFormat('en-IN', {
+      timeZone: BUSINESS_TIMEZONE,
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    }).format(parsed);
+  }
+
+  if (isNaN(date.getTime())) return '-';
   return new Intl.DateTimeFormat('en-IN', {
     timeZone: BUSINESS_TIMEZONE,
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
-  }).format(d);
+  }).format(date);
+}
+
+/**
+ * Format a date string or object to Indian Standard Display format (DD/MM/YYYY).
+ * Alias for formatDateDDMMYYYY.
+ */
+export function formatDisplayDate(date: string | Date | null | undefined): string {
+  return formatDateDDMMYYYY(date);
+}
+
+/**
+ * Parse a DD/MM/YYYY presentation date back into ISO YYYY-MM-DD.
+ * e.g. "07/10/2026" -> "2026-10-07"
+ */
+export function parseDisplayDateToISO(displayDate: string | null | undefined): string {
+  if (!displayDate) return '';
+  const trimmed = displayDate.trim();
+  const match = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!match) return trimmed;
+  const [, d, m, y] = match;
+  return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
 }
 
 /**

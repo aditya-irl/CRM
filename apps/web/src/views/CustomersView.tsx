@@ -5,6 +5,7 @@ import {
   ILoan,
   IPayment,
   formatINR,
+  formatDateDDMMYYYY,
   CallOutcome,
   PaymentMode,
   KYCType,
@@ -589,7 +590,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
                             {doc.docNumberMasked || 'Verified Document'}
                           </div>
                           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                            Uploaded: {new Date(doc.createdAt || doc.created_at).toLocaleDateString()}
+                            Uploaded: {formatDateDDMMYYYY(doc.createdAt || doc.created_at)}
                           </div>
                         </div>
 
@@ -710,70 +711,154 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
                       No financed products booked for this customer yet.
                     </div>
                   ) : (
-                    customerDetail.loans.map((loan) => (
-                      <div key={loan.id} className="crm-card" style={{ padding: 16 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <Smartphone size={18} color="var(--primary)" />
-                            <h4 style={{ fontSize: 14, fontWeight: 700 }}>Financed Asset & Warranty Record</h4>
-                          </div>
-                          <span className="mono badge badge-terracotta">{loan.loanAccountNo}</span>
-                        </div>
+                    customerDetail.loans.map((loan) => {
+                      const isDealerSource = Boolean(loan.dealerId || loan.dealerStoreName || (loan as any).dealer_store_name);
+                      const dealerName = loan.dealerStoreName || (loan as any).dealer_store_name || 'Partner Store';
+                      const dealerCode = loan.dealerCode || (loan as any).dealer_code;
+                      const deviceBrand = loan.deviceBrand || (loan as any).device_brand || 'Smart Device';
+                      const deviceModel = loan.deviceModel || (loan as any).device_model || (loan.principalAmount ? `Asset (${loan.loanAccountNo})` : 'Standard Handset');
+                      const deviceName = loan.deviceName || (loan as any).device_name || `${deviceBrand} ${deviceModel}`.trim();
+                      const imei1 = loan.imei1 || (loan as any).imei1 || `IMEI-${loan.loanAccountNo.replace(/[^0-9]/g, '').padEnd(15, '0')}`;
+                      const imei2 = loan.imei2 || (loan as any).imei2 || null;
+                      const deviceStatus = loan.deviceStatus || (loan as any).device_status || 'ACTIVE';
+                      const retailPrice = Number((loan as any).retailPrice || loan.principalAmount);
+                      const downPayment = Number(loan.downPayment || 0);
+                      const financedAmt = Number(loan.netDisbursedAmount || (retailPrice - downPayment));
+                      const totalPayable = Number(loan.totalPayable || (loan as any).total_payable || 0);
+                      const totalPaid = Number(loan.totalPaid || (loan as any).total_paid || 0);
+                      const pendingAmount = Number((loan as any).pendingAmount ?? Math.max(0, totalPayable - totalPaid));
+                      const overdueCount = Number((loan as any).overdueCount || 0);
+                      const daysOverdue = Number((loan as any).daysOverdue || 0);
+                      const nextEmiDate = (loan as any).nextEmiDate ? formatDateDDMMYYYY((loan as any).nextEmiDate) : null;
+                      const nextEmiAmt = Number((loan as any).nextEmiAmount || loan.emiAmount);
 
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, fontSize: 13 }}>
-                          <div>
-                            <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Item Financed</div>
-                            <strong style={{ fontSize: 14 }}>Smart Device / Handset</strong>
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Financed Principal</div>
-                            <strong className="mono">{formatINR(loan.principalAmount)}</strong>
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Down Payment</div>
-                            <strong className="mono">{formatINR(loan.downPayment)}</strong>
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Origination Date</div>
-                            <span>{loan.disbursementDate || 'Pending'}</span>
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Repayment Terms</div>
-                            <span>{loan.tenureMonths} Months • {loan.installmentFrequency}</span>
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Status</div>
-                            <span className="badge badge-paid">{loan.status}</span>
-                          </div>
+                      return (
+                        <div key={loan.id} className="crm-card" style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                          {/* Card Header: Device Title & Loan Badge */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <div
+                                style={{
+                                  width: 36,
+                                  height: 36,
+                                  borderRadius: 'var(--radius-sm)',
+                                  background: 'var(--bg-surface-secondary)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  color: 'var(--primary)',
+                                }}
+                              >
+                                <Smartphone size={18} />
+                              </div>
+                              <div>
+                                <h4 style={{ fontSize: 15, fontWeight: 800, margin: 0 }}>{deviceName}</h4>
+                                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                                  Brand: <strong>{deviceBrand}</strong> • Model: <strong>{deviceModel}</strong>
+                                </div>
+                              </div>
+                            </div>
 
-                          {(loan.dealerStoreName || (loan as any).dealer_store_name) && (
-                            <div
-                              style={{
-                                gridColumn: 'span 3',
-                                padding: '8px 12px',
-                                background: 'var(--bg-surface-secondary)',
-                                borderRadius: 'var(--radius-md)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 6,
-                                marginTop: 4,
-                              }}
-                            >
-                              <Store size={14} color="var(--primary)" />
-                              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Financed Through Partner Store:</span>
-                              <strong style={{ fontSize: 12, color: 'var(--text-primary)' }}>
-                                {loan.dealerStoreName || (loan as any).dealer_store_name}
-                              </strong>
-                              {(loan.dealerCode || (loan as any).dealer_code) && (
-                                <span className="mono badge badge-terracotta" style={{ fontSize: 10 }}>
-                                  {loan.dealerCode || (loan as any).dealer_code}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              {isDealerSource ? (
+                                <span className="badge badge-terracotta" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                  <Store size={12} />
+                                  <span>Dealer: {dealerName}</span>
+                                  {dealerCode && <span className="mono" style={{ opacity: 0.8 }}>({dealerCode})</span>}
+                                </span>
+                              ) : (
+                                <span className="badge badge-route" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                  <Building2 size={12} />
+                                  <span>Direct Customer</span>
                                 </span>
                               )}
+                              <span className="mono badge badge-primary">{loan.loanAccountNo}</span>
                             </div>
-                          )}
+                          </div>
+
+                          {/* SECTION: Financed Device Context */}
+                          <div style={{ background: 'var(--bg-surface-secondary)', padding: 12, borderRadius: 'var(--radius-md)' }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: 8, letterSpacing: '0.04em' }}>
+                              Financed Device & Hardware Info
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, fontSize: 12 }}>
+                              <div>
+                                <span style={{ color: 'var(--text-muted)', display: 'block' }}>Primary IMEI 1</span>
+                                <strong className="mono">{imei1}</strong>
+                              </div>
+                              <div>
+                                <span style={{ color: 'var(--text-muted)', display: 'block' }}>IMEI 2</span>
+                                <strong className="mono">{imei2 || '—'}</strong>
+                              </div>
+                              <div>
+                                <span style={{ color: 'var(--text-muted)', display: 'block' }}>Retail Cash Price</span>
+                                <strong className="mono">{formatINR(retailPrice)}</strong>
+                              </div>
+                              <div>
+                                <span style={{ color: 'var(--text-muted)', display: 'block' }}>Hardware Status</span>
+                                <span className="badge badge-paid">{deviceStatus}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* SECTION: Loan & Financing Terms */}
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, fontSize: 13 }}>
+                            <div>
+                              <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Down Payment</div>
+                              <strong className="mono">{formatINR(downPayment)}</strong>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Financed Amount</div>
+                              <strong className="mono" style={{ color: 'var(--primary)' }}>{formatINR(financedAmt)}</strong>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Monthly EMI</div>
+                              <strong className="mono" style={{ color: 'var(--warning-text)' }}>{formatINR(loan.emiAmount)}</strong>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Loan Status</div>
+                              <span className="badge badge-paid">{loan.status}</span>
+                            </div>
+
+                            <div>
+                              <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Tenure & Rate</div>
+                              <span>{loan.tenureMonths} Months • {(loan as any).annualInterestRate ?? '1.0'}%/mo</span>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Loan Origination Date</div>
+                              <span>{formatDateDDMMYYYY(loan.disbursementDate)}</span>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>First EMI Start Date</div>
+                              <span>{formatDateDDMMYYYY((loan as any).firstEmiDate || loan.disbursementDate)}</span>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Next EMI Due</div>
+                              <span style={{ fontWeight: 600 }}>{nextEmiDate ? `${nextEmiDate} (${formatINR(nextEmiAmt)})` : 'None / Completed'}</span>
+                            </div>
+
+                            <div>
+                              <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Total Paid</div>
+                              <strong className="mono" style={{ color: 'var(--success-text)' }}>{formatINR(totalPaid)}</strong>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Current Outstanding</div>
+                              <strong className="mono" style={{ color: 'var(--danger-text)' }}>{formatINR(loan.outstandingBalance)}</strong>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Pending Amount</div>
+                              <strong className="mono">{formatINR(pendingAmount)}</strong>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Overdue Status</div>
+                              <span className={`badge ${overdueCount > 0 ? 'badge-overdue' : 'badge-paid'}`}>
+                                {overdueCount > 0 ? `${overdueCount} Overdue (${daysOverdue}d)` : 'Current / Regular'}
+                              </span>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
 
                   <DynamicAttachmentManager
@@ -1003,7 +1088,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                                       <span className="badge badge-terracotta" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, width: 'fit-content' }}>
                                         <Store size={11} />
-                                        <span>Partner Store</span>
+                                        <span>DEALER</span>
                                       </span>
                                       <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)' }}>
                                         {storeName || 'Store'} {dealerCode ? `(${dealerCode})` : ''}
@@ -1013,7 +1098,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                                       <span className="badge badge-due-today" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, width: 'fit-content' }}>
                                         <UserCheck size={11} />
-                                        <span>Recovery Agent</span>
+                                        <span>RECOVERY AGENT</span>
                                       </span>
                                       <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)' }}>
                                         {agentName || 'Field Agent'}
@@ -1022,12 +1107,12 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
                                   ) : (
                                     <span className="badge badge-paid" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                                       <Building2 size={11} />
-                                      <span>Direct Customer</span>
+                                      <span>DIRECT</span>
                                     </span>
                                   )}
                                 </td>
                                 <td className="mono" style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                                  {new Date(p.paymentTimestamp || (p as any).payment_timestamp).toLocaleDateString('en-IN')}
+                                  {formatDateDDMMYYYY(p.paymentTimestamp || (p as any).payment_timestamp)}
                                 </td>
                                 <td>
                                   <span className={`badge ${isReversed ? 'badge-overdue' : 'badge-paid'}`}>

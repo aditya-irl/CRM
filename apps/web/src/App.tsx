@@ -13,6 +13,7 @@ import { DirectCollectionsView } from './views/DirectCollectionsView';
 import { QueueView } from './views/QueueView';
 import { LoansView } from './views/LoansView';
 import { CustomersView } from './views/CustomersView';
+import { DevicesView } from './views/DevicesView';
 import { PaymentsView } from './views/PaymentsView';
 import { ReportsView } from './views/ReportsView';
 import { AuditView } from './views/AuditView';
@@ -119,7 +120,7 @@ export const App: React.FC = () => {
     }
 
     // If collection agent attempts to access admin-only tabs, redirect to agent dashboard
-    const agentAllowedTabs: NavTab[] = ['dashboard', 'queue', 'customers', 'loans', 'agent-collections'];
+    const agentAllowedTabs: NavTab[] = ['dashboard', 'queue', 'customers', 'devices', 'loans', 'agent-collections'];
     if (isAgent && !agentAllowedTabs.includes(activeTab)) {
       return <AgentDashboardView onNavigateToTab={(t) => setActiveTab(t as NavTab)} />;
     }
@@ -171,6 +172,8 @@ export const App: React.FC = () => {
         return <DirectCollectionsView />;
       case 'customers':
         return <CustomersView refreshTrigger={customersRefreshTrigger} />;
+      case 'devices':
+        return <DevicesView onNavigateToTab={(t) => setActiveTab(t as NavTab)} />;
       case 'queue':
         return <QueueView />;
       case 'loans':
