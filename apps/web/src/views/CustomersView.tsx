@@ -715,12 +715,20 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
                       const isDealerSource = Boolean(loan.dealerId || loan.dealerStoreName || (loan as any).dealer_store_name);
                       const dealerName = loan.dealerStoreName || (loan as any).dealer_store_name || 'Partner Store';
                       const dealerCode = loan.dealerCode || (loan as any).dealer_code;
-                      const deviceBrand = loan.deviceBrand || (loan as any).device_brand || 'Smart Device';
-                      const deviceModel = loan.deviceModel || (loan as any).device_model || (loan.principalAmount ? `Asset (${loan.loanAccountNo})` : 'Standard Handset');
-                      const deviceName = loan.deviceName || (loan as any).device_name || `${deviceBrand} ${deviceModel}`.trim();
-                      const imei1 = loan.imei1 || (loan as any).imei1 || `IMEI-${loan.loanAccountNo.replace(/[^0-9]/g, '').padEnd(15, '0')}`;
-                      const imei2 = loan.imei2 || (loan as any).imei2 || null;
-                      const deviceStatus = loan.deviceStatus || (loan as any).device_status || 'ACTIVE';
+                      const rawBrand = loan.deviceBrand || (loan as any).device_brand || null;
+                      const rawModel = loan.deviceModel || (loan as any).device_model || null;
+                      const rawName = loan.deviceName || (loan as any).device_name || (rawBrand && rawModel ? `${rawBrand} ${rawModel}` : (rawBrand || rawModel || null));
+                      const rawImei1 = loan.imei1 || (loan as any).imei1 || (loan as any).imei_1 || null;
+                      const rawImei2 = loan.imei2 || (loan as any).imei2 || (loan as any).imei_2 || null;
+                      const rawStatus = loan.deviceStatus || (loan as any).device_status || (rawBrand || rawModel ? 'ACTIVE' : null);
+
+                      const hasDevice = Boolean(rawName || rawBrand || rawModel || rawImei1);
+                      const deviceName = hasDevice ? (rawName || `${rawBrand || ''} ${rawModel || ''}`.trim() || 'Financed Device') : 'Device details unavailable';
+                      const deviceBrand = rawBrand || '—';
+                      const deviceModel = rawModel || '—';
+                      const imei1 = rawImei1 || '—';
+                      const imei2 = rawImei2 || '—';
+                      const deviceStatus = rawStatus || (hasDevice ? 'ACTIVE' : 'Unavailable');
                       const retailPrice = Number((loan as any).retailPrice || loan.principalAmount);
                       const downPayment = Number(loan.downPayment || 0);
                       const financedAmt = Number(loan.netDisbursedAmount || (retailPrice - downPayment));
@@ -754,7 +762,13 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
                               <div>
                                 <h4 style={{ fontSize: 15, fontWeight: 800, margin: 0 }}>{deviceName}</h4>
                                 <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
-                                  Brand: <strong>{deviceBrand}</strong> • Model: <strong>{deviceModel}</strong>
+                                  {hasDevice ? (
+                                    <>
+                                      Brand: <strong>{deviceBrand}</strong> • Model: <strong>{deviceModel}</strong>
+                                    </>
+                                  ) : (
+                                    <span>No hardware asset recorded for this loan account</span>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -788,7 +802,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
                               </div>
                               <div>
                                 <span style={{ color: 'var(--text-muted)', display: 'block' }}>IMEI 2</span>
-                                <strong className="mono">{imei2 || '—'}</strong>
+                                <strong className="mono">{imei2}</strong>
                               </div>
                               <div>
                                 <span style={{ color: 'var(--text-muted)', display: 'block' }}>Retail Cash Price</span>
@@ -796,7 +810,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
                               </div>
                               <div>
                                 <span style={{ color: 'var(--text-muted)', display: 'block' }}>Hardware Status</span>
-                                <span className="badge badge-paid">{deviceStatus}</span>
+                                <span className={hasDevice ? 'badge badge-paid' : 'badge badge-unassigned'}>{deviceStatus}</span>
                               </div>
                             </div>
                           </div>

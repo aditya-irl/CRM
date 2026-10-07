@@ -203,10 +203,12 @@ export class KYCService {
   }
 
   /**
-   * Generate short-lived (max 300s) pre-signed download URL (Strict Admin/Manager only).
+   * Generate short-lived (max 300s) pre-signed download URL.
+   * Allowed for Super Admin, Admin, Branch Manager, and Dealer (for own customer/loans only).
+   * Strictly blocked for Collection Agents.
    */
   public static async generatePresignedDownloadUrl(docId: string, user: AuthenticatedUser) {
-    if (user.role === UserRole.COLLECTION_AGENT || user.role === UserRole.DEALER) {
+    if (user.role === UserRole.COLLECTION_AGENT) {
       throw new ForbiddenError('You are not authorized to download raw KYC documents');
     }
 
@@ -220,6 +222,26 @@ export class KYCService {
     }
 
     const doc = docRes.rows[0];
+
+    // Server-side RLAC for Dealers: strictly verify dealer ownership of customer / loan
+    if (user.role === UserRole.DEALER) {
+      if (!user.dealerId) {
+        throw new ForbiddenError('Dealer context missing');
+      }
+
+      // Check canonical DB relationships:
+      // Dealer can only access KYC for customers they have financed loans for or created
+      const dealerAccess = await queryPostgres(
+        `SELECT id FROM loans WHERE dealer_id = $1 AND customer_id = $2
+         UNION
+         SELECT id FROM customers WHERE id = $2 AND created_by = $3`,
+        [user.dealerId, doc.customer_id, user.id]
+      );
+
+      if (dealerAccess.rows.length === 0) {
+        throw new ForbiddenError('You are not authorized to access KYC documents for this customer');
+      }
+    }
 
     const storage = getStorageProvider();
     const downloadUrl = await storage.getSignedUrl({

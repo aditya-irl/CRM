@@ -112,10 +112,10 @@ router.post(
   }
 );
 
-// Generate pre-signed download URL (Strict Admin & Branch Manager ONLY; blocked for agents)
+// Generate pre-signed download URL (Admin, Branch Manager, or Dealer for own customer; blocked for agents)
 router.get(
   '/:id/presigned-download',
-  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER),
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER, UserRole.DEALER),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const result = await KYCService.generatePresignedDownloadUrl(req.params.id, req.user!);

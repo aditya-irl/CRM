@@ -246,6 +246,13 @@ export class CustomerService {
       const totalPaid = Number(l.total_paid);
       const pendingAmount = Math.max(0, totalPayable - totalPaid);
 
+      const rawBrand = l.device_brand || null;
+      const rawModel = l.device_model || null;
+      const rawName = l.device_name || (rawBrand && rawModel ? `${rawBrand} ${rawModel}` : (rawBrand || rawModel || null));
+      const rawImei1 = l.imei1 || null;
+      const rawImei2 = l.imei2 || null;
+      const rawStatus = l.device_status || (rawBrand || rawModel ? 'ACTIVE' : null);
+
       return {
         id: l.id,
         loanAccountNo: l.loan_account_no,
@@ -253,12 +260,18 @@ export class CustomerService {
         dealerStoreName: l.dealer_store_name || null,
         dealerCode: l.dealer_code || null,
         financingSource: l.dealer_id ? 'DEALER' : 'DIRECT',
-        deviceBrand: l.device_brand || 'Smart Device',
-        deviceModel: l.device_model || (retailPrice ? `Asset (${l.loan_account_no})` : 'Standard Handset'),
-        deviceName: l.device_name || (l.device_brand && l.device_model ? `${l.device_brand} ${l.device_model}` : 'Smart Device'),
-        imei1: l.imei1 || `IMEI-${l.loan_account_no.replace(/[^0-9]/g, '').padEnd(15, '0')}`,
-        imei2: l.imei2 || null,
-        deviceStatus: l.device_status || 'ACTIVE',
+        deviceBrand: rawBrand,
+        device_brand: rawBrand,
+        deviceModel: rawModel,
+        device_model: rawModel,
+        deviceName: rawName,
+        device_name: rawName,
+        imei1: rawImei1,
+        imei_1: rawImei1,
+        imei2: rawImei2,
+        imei_2: rawImei2,
+        deviceStatus: rawStatus,
+        device_status: rawStatus,
         retailPrice,
         downPayment,
         financedAmount,

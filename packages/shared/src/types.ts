@@ -190,11 +190,17 @@ export interface ILoan {
   dealerStoreName?: string | null;
   dealerCode?: string | null;
   deviceBrand?: string | null;
+  device_brand?: string | null;
   deviceModel?: string | null;
+  device_model?: string | null;
   deviceName?: string | null;
+  device_name?: string | null;
   imei1?: string | null;
+  imei_1?: string | null;
   imei2?: string | null;
+  imei_2?: string | null;
   deviceStatus?: string | null;
+  device_status?: string | null;
   financingSource?: 'DEALER' | 'DIRECT' | null;
   pendingAmount?: number | string;
   nextEmiDate?: string | null;

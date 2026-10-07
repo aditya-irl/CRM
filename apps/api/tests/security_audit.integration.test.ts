@@ -335,12 +335,21 @@ describe('Production Security & Data Isolation Audit Integration Tests', () => {
       expect(res.status).toBe(422);
     });
 
-    it('2.7 Dealer A cannot download raw KYC documents (returns 403)', async () => {
-      const res = await request(app)
+    it('2.7 Dealer A can download own customer KYC document (returns 200) and cannot download Dealer B KYC (returns 403)', async () => {
+      // Own customer KYC -> Allowed
+      const ownRes = await request(app)
         .get(`/api/v1/kyc/${kycDocAId}/presigned-download`)
         .set('Authorization', `Bearer ${dealerAToken}`);
 
-      expect(res.status).toBe(403);
+      expect(ownRes.status).toBe(200);
+      expect(ownRes.body.data.downloadUrl).toBeDefined();
+
+      // Another dealer's customer KYC -> 403 Forbidden
+      const otherRes = await request(app)
+        .get(`/api/v1/kyc/${kycDocBId}/presigned-download`)
+        .set('Authorization', `Bearer ${dealerAToken}`);
+
+      expect(otherRes.status).toBe(403);
     });
 
     it('2.8 Dealer A cannot delete KYC documents (returns 403)', async () => {
