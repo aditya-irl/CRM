@@ -23,6 +23,7 @@ import agentCollectionsRoutes from './modules/agent-collections/agent-collection
 import directCollectionsRoutes from './modules/direct-collections/direct-collections.routes';
 import portalRoutes from './modules/portal/portal.routes';
 import settingsRoutes from './modules/settings/settings.routes';
+import notificationRoutes from './modules/notifications/notifications.routes';
 import { EMIStateEngineJob } from './jobs/emi-state-engine.job';
 import { ReminderDispatcherJob } from './jobs/reminder-dispatcher.job';
 import { BackgroundScheduler } from './jobs/scheduler';
@@ -101,6 +102,7 @@ app.use('/api/v1/reports', reportRoutes);
 app.use('/api/v1/audit-logs', auditRoutes);
 app.use('/api/v1/portal', portalRoutes);
 app.use('/api/v1/settings', settingsRoutes);
+app.use('/api/v1/notifications', notificationRoutes);
 
 // Admin trigger endpoint for manual execution of background jobs (Midnight Engine)
 app.post(

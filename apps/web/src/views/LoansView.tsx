@@ -34,15 +34,27 @@ import {
 import { PortalLinkManager } from '../components/PortalLinkManager';
 import { RecordPaymentModal } from '../components/RecordPaymentModal';
 
-export const LoansView: React.FC = () => {
+export interface LoansViewProps {
+  initialStatusTab?: 'ALL' | 'PENDING_APPROVAL' | 'ACTIVE' | 'CLOSED' | 'REJECTED';
+  initialSearch?: string;
+  focusLoanId?: string;
+}
+
+export const LoansView: React.FC<LoansViewProps> = ({
+  initialStatusTab,
+  initialSearch,
+  focusLoanId,
+}) => {
   const currentUser = ApiClient.getUser();
   const [loans, setLoans] = useState<ILoan[]>([]);
   const [customers, setCustomers] = useState<ICustomer[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(initialSearch || '');
 
   // Portfolio Filtering & Approval Queue States
-  const [activeStatusTab, setActiveStatusTab] = useState<'ALL' | 'PENDING_APPROVAL' | 'ACTIVE' | 'CLOSED' | 'REJECTED'>('ALL');
+  const [activeStatusTab, setActiveStatusTab] = useState<'ALL' | 'PENDING_APPROVAL' | 'ACTIVE' | 'CLOSED' | 'REJECTED'>(
+    initialStatusTab || (focusLoanId ? 'PENDING_APPROVAL' : 'ALL')
+  );
   const [pendingApprovalsList, setPendingApprovalsList] = useState<any[]>([]);
   const [rejectingLoan, setRejectingLoan] = useState<any | null>(null);
   const [rejectionReason, setRejectionReason] = useState<string>('');
@@ -364,6 +376,20 @@ export const LoansView: React.FC = () => {
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (initialStatusTab) {
+      setActiveStatusTab(initialStatusTab);
+    } else if (focusLoanId) {
+      setActiveStatusTab('PENDING_APPROVAL');
+    }
+    if (initialSearch !== undefined) {
+      setSearch(initialSearch);
+    }
+    if (focusLoanId) {
+      handleViewLoan(focusLoanId);
+    }
+  }, [initialStatusTab, initialSearch, focusLoanId]);
 
   const handlePreviewCalculation = async () => {
     if (!emiStartDate) {

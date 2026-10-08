@@ -3,12 +3,14 @@ import { IUser, UserRole, formatDateDDMMYYYY } from '@crm/shared';
 import { ApiClient } from '../services/api';
 import { LogOut, Play, CheckCircle2, Shield, Plus, Calendar, Store } from 'lucide-react';
 import { BrandLogo } from './BrandLogo';
+import { NotificationBell } from './NotificationBell';
 
 interface NavbarProps {
   user: IUser;
   onLogout: () => void;
   onRefreshData?: () => void;
   onOpenAddCustomer?: () => void;
+  onNavigate?: (tab: string, params?: any) => void;
 }
 
 const NavbarComponent: React.FC<NavbarProps> = ({
@@ -16,6 +18,7 @@ const NavbarComponent: React.FC<NavbarProps> = ({
   onLogout,
   onRefreshData,
   onOpenAddCustomer,
+  onNavigate,
 }) => {
   const [runningJob, setRunningJob] = useState(false);
   const [jobNotice, setJobNotice] = useState<string | null>(null);
@@ -125,6 +128,9 @@ const NavbarComponent: React.FC<NavbarProps> = ({
             <span>{runningJob ? 'Processing...' : 'Run Midnight Engine'}</span>
           </button>
         )}
+
+        {/* Admin Notifications Bell */}
+        <NotificationBell user={user} onNavigate={onNavigate} />
 
         <div
           style={{

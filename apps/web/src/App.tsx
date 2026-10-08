@@ -55,6 +55,8 @@ export const App: React.FC = () => {
   const [selectedAgentIdForCollections, setSelectedAgentIdForCollections] = useState<string | null>(null);
   const [showAddCustomerWizard, setShowAddCustomerWizard] = useState(false);
   const [customersRefreshTrigger, setCustomersRefreshTrigger] = useState(0);
+  const [focusedLoanParams, setFocusedLoanParams] = useState<{ statusTab?: any; loanId?: string; search?: string } | null>(null);
+  const [focusedDealerId, setFocusedDealerId] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -74,6 +76,25 @@ export const App: React.FC = () => {
   const handlePasswordChangeSuccess = (updatedUser: IUser) => {
     setUser(updatedUser);
     setActiveTab('dashboard');
+  };
+
+  const handleNotificationNavigate = (
+    tab: string,
+    params?: { statusTab?: string; loanId?: string; dealerId?: string; search?: string }
+  ) => {
+    if (tab === 'loans') {
+      setFocusedLoanParams({
+        statusTab: params?.statusTab || 'PENDING_APPROVAL',
+        loanId: params?.loanId,
+        search: params?.search,
+      });
+      setActiveTab('loans');
+    } else if (tab === 'dealers') {
+      setFocusedDealerId(params?.dealerId || null);
+      setActiveTab('dealers');
+    } else {
+      setActiveTab(tab as NavTab);
+    }
   };
 
   const handleNavigateToDealerCollections = (dealerId?: string) => {
@@ -188,7 +209,13 @@ export const App: React.FC = () => {
       case 'queue':
         return <QueueView />;
       case 'loans':
-        return <LoansView />;
+        return (
+          <LoansView
+            initialStatusTab={focusedLoanParams?.statusTab}
+            initialSearch={focusedLoanParams?.search}
+            focusLoanId={focusedLoanParams?.loanId}
+          />
+        );
       case 'payments':
         return <PaymentsView user={user} />;
       case 'reports':
@@ -206,6 +233,7 @@ export const App: React.FC = () => {
         user={user}
         onLogout={handleLogout}
         onOpenAddCustomer={() => setShowAddCustomerWizard(true)}
+        onNavigate={handleNotificationNavigate}
       />
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         <Sidebar activeTab={activeTab} onSelectTab={setActiveTab} user={user} />

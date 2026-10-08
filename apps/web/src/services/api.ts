@@ -25,6 +25,7 @@ import {
   IFinanceReportResponse,
   IDealerDashboardMetrics,
   IDealerLoginAccountResponse,
+  INotification,
 } from '@crm/shared';
 
 export function buildApiUrl(endpoint: string = ''): string {
@@ -1319,6 +1320,39 @@ export class ApiClient {
       method: 'POST',
       body: JSON.stringify({ reason }),
     });
+  }
+
+  // --- In-App Notifications ---
+  public static async getNotifications(unreadOnly?: boolean): Promise<{
+    notifications: INotification[];
+    unreadCount: number;
+    total: number;
+  }> {
+    const query = unreadOnly ? '?unreadOnly=true' : '';
+    const res = await this.request<{ notifications: INotification[]; unreadCount: number; total: number }>(`/notifications${query}`);
+    return res;
+  }
+
+  public static async markNotificationAsRead(id: string): Promise<{
+    notification: INotification;
+    unreadCount: number;
+  }> {
+    return this.request<{ notification: INotification; unreadCount: number }>(`/notifications/${id}/read`, {
+      method: 'PATCH',
+    });
+  }
+
+  public static async markAllNotificationsAsRead(): Promise<{
+    success: boolean;
+    unreadCount: number;
+  }> {
+    return this.request<{ success: boolean; unreadCount: number }>('/notifications/mark-all-read', {
+      method: 'POST',
+    });
+  }
+
+  public static async getNotificationUnreadCount(): Promise<{ unreadCount: number }> {
+    return this.request<{ unreadCount: number }>('/notifications/unread-count');
   }
 }
 
