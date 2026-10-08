@@ -579,12 +579,20 @@ export class ApiClient {
   }
 
   // Payments
-  public static async getPaymentPreview(params: { loanId: string; installmentId?: string; amount?: number | string }) {
+  public static async getPaymentPreview(params: {
+    loanId: string;
+    installmentId?: string;
+    amount?: number | string;
+    penaltyAmount?: number | string;
+  }) {
     const qs = new URLSearchParams();
     qs.append('loanId', params.loanId);
     if (params.installmentId) qs.append('installmentId', params.installmentId);
     if (params.amount !== undefined && params.amount !== null && String(params.amount).trim() !== '') {
       qs.append('amount', String(params.amount).trim());
+    }
+    if (params.penaltyAmount !== undefined && params.penaltyAmount !== null && String(params.penaltyAmount).trim() !== '') {
+      qs.append('penaltyAmount', String(params.penaltyAmount).trim());
     }
     return this.request<any>(`/payments/preview?${qs.toString()}`);
   }

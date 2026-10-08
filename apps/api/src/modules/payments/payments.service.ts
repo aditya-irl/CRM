@@ -10,6 +10,8 @@ import {
   reversePaymentAllocation,
   computeEmiStatus,
   getBusinessDate,
+  getDaysDifference,
+  SYSTEM_SETTING_KEYS,
   UserRole,
   CollectionSource,
   IPaymentsSummary,
@@ -32,6 +34,7 @@ export class PaymentService {
       emiId?: string | null;
       customerId: string;
       amount: number;
+      penaltyAmount?: number | null;
       paymentMode: PaymentMode;
       collectionSource?: CollectionSource;
       dealerId?: string | null;
@@ -203,10 +206,41 @@ export class PaymentService {
         const loanOutstanding = new Decimal(loan.outstanding_balance);
         const paymentAmount = new Decimal(data.amount);
 
+        // Penalty Handling & Backend Validation
+        let penaltyAmount = new Decimal(0);
+        let hasManualPenalty = false;
+        if (data.penaltyAmount !== undefined && data.penaltyAmount !== null && String(data.penaltyAmount).trim() !== '') {
+          const penNum = Number(data.penaltyAmount);
+          if (isNaN(penNum) || !isFinite(penNum) || penNum < 0) {
+            throw new AppError('Penalty amount must be a non-negative number', 400);
+          }
+          penaltyAmount = new Decimal(penNum).toDecimalPlaces(2, Decimal.ROUND_HALF_EVEN);
+          hasManualPenalty = true;
+        }
+
         if (paymentAmount.greaterThan(loanOutstanding)) {
           throw new AppError(
             `Payment amount ₹${data.amount} exceeds outstanding loan balance ₹${loan.outstanding_balance}`
           );
+        }
+
+        if (hasManualPenalty && penaltyAmount.greaterThan(0)) {
+          if (user.role === UserRole.COLLECTION_AGENT) {
+            throw new ForbiddenError('Collection agents cannot add penalties');
+          }
+          if (user.role === UserRole.DEALER) {
+            const settingRes = await client.query(
+              `SELECT setting_value FROM system_settings WHERE setting_key = $1`,
+              [SYSTEM_SETTING_KEYS.ALLOW_DEALER_PENALTY]
+            );
+            const allow = settingRes.rows.length > 0 && settingRes.rows[0].setting_value === 'true';
+            if (!allow) {
+              throw new ForbiddenError('Dealer late-payment penalty creation is disabled by Super Admin');
+            }
+            if (loan.dealer_id !== user.dealerId) {
+              throw new ForbiddenError('You are not authorized to add penalty to another partner store loan');
+            }
+          }
         }
 
         // 5. Lock and Fetch all Unpaid Installments for this Loan
@@ -220,6 +254,55 @@ export class PaymentService {
           [data.loanId]
         );
 
+        let targetInstForPenalty: any = null;
+        if (data.emiId) {
+          targetInstForPenalty = installmentsRes.rows.find((r) => r.id === data.emiId) || null;
+        }
+        if (!targetInstForPenalty && installmentsRes.rows.length > 0) {
+          targetInstForPenalty = installmentsRes.rows.find((r) =>
+            r.status === 'OVERDUE' ||
+            r.status === 'DUE_TODAY' ||
+            Number(r.penalty_amount || 0) > 0 ||
+            Number(r.remaining_amount || 0) > 0
+          ) || installmentsRes.rows[0];
+        }
+
+        if (hasManualPenalty && penaltyAmount.greaterThan(0)) {
+          if (targetInstForPenalty) {
+            const dueDate = getBusinessDate(targetInstForPenalty.due_date, 'Asia/Kolkata');
+            const daysDiff = getDaysDifference(dueDate, businessToday);
+            const existingPen = Number(targetInstForPenalty.penalty_amount || 0);
+            if (daysDiff <= 0 && existingPen <= 0) {
+              throw new AppError(
+                `Penalty can only be applied to overdue installments (due date: ${dueDate}, business today: ${businessToday})`,
+                400
+              );
+            }
+            const exp = new Decimal(targetInstForPenalty.expected_amount);
+            if (penaltyAmount.greaterThan(exp.times(3))) {
+              throw new AppError('Penalty amount exceeds authorized maximum', 400);
+            }
+
+            // Create emi_penalties record for audit & ledger compliance
+            const penaltyId = uuidv4();
+            await client.query(
+              `INSERT INTO emi_penalties (
+                id, emi_installment_id, loan_id, amount, paid_amount, status, reason,
+                created_by, created_at, updated_at
+              ) VALUES ($1, $2, $3, $4, 0, 'ACTIVE', $5, $6, NOW(), NOW())`,
+              [
+                penaltyId,
+                targetInstForPenalty.id,
+                loan.id,
+                penaltyAmount.toNumber(),
+                'Late payment penalty assessed during collection',
+                user.id,
+              ]
+            );
+            targetInstForPenalty.penalty_amount = penaltyAmount.toNumber();
+          }
+        }
+
         const unpaidInstallments = installmentsRes.rows.map((r) => ({
           id: r.id,
           installmentNumber: Number(r.installment_number),
@@ -227,13 +310,17 @@ export class PaymentService {
           expectedAmount: Number(r.expected_amount),
           paidAmount: Number(r.paid_amount),
           remainingAmount: Number(r.remaining_amount),
-          penaltyAmount: Number(r.penalty_amount),
+          penaltyAmount: (targetInstForPenalty && r.id === targetInstForPenalty.id && hasManualPenalty && penaltyAmount.greaterThan(0))
+            ? penaltyAmount.toNumber()
+            : Number(r.penalty_amount || 0),
           status: r.status,
         }));
 
+        const totalPaymentCollected = hasManualPenalty ? paymentAmount.plus(penaltyAmount) : paymentAmount;
+
         // 6. Run Deterministic Waterfall Allocation
         const allocation = allocatePaymentWaterfall(
-          data.amount,
+          totalPaymentCollected.toNumber(),
           unpaidInstallments,
           loan.outstanding_balance,
           businessToday
@@ -251,11 +338,11 @@ export class PaymentService {
         // 8. Insert Payment Record
         const insertSql = `
           INSERT INTO payments (
-            id, receipt_number, loan_id, emi_id, customer_id, amount, payment_mode,
+            id, receipt_number, loan_id, emi_id, customer_id, amount, penalty_amount, payment_mode,
             collection_source, dealer_id, agent_id,
             reference_number, collected_by_agent_id, payment_timestamp, status, notes,
             is_reversal, idempotency_key, created_at, updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), 'SUCCESS', $13, FALSE, $14, NOW(), NOW())
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), 'SUCCESS', $14, FALSE, $15, NOW(), NOW())
           RETURNING id, receipt_number, payment_timestamp
         `;
 
@@ -266,7 +353,8 @@ export class PaymentService {
           loan.id,
           primaryEmiId,
           data.customerId,
-          data.amount,
+          totalPaymentCollected.toNumber(),
+          allocation.totalAllocatedToPenalty,
           data.paymentMode,
           source,
           finalDealerId,
@@ -330,7 +418,7 @@ export class PaymentService {
         }
 
         // 10. Update Loan Balances
-        const newTotalPaid = new Decimal(loan.total_paid).plus(paymentAmount).toNumber();
+        const newTotalPaid = new Decimal(loan.total_paid).plus(totalPaymentCollected).toNumber();
         const newOutstanding = allocation.newLoanOutstanding;
         const newLoanStatus = newOutstanding <= 0 ? LoanStatus.CLOSED : loan.status;
 
@@ -352,7 +440,9 @@ export class PaymentService {
             loanId: loan.id,
             loanAccountNo: loan.loan_account_no,
             customerId: data.customerId,
-            amount: data.amount,
+            amount: totalPaymentCollected.toNumber(),
+            paymentAmount: paymentAmount.toNumber(),
+            penaltyAmount: allocation.totalAllocatedToPenalty,
             collectionSource: source,
             dealerId: finalDealerId,
             agentId: finalAgentId,
@@ -368,7 +458,10 @@ export class PaymentService {
           loanId: loan.id,
           loanAccountNo: loan.loan_account_no,
           customerId: data.customerId,
-          amountCollected: data.amount,
+          amount: totalPaymentCollected.toNumber(),
+          amountCollected: totalPaymentCollected.toNumber(),
+          paymentAmount: paymentAmount.toNumber(),
+          penaltyAmount: allocation.totalAllocatedToPenalty,
           paymentMode: data.paymentMode,
           collectionSource: source,
           dealerId: finalDealerId,
@@ -787,26 +880,47 @@ export class PaymentService {
     const expAmt = targetInst ? Number(targetInst.expected_amount) : Number(loan.emi_amount || 0);
     const paidAmt = targetInst ? Number(targetInst.paid_amount) : 0;
     const remAmt = targetInst ? Number(targetInst.remaining_amount) : 0;
-    const penAmt = targetInst ? Number(targetInst.penalty_amount || 0) : 0;
+    const existingPenAmt = targetInst ? Number(targetInst.penalty_amount || 0) : 0;
 
     const evalResult = computeEmiStatus({
       dueDate: targetDueDateStr,
       expectedAmount: expAmt,
       paidAmount: paidAmt,
-      penaltyAmount: penAmt,
+      penaltyAmount: existingPenAmt,
       businessToday,
     });
+
+    const calculatedPenalty = existingPenAmt > 0
+      ? existingPenAmt
+      : (evalResult.daysOverdue > 0 ? evalResult.daysOverdue * 10 : 0);
+
+    let penAmt = existingPenAmt;
+    const hasManualPenaltyInput = (query as any).penaltyAmount !== undefined && (query as any).penaltyAmount !== null && String((query as any).penaltyAmount).trim() !== '';
+    if (hasManualPenaltyInput) {
+      const parsedPen = Number((query as any).penaltyAmount);
+      if (isNaN(parsedPen) || !isFinite(parsedPen) || parsedPen < 0) {
+        throw new AppError('Penalty amount must be a non-negative number', 400);
+      }
+      if (parsedPen > 0 && evalResult.daysOverdue <= 0 && existingPenAmt <= 0) {
+        throw new AppError('Penalty can only be applied to overdue installments', 400);
+      }
+      penAmt = new Decimal(parsedPen).toDecimalPlaces(2, Decimal.ROUND_HALF_EVEN).toNumber();
+    }
 
     const totalDue = remAmt + penAmt;
     const hasInputAmount = query.amount !== undefined && query.amount !== null && String(query.amount).trim() !== '';
     const paymentAmountNum = hasInputAmount
       ? Math.max(0, Number(query.amount))
-      : totalDue;
+      : (hasManualPenaltyInput ? remAmt : totalDue);
+
+    const totalApplied = hasManualPenaltyInput
+      ? (paymentAmountNum + penAmt)
+      : paymentAmountNum;
 
     let allocationPreview: IPaymentPreview['allocationPreview'];
     let remainingAfterPayment = totalDue;
 
-    if (paymentAmountNum > 0 && unpaidInstallments.length > 0) {
+    if (totalApplied > 0 && unpaidInstallments.length > 0) {
       const unpaidForWaterfall = unpaidInstallments.map((r) => ({
         id: r.id,
         installmentNumber: Number(r.installment_number),
@@ -814,12 +928,14 @@ export class PaymentService {
         expectedAmount: Number(r.expected_amount),
         paidAmount: Number(r.paid_amount),
         remainingAmount: Number(r.remaining_amount),
-        penaltyAmount: Number(r.penalty_amount || 0),
+        penaltyAmount: targetInst && r.id === targetInst.id && hasManualPenaltyInput
+          ? penAmt
+          : Number(r.penalty_amount || 0),
         status: r.status,
       }));
 
       const waterfall = allocatePaymentWaterfall(
-        paymentAmountNum,
+        totalApplied,
         unpaidForWaterfall,
         loan.outstanding_balance,
         businessToday
@@ -832,7 +948,7 @@ export class PaymentService {
       if (targetAlloc) {
         remainingAfterPayment = targetAlloc.newRemainingAmount + targetAlloc.remainingPenalty;
       } else {
-        remainingAfterPayment = Math.max(0, totalDue - paymentAmountNum);
+        remainingAfterPayment = Math.max(0, totalDue - totalApplied);
       }
 
       allocationPreview = {
@@ -852,7 +968,7 @@ export class PaymentService {
         newEmiStatus: targetInst?.status || null,
         allocatedInstallments: [],
       };
-      remainingAfterPayment = Math.max(0, totalDue - paymentAmountNum);
+      remainingAfterPayment = Math.max(0, totalDue - totalApplied);
     }
 
     return {
@@ -864,11 +980,13 @@ export class PaymentService {
       installmentNumber: targetInst ? Number(targetInst.installment_number) : null,
       installmentAmount: expAmt,
       penaltyAmount: penAmt,
+      calculatedPenalty,
       daysOverdue: evalResult.daysOverdue,
       totalDue,
       alreadyPaid: paidAmt,
       remainingAmount: remAmt,
       paymentAmount: paymentAmountNum,
+      totalApplied,
       remainingAfterPayment,
       allocationPreview,
     };
@@ -962,19 +1080,32 @@ export class PaymentService {
       allocRows = allocRes.rows;
     }
 
-    const allocations = allocRows.map((a: any) => ({
-      id: a.id,
-      installmentNumber: Number(a.installment_number),
-      principalComponent: Number(a.principal_component),
-      interestComponent: Number(a.interest_component),
-      penaltyComponent: Number(a.penalty_component),
-      totalAmount: Number(a.total_amount),
-    }));
+    const totalCollected = Number(payment.amount);
+    const recordedPenalty = Number(payment.penalty_amount || 0);
+    const paymentAmount = Number(new Decimal(totalCollected).minus(recordedPenalty).toNumber());
+
+    const allocations = allocRows.map((a: any, idx: number) => {
+      let penComp = Number(a.penalty_component);
+      if (penComp === 0 && recordedPenalty > 0 && idx === 0) {
+        penComp = recordedPenalty;
+      }
+      return {
+        id: a.id,
+        installmentNumber: Number(a.installment_number),
+        principalComponent: Number(a.principal_component),
+        interestComponent: Number(a.interest_component),
+        penaltyComponent: penComp,
+        totalAmount: Number(a.total_amount),
+      };
+    });
 
     return {
       receiptNumber: payment.receipt_number,
       paymentId: payment.id,
-      amount: Number(payment.amount),
+      amount: totalCollected,
+      amountCollected: totalCollected,
+      paymentAmount,
+      penaltyAmount: recordedPenalty,
       paymentMode: payment.payment_mode,
       collectionSource: payment.collection_source || CollectionSource.DIRECT_CUSTOMER,
       referenceNumber: payment.reference_number,
@@ -1117,14 +1248,24 @@ export class PaymentService {
       allocRows = allocRes.rows;
     }
 
-    const allocations = allocRows.map((a: any) => ({
-      id: a.id,
-      installmentNumber: Number(a.installment_number),
-      principalComponent: Number(a.principal_component),
-      interestComponent: Number(a.interest_component),
-      penaltyComponent: Number(a.penalty_component),
-      totalAmount: Number(a.total_amount),
-    }));
+    const totalCollected = Number(p.amount);
+    const recordedPenalty = Number(p.penalty_amount || 0);
+    const paymentAmount = Number(new Decimal(totalCollected).minus(recordedPenalty).toNumber());
+
+    const allocations = allocRows.map((a: any, idx: number) => {
+      let penComp = Number(a.penalty_component);
+      if (penComp === 0 && recordedPenalty > 0 && idx === 0) {
+        penComp = recordedPenalty;
+      }
+      return {
+        id: a.id,
+        installmentNumber: Number(a.installment_number),
+        principalComponent: Number(a.principal_component),
+        interestComponent: Number(a.interest_component),
+        penaltyComponent: penComp,
+        totalAmount: Number(a.total_amount),
+      };
+    });
 
     const isReversed = Boolean(p.is_reversal) || p.status === 'REVERSED';
 
@@ -1175,6 +1316,9 @@ export class PaymentService {
       deviceModel: p.device_model || null,
       deviceName: p.device_name || null,
       amount: Number(p.amount),
+      amountCollected: Number(p.amount),
+      paymentAmount,
+      penaltyAmount: recordedPenalty,
       paymentMode: p.payment_mode as PaymentMode,
       collectionSource: p.collection_source as CollectionSource,
       dealerId: p.dealer_id,

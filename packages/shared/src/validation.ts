@@ -205,6 +205,7 @@ export const recordPaymentSchema = z.object({
   emiId: z.string().uuid('Invalid EMI ID').optional().nullable(),
   customerId: z.string().uuid('Invalid customer ID'),
   amount: z.number().positive('Payment amount must be greater than 0'),
+  penaltyAmount: z.number().nonnegative('Penalty amount cannot be negative').optional().nullable(),
   paymentMode: z.nativeEnum(PaymentMode).default(PaymentMode.CASH),
   collectionSource: z.nativeEnum(CollectionSource).optional(),
   dealerId: z.string().uuid('Invalid dealer ID').optional().nullable(),
@@ -268,6 +269,13 @@ export const paymentPreviewQuerySchema = z.object({
       const num = Number(val);
       return isNaN(num) ? val : num;
     }, z.number().nonnegative('Amount cannot be negative'))
+    .optional(),
+  penaltyAmount: z
+    .preprocess((val) => {
+      if (val === undefined || val === null || val === '') return undefined;
+      const num = Number(val);
+      return isNaN(num) ? val : num;
+    }, z.number().nonnegative('Penalty amount cannot be negative'))
     .optional(),
 });
 export type PaymentPreviewQuery = z.infer<typeof paymentPreviewQuerySchema>;

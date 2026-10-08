@@ -168,6 +168,7 @@ CREATE TABLE IF NOT EXISTS payments (
     emi_id TEXT REFERENCES emi_installments(id) ON DELETE RESTRICT,
     customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
     amount REAL NOT NULL,
+    penalty_amount REAL NOT NULL DEFAULT 0.0,
     payment_mode TEXT NOT NULL DEFAULT 'CASH', -- 'CASH', 'UPI', 'BANK_TRANSFER', 'CHEQUE'
     collection_source TEXT NOT NULL DEFAULT 'DIRECT_CUSTOMER', -- 'DIRECT_CUSTOMER', 'DEALER', 'RECOVERY_AGENT'
     dealer_id TEXT REFERENCES dealers(id),

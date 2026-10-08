@@ -22,6 +22,7 @@ import {
   Printer,
   AlertCircle,
   HelpCircle,
+  Plus,
 } from 'lucide-react';
 import { BrandLogo } from './BrandLogo';
 
@@ -72,6 +73,9 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   const [totalDue, setTotalDue] = useState<number>(0);
 
   const [paymentAmountStr, setPaymentAmountStr] = useState<string>('');
+  const [isPenaltyExpanded, setIsPenaltyExpanded] = useState<boolean>(false);
+  const [penaltyAmountStr, setPenaltyAmountStr] = useState<string>('');
+  const [penaltyError, setPenaltyError] = useState<string | null>(null);
   const [paymentMode, setPaymentMode] = useState<PaymentMode>(PaymentMode.CASH);
   const [collectionSource, setCollectionSource] = useState<CollectionSource>(
     isDealer ? CollectionSource.DEALER : CollectionSource.DIRECT_CUSTOMER
@@ -105,6 +109,9 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       setError(null);
       setReceipt(null);
       setPaymentAmountStr('');
+      setIsPenaltyExpanded(false);
+      setPenaltyAmountStr('');
+      setPenaltyError(null);
     }
   }, [isOpen]);
 
@@ -162,7 +169,12 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     }
   };
 
-  const fetchPreview = async (loanId: string, installmentId?: string, amount?: string | number) => {
+  const fetchPreview = async (
+    loanId: string,
+    installmentId?: string,
+    amount?: string | number,
+    penaltyAmount?: string | number
+  ) => {
     if (!loanId) return;
     const reqId = ++activeRequestIdRef.current;
     setLoadingPreview(true);
@@ -171,6 +183,10 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
         loanId,
         installmentId: installmentId || undefined,
         amount: amount !== undefined && amount !== null && String(amount).trim() !== '' ? amount : undefined,
+        penaltyAmount:
+          penaltyAmount !== undefined && penaltyAmount !== null && String(penaltyAmount).trim() !== ''
+            ? penaltyAmount
+            : undefined,
       });
       if (reqId !== activeRequestIdRef.current) return;
       const preview: IPaymentPreview = res.data || res;
@@ -179,7 +195,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       setPenaltyDue(preview.penaltyAmount);
       setTotalDue(preview.totalDue);
       if (amount === undefined || amount === null || String(amount).trim() === '') {
-        setPaymentAmountStr(String(preview.totalDue));
+        setPaymentAmountStr(String(preview.remainingAmount > 0 ? preview.remainingAmount : preview.totalDue));
       }
       return preview;
     } catch (err: any) {
@@ -242,7 +258,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     setEmiDue(emi);
     setPenaltyDue(penalty);
     setTotalDue(sum);
-    setPaymentAmountStr(String(sum > 0 ? sum : Number(selectedLoan?.emiAmount || 0)));
+    setPaymentAmountStr(String(emi > 0 ? emi : Number(selectedLoan?.emiAmount || 0)));
   };
 
   const handleLoanChange = (loanId: string) => {
@@ -260,7 +276,12 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     if (inst) {
       setSelectedInstallment(inst);
       computeAmounts(inst, installments);
-      fetchPreview(selectedLoanId, instId, paymentAmountStr);
+      fetchPreview(
+        selectedLoanId,
+        instId,
+        paymentAmountStr,
+        isPenaltyExpanded ? penaltyAmountStr : undefined
+      );
     }
   };
 
@@ -269,7 +290,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     if (val === '' || /^\d*\.?\d*$/.test(val)) {
       setPaymentAmountStr(val);
       if (selectedLoanId && val !== '' && !isNaN(Number(val))) {
-        fetchPreview(selectedLoanId, selectedInstallmentId, val);
+        fetchPreview(selectedLoanId, selectedInstallmentId, val, isPenaltyExpanded ? penaltyAmountStr : undefined);
       }
     }
   };
@@ -279,7 +300,28 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       const normalized = normalizeNumericLeadingZeros(paymentAmountStr);
       setPaymentAmountStr(normalized);
       if (selectedLoanId && !isNaN(Number(normalized))) {
-        fetchPreview(selectedLoanId, selectedInstallmentId, normalized);
+        fetchPreview(selectedLoanId, selectedInstallmentId, normalized, isPenaltyExpanded ? penaltyAmountStr : undefined);
+      }
+    }
+  };
+
+  const handlePenaltyAmountChange = (val: string) => {
+    // Only accept numeric input (digits and at most one decimal point), prevent negative values
+    if (val === '' || /^\d*\.?\d*$/.test(val)) {
+      setPenaltyAmountStr(val);
+      setPenaltyError(null);
+      if (selectedLoanId && val !== '' && !isNaN(Number(val))) {
+        fetchPreview(selectedLoanId, selectedInstallmentId, paymentAmountStr, val);
+      }
+    }
+  };
+
+  const handlePenaltyAmountBlur = () => {
+    if (penaltyAmountStr) {
+      const normalized = normalizeNumericLeadingZeros(penaltyAmountStr);
+      setPenaltyAmountStr(normalized);
+      if (selectedLoanId && !isNaN(Number(normalized))) {
+        fetchPreview(selectedLoanId, selectedInstallmentId, paymentAmountStr, normalized);
       }
     }
   };
@@ -287,11 +329,22 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   const handleReviewOrSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setPenaltyError(null);
 
     const amountNum = parseFloat(paymentAmountStr);
     if (!amountNum || amountNum <= 0) {
       setError('Please enter a valid payment amount greater than ₹0');
       return;
+    }
+
+    let penaltyNum: number | undefined = undefined;
+    if (isPenaltyExpanded && penaltyAmountStr.trim() !== '') {
+      const parsedPen = parseFloat(penaltyAmountStr);
+      if (isNaN(parsedPen) || parsedPen < 0) {
+        setPenaltyError('Please enter a valid non-negative penalty amount');
+        return;
+      }
+      penaltyNum = parsedPen;
     }
 
     if (!selectedLoan) {
@@ -320,7 +373,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     }
 
     // Refresh preview to ensure latest authoritative numbers before showing confirmation
-    const updated = await fetchPreview(selectedLoan.id, selectedInstallmentId, amountNum);
+    const updated = await fetchPreview(selectedLoan.id, selectedInstallmentId, amountNum, penaltyNum);
     if (!updated && !paymentPreview) {
       setError('Failed to calculate authoritative payment preview. Please try again.');
       return;
@@ -351,6 +404,9 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
         emiId: selectedInstallmentId || undefined,
         customerId,
         amount: amountNum,
+        penaltyAmount: isPenaltyExpanded && penaltyAmountStr.trim() !== ''
+          ? (parseFloat(penaltyAmountStr) || 0)
+          : undefined,
         paymentMode,
         collectionSource,
         dealerId: collectionSource === CollectionSource.DEALER ? (effectiveDealerId || selectedDealerId) : undefined,
@@ -432,6 +488,14 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                 0
               );
               const collectedAmt = Number(receipt.amountCollected || receipt.amount || 0);
+              const effectivePenalty =
+                receiptPenaltyAllocated > 0
+                  ? receiptPenaltyAllocated
+                  : Number(receipt.penaltyAmount || 0);
+              const effectivePayment =
+                receipt.paymentAmount !== undefined
+                  ? Number(receipt.paymentAmount)
+                  : Math.max(0, collectedAmt - effectivePenalty);
 
               return (
                 <div
@@ -454,27 +518,37 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                     <span style={{ color: 'var(--text-secondary)' }}>Loan Account:</span>
                     <span className="mono font-bold">{receipt.loan?.accountNo || selectedLoan?.loanAccountNo}</span>
                   </div>
+
+                  <div style={{ borderTop: '1px dashed var(--border-subtle)', margin: '4px 0' }} />
+
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Amount Collected:</span>
+                    <span style={{ color: 'var(--text-secondary)' }}>Payment Amount:</span>
+                    <strong className="mono font-bold">
+                      {formatINR(effectivePayment)}
+                    </strong>
+                  </div>
+
+                  {effectivePenalty > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--danger-text)' }}>Late Payment Penalty:</span>
+                      <strong className="mono font-bold" style={{ color: 'var(--danger-text)' }}>
+                        {formatINR(effectivePenalty)}
+                      </strong>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed var(--border-subtle)', paddingTop: 4 }}>
+                    <span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>Total Collected / Applied:</span>
                     <strong className="mono font-bold" style={{ color: 'var(--success)', fontSize: 15 }}>
                       {formatINR(collectedAmt)}
                     </strong>
                   </div>
 
-                  {receiptPenaltyAllocated > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--danger-text)' }}>Late Penalty Satisfied:</span>
-                      <strong className="mono" style={{ color: 'var(--danger-text)' }}>
-                        {formatINR(receiptPenaltyAllocated)}
-                      </strong>
-                    </div>
-                  )}
-
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ color: 'var(--text-secondary)' }}>Principal & Interest Satisfied:</span>
                     <strong className="mono">
                       {formatINR(
-                        receiptPIAllocated > 0 ? receiptPIAllocated : Math.max(0, collectedAmt - receiptPenaltyAllocated)
+                        receiptPIAllocated > 0 ? receiptPIAllocated : effectivePayment
                       )}
                     </strong>
                   </div>
@@ -641,8 +715,26 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>Payment Amount:</span>
-                <strong className="mono" style={{ fontSize: 17, color: 'var(--success)', fontWeight: 800 }}>
+                <strong className="mono" style={{ fontSize: 16, color: 'var(--text-primary)', fontWeight: 800 }}>
                   {formatINR(Number(paymentAmountStr) || 0)}
+                </strong>
+              </div>
+
+              {isPenaltyExpanded && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontWeight: 700, color: 'var(--danger-text)' }}>Late Payment Penalty:</span>
+                  <strong className="mono" style={{ fontSize: 16, color: 'var(--danger-text)', fontWeight: 800 }}>
+                    {formatINR(Number(penaltyAmountStr) || 0)}
+                  </strong>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px dashed var(--border-subtle)', paddingTop: 6 }}>
+                <span style={{ fontWeight: 800, color: 'var(--text-primary)' }}>Total Applied / Collected:</span>
+                <strong className="mono" style={{ fontSize: 17, color: 'var(--success)', fontWeight: 800 }}>
+                  {formatINR(
+                    (Number(paymentAmountStr) || 0) + (isPenaltyExpanded ? (Number(penaltyAmountStr) || 0) : 0)
+                  )}
                 </strong>
               </div>
 
@@ -910,161 +1002,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                 </div>
               )}
 
-              {/* Dedicated Late Payment Penalty & Dues Breakdown Box */}
-              <div
-                style={{
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: 'var(--radius-sm)',
-                  padding: 14,
-                  background: 'linear-gradient(180deg, var(--bg-surface) 0%, var(--bg-surface-secondary) 100%)',
-                }}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginBottom: 10,
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 700,
-                      color: 'var(--text-secondary)',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.5px',
-                    }}
-                  >
-                    Late Payment Penalty & Dues
-                  </div>
-                  {(paymentPreview?.daysOverdue ?? 0) > 0 ? (
-                    <span className="badge badge-warning" style={{ fontSize: 11 }}>
-                      {paymentPreview?.daysOverdue} days overdue
-                    </span>
-                  ) : (
-                    <span className="badge badge-route" style={{ fontSize: 11 }}>
-                      0 days overdue (On schedule)
-                    </span>
-                  )}
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>EMI Due Amount</span>
-                    <span className="mono font-bold">
-                      {formatINR(paymentPreview?.remainingAmount ?? emiDue)}
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span
-                      style={{
-                        color:
-                          (paymentPreview?.penaltyAmount ?? penaltyDue) > 0
-                            ? 'var(--danger-text)'
-                            : 'var(--text-secondary)',
-                      }}
-                    >
-                      Late Payment Penalty
-                    </span>
-                    <span
-                      className="mono font-bold"
-                      style={{
-                        color:
-                          (paymentPreview?.penaltyAmount ?? penaltyDue) > 0 ? 'var(--danger-text)' : 'inherit',
-                      }}
-                    >
-                      {(paymentPreview?.penaltyAmount ?? penaltyDue) > 0
-                        ? formatINR(paymentPreview?.penaltyAmount ?? penaltyDue)
-                        : '₹0 (0 days overdue)'}
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      borderTop: '1px dashed var(--border-subtle)',
-                      paddingTop: 8,
-                      marginTop: 2,
-                    }}
-                  >
-                    <strong style={{ color: 'var(--text-primary)' }}>Total Due</strong>
-                    <strong
-                      className="mono"
-                      style={{
-                        fontSize: 15,
-                        color:
-                          (paymentPreview?.totalDue ?? totalDue) > 0 ? 'var(--primary)' : 'var(--success)',
-                      }}
-                    >
-                      {formatINR(paymentPreview?.totalDue ?? totalDue)}
-                    </strong>
-                  </div>
-                </div>
-
-                {/* Dynamic Application Preview if amount entered */}
-                {Number(paymentAmountStr) > 0 && paymentPreview?.allocationPreview && (
-                  <div
-                    style={{
-                      marginTop: 10,
-                      paddingTop: 10,
-                      borderTop: '1px solid var(--border-subtle)',
-                      background: 'var(--bg-surface)',
-                      borderRadius: 'var(--radius-sm)',
-                      padding: '8px 10px',
-                      fontSize: 11,
-                    }}
-                  >
-                    <div style={{ fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                      Payment Waterfall Allocation Preview:
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                      <span>1. Penalty portion deducted first:</span>
-                      <strong className="mono">
-                        {formatINR(paymentPreview.allocationPreview.penaltyAllocated)}
-                      </strong>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                      <span>2. Applied to EMI principal & interest:</span>
-                      <strong className="mono">
-                        {formatINR(paymentPreview.allocationPreview.principalInterestAllocated)}
-                      </strong>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>Remaining due after payment:</span>
-                      <strong
-                        className="mono"
-                        style={{
-                          color:
-                            paymentPreview.remainingAfterPayment > 0
-                              ? 'var(--warning-text, #d97706)'
-                              : 'var(--success)',
-                        }}
-                      >
-                        {formatINR(paymentPreview.remainingAfterPayment)}
-                      </strong>
-                    </div>
-                  </div>
-                )}
-
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: 'var(--text-muted)',
-                    marginTop: 8,
-                    paddingTop: 6,
-                    borderTop: '1px solid var(--border-subtle)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                  }}
-                >
-                  <HelpCircle size={12} />
-                  <span>Waterfall: 1. Late penalties → 2. Overdue P&I → 3. Current due → 4. Future principal</span>
-                </div>
-              </div>
-
-              {/* Amount Received Input */}
+              {/* Payment Amount Input */}
               <div>
                 <label
                   style={{
@@ -1076,7 +1014,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                     textTransform: 'uppercase',
                   }}
                 >
-                  Amount Received (₹) <span style={{ color: 'var(--danger)' }}>*</span>
+                  Payment Amount (₹) <span style={{ color: 'var(--danger)' }}>*</span>
                 </label>
                 <div style={{ position: 'relative' }}>
                   <span
@@ -1099,11 +1037,190 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                     value={paymentAmountStr}
                     onChange={(e) => handleAmountChange(e.target.value)}
                     onBlur={handleAmountBlur}
-                    placeholder="e.g. 4200"
+                    placeholder="e.g. 4375"
                     required
                   />
                 </div>
               </div>
+
+              {/* + Add Penalty Button / Expanded Penalty Box */}
+              {!isPenaltyExpanded ? (
+                <div style={{ marginTop: -4, marginBottom: 2 }}>
+                  <button
+                    type="button"
+                    id="add-penalty-btn"
+                    onClick={() => {
+                      setIsPenaltyExpanded(true);
+                      const initialPen =
+                        paymentPreview?.calculatedPenalty ?? paymentPreview?.penaltyAmount ?? 0;
+                      const initialStr = String(initialPen);
+                      setPenaltyAmountStr(initialStr);
+                      setPenaltyError(null);
+                      if (selectedLoanId) {
+                        fetchPreview(selectedLoanId, selectedInstallmentId, paymentAmountStr, initialStr);
+                      }
+                    }}
+                    className="btn btn-secondary btn-sm"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      padding: '6px 14px',
+                      borderRadius: 'var(--radius-sm)',
+                    }}
+                  >
+                    <Plus size={14} />
+                    <span>+ Add Penalty</span>
+                  </button>
+                </div>
+              ) : (
+                <div
+                  id="penalty-section-expanded"
+                  style={{
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: 14,
+                    background: 'var(--bg-surface-secondary)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 10,
+                    marginTop: -4,
+                    marginBottom: 2,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: 'var(--text-primary)',
+                      }}
+                    >
+                      Late Payment Penalty
+                    </span>
+                    <button
+                      type="button"
+                      id="remove-penalty-btn"
+                      onClick={() => {
+                        setIsPenaltyExpanded(false);
+                        setPenaltyAmountStr('0');
+                        setPenaltyError(null);
+                        if (selectedLoanId) {
+                          fetchPreview(selectedLoanId, selectedInstallmentId, paymentAmountStr, '0');
+                        }
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--danger-text, #ef4444)',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        padding: '2px 6px',
+                      }}
+                    >
+                      Remove Penalty
+                    </button>
+                  </div>
+
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      fontSize: 12,
+                    }}
+                  >
+                    <span style={{ color: 'var(--text-secondary)' }}>Days Overdue:</span>
+                    <span
+                      className="mono font-bold"
+                      style={{
+                        color:
+                          (paymentPreview?.daysOverdue ?? 0) > 0
+                            ? 'var(--danger-text)'
+                            : 'inherit',
+                      }}
+                    >
+                      {paymentPreview?.daysOverdue ?? 0} days
+                    </span>
+                  </div>
+
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      fontSize: 12,
+                    }}
+                  >
+                    <span style={{ color: 'var(--text-secondary)' }}>
+                      Calculated Penalty:
+                    </span>
+                    <span className="mono font-bold">
+                      {formatINR(
+                        paymentPreview?.calculatedPenalty ?? paymentPreview?.penaltyAmount ?? 0
+                      )}
+                    </span>
+                  </div>
+
+                  <div>
+                    <label
+                      style={{
+                        display: 'block',
+                        fontSize: 11,
+                        fontWeight: 700,
+                        color: 'var(--text-secondary)',
+                        marginBottom: 4,
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      Penalty Amount
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <span
+                        style={{
+                          position: 'absolute',
+                          left: 12,
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          fontWeight: 700,
+                          color: 'var(--text-muted)',
+                        }}
+                      >
+                        ₹
+                      </span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        id="penalty-amount-input"
+                        className="form-input mono"
+                        style={{ paddingLeft: 28, fontSize: 14, fontWeight: 700 }}
+                        value={penaltyAmountStr}
+                        onChange={(e) => handlePenaltyAmountChange(e.target.value)}
+                        onBlur={handlePenaltyAmountBlur}
+                        placeholder="e.g. 120"
+                      />
+                    </div>
+                    {penaltyError && (
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: 'var(--danger)',
+                          marginTop: 4,
+                        }}
+                      >
+                        {penaltyError}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Collection Source Badge & Selection */}
               <div>
@@ -1117,7 +1234,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                     textTransform: 'uppercase',
                   }}
                 >
-                  Payment Source
+                  Collection Through
                 </label>
 
                 {isDealer ? (
@@ -1308,6 +1425,104 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                   onChange={(e) => setNotes(e.target.value)}
                 />
               </div>
+
+              {/* Dynamic Payment Preview & Waterfall Breakdown Card */}
+              {paymentPreview && (
+                <div
+                  id="payment-preview-card"
+                  style={{
+                    background: 'var(--bg-surface-secondary)',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--border-subtle)',
+                    padding: '12px 14px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 8,
+                    fontSize: 12,
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', fontSize: 10 }}>
+                      Live Payment Breakdown & Allocation
+                    </span>
+                    {loadingPreview && (
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Updating...</span>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Payment Amount:</span>
+                    <strong className="mono">{formatINR(Number(paymentAmountStr) || 0)}</strong>
+                  </div>
+
+                  {isPenaltyExpanded && Number(penaltyAmountStr) > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--danger-text)' }}>Late Payment Penalty:</span>
+                      <strong className="mono font-bold" style={{ color: 'var(--danger-text)' }}>
+                        {formatINR(Number(penaltyAmountStr) || 0)}
+                      </strong>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed var(--border-subtle)', paddingTop: 4 }}>
+                    <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>Total Applied / Total Due:</span>
+                    <strong className="mono font-bold" style={{ color: 'var(--success)' }}>
+                      {formatINR(
+                        paymentPreview.totalApplied ??
+                          ((Number(paymentAmountStr) || 0) + (isPenaltyExpanded ? (Number(penaltyAmountStr) || 0) : 0))
+                      )}
+                    </strong>
+                  </div>
+
+                  {paymentPreview.allocationPreview && (
+                    <div
+                      style={{
+                        background: 'var(--bg-surface)',
+                        padding: '8px 10px',
+                        borderRadius: 'var(--radius-sm)',
+                        border: '1px solid var(--border-subtle)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 4,
+                        fontSize: 11,
+                        marginTop: 2,
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>• Penalty Satisfied:</span>
+                        <span
+                          className="mono font-semibold"
+                          style={{
+                            color:
+                              paymentPreview.allocationPreview.penaltyAllocated > 0
+                                ? 'var(--danger-text)'
+                                : 'inherit',
+                          }}
+                        >
+                          {formatINR(paymentPreview.allocationPreview.penaltyAllocated)}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>• EMI Principal & Interest:</span>
+                        <span className="mono font-semibold" style={{ color: 'var(--primary)' }}>
+                          {formatINR(paymentPreview.allocationPreview.principalInterestAllocated)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-subtle)', paddingTop: 6, marginTop: 2 }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Remaining Loan Outstanding:</span>
+                    <strong className="mono" style={{ color: 'var(--warning-text, #d97706)' }}>
+                      {formatINR(
+                        paymentPreview.allocationPreview?.remainingOutstanding ??
+                          selectedLoan?.outstandingBalance ??
+                          0
+                      )}
+                    </strong>
+                  </div>
+                </div>
+              )}
 
               {/* Submit Buttons */}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>

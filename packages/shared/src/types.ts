@@ -304,6 +304,9 @@ export interface IPayment {
   emiId?: string | null;
   customerId: string;
   amount: number | string;
+  amountCollected?: number | string | null;
+  paymentAmount?: number | string | null;
+  penaltyAmount?: number | string | null;
   paymentMode: PaymentMode;
   collectionSource: CollectionSource;
   dealerId?: string | null;
@@ -1087,11 +1090,13 @@ export interface IPaymentPreview {
   installmentNumber: number | null;
   installmentAmount: number;
   penaltyAmount: number;
+  calculatedPenalty?: number;
   daysOverdue: number;
   totalDue: number;
   alreadyPaid: number;
   remainingAmount: number;
   paymentAmount: number;
+  totalApplied?: number;
   remainingAfterPayment: number;
   allocationPreview: {
     paymentAmount: number;
