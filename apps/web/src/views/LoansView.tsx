@@ -593,6 +593,11 @@ export const LoansView: React.FC = () => {
                     <td>
                       <div style={{ fontWeight: 600 }}>{loan.customerName}</div>
                       <div className="mono" style={{ fontSize: 11, color: 'var(--text-muted)' }}>{loan.customerPhone}</div>
+                      {(loan.deviceName || loan.deviceBrand) && (
+                        <div style={{ fontSize: 11, color: 'var(--primary)', marginTop: 2 }}>
+                          {loan.deviceName || `${loan.deviceBrand || ''} ${loan.deviceModel || ''}`.trim()}
+                        </div>
+                      )}
                     </td>
                     <td>
                       <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{loan.dealerStoreName}</div>
@@ -1048,6 +1053,41 @@ export const LoansView: React.FC = () => {
               <button onClick={() => setSelectedLoanDetail(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
                 <X size={20} />
               </button>
+            </div>
+
+            {/* Financed Device Overview */}
+            <div
+              style={{
+                background: 'var(--bg-surface-secondary)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '10px 14px',
+                marginBottom: 14,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 12,
+                fontSize: 12,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <span style={{ fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Financed Device:
+                </span>
+                <span>
+                  Brand: <strong style={{ color: 'var(--text-primary)' }}>{selectedLoanDetail.loan.deviceBrand || (selectedLoanDetail.loan as any).device_brand || 'Not provided'}</strong>
+                </span>
+                <span style={{ color: 'var(--text-muted)' }}>•</span>
+                <span>
+                  Model: <strong style={{ color: 'var(--text-primary)' }}>{selectedLoanDetail.loan.deviceModel || (selectedLoanDetail.loan as any).device_model || 'Not provided'}</strong>
+                </span>
+              </div>
+              {(selectedLoanDetail.loan.imei1 || (selectedLoanDetail.loan as any).imei1 || (selectedLoanDetail.loan as any).imei_1) && (
+                <div style={{ color: 'var(--text-muted)' }}>
+                  IMEI: <span className="mono font-semibold" style={{ color: 'var(--text-secondary)' }}>{selectedLoanDetail.loan.imei1 || (selectedLoanDetail.loan as any).imei1 || (selectedLoanDetail.loan as any).imei_1}</span>
+                </div>
+              )}
             </div>
 
             {/* Recovery Case Agent Assignment Banner */}

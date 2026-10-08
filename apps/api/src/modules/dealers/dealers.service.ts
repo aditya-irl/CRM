@@ -717,6 +717,7 @@ export class DealerService {
     const loansRes = await queryPostgres(
       `SELECT l.id, l.loan_account_no, l.principal_amount, l.emi_amount,
               l.outstanding_balance, l.status, l.disbursement_date,
+              l.device_brand, l.device_model, l.device_name, l.imei1,
               c.full_name as customer_name, c.customer_code, c.primary_phone
        FROM loans l
        JOIN customers c ON l.customer_id = c.id
@@ -786,6 +787,10 @@ export class DealerService {
         customerName: l.customer_name,
         customerCode: l.customer_code,
         primaryPhone: l.primary_phone,
+        deviceBrand: l.device_brand || null,
+        deviceModel: l.device_model || null,
+        deviceName: l.device_name || (l.device_brand && l.device_model ? `${l.device_brand} ${l.device_model}` : (l.device_brand || l.device_model || null)),
+        imei1: l.imei1 || null,
         principalAmount: Number(l.principal_amount),
         emiAmount: Number(l.emi_amount),
         outstandingBalance: Number(l.outstanding_balance),

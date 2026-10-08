@@ -259,6 +259,20 @@ export const reversePaymentSchema = z.object({
   reason: z.string().min(5, 'Reversal reason is mandatory and must be at least 5 characters'),
 });
 
+export const paymentPreviewQuerySchema = z.object({
+  loanId: z.string().uuid('Invalid loan ID'),
+  installmentId: z.string().uuid('Invalid installment ID').optional(),
+  amount: z
+    .preprocess((val) => {
+      if (val === undefined || val === null || val === '') return undefined;
+      const num = Number(val);
+      return isNaN(num) ? val : num;
+    }, z.number().nonnegative('Amount cannot be negative'))
+    .optional(),
+});
+export type PaymentPreviewQuery = z.infer<typeof paymentPreviewQuerySchema>;
+
+
 export const createCallLogSchema = z.object({
   customerId: z.string().uuid('Invalid customer ID'),
   loanId: z.string().uuid('Invalid loan ID').optional().nullable(),

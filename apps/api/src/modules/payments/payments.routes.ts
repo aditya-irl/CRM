@@ -2,11 +2,28 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { PaymentService } from './payments.service';
 import { authenticate, requireRole } from '../../middlewares/auth.middleware';
 import { validateBody, validateQuery } from '../../middlewares/validate.middleware';
-import { recordPaymentSchema, reversePaymentSchema, paymentsFilterSchema, UserRole } from '@crm/shared';
+import { recordPaymentSchema, reversePaymentSchema, paymentsFilterSchema, paymentPreviewQuerySchema, UserRole } from '@crm/shared';
 
 const router = Router();
 
 router.use(authenticate);
+
+router.get(
+  '/preview',
+  validateQuery(paymentPreviewQuerySchema),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await PaymentService.getPaymentPreview(req.query as any, req.user!);
+      return res.json({
+        success: true,
+        data: result,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 
 router.post(
   '/',

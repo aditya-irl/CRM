@@ -312,7 +312,7 @@ export const DevicesView: React.FC<DevicesViewProps> = ({ onNavigateToTab }) => 
                           </div>
                           <div>
                             <strong style={{ fontSize: 13, color: 'var(--text-primary)' }}>
-                              {device.deviceName}
+                              {device.deviceName || (device.deviceBrand && device.deviceModel ? `${device.deviceBrand} ${device.deviceModel}` : (device.deviceBrand || device.deviceModel || 'Not provided'))}
                             </strong>
                             <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                               Retail: {formatINR(device.retailPrice)}
@@ -322,12 +322,12 @@ export const DevicesView: React.FC<DevicesViewProps> = ({ onNavigateToTab }) => 
                       </td>
 
                       <td>
-                        <div style={{ fontSize: 12, fontWeight: 600 }}>{device.deviceBrand}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{device.deviceModel}</div>
+                        <div style={{ fontSize: 12, fontWeight: 600 }}>{device.deviceBrand || 'Not provided'}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{device.deviceModel || 'Not provided'}</div>
                       </td>
 
                       <td className="mono" style={{ fontSize: 12 }}>
-                        <div>{device.imei1}</div>
+                        <div>{device.imei1 || 'Not provided'}</div>
                         {device.imei2 && (
                           <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
                             IMEI 2: {device.imei2}
@@ -535,23 +535,23 @@ export const DevicesView: React.FC<DevicesViewProps> = ({ onNavigateToTab }) => 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, fontSize: 13 }}>
                 <div>
                   <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Brand</div>
-                  <strong>{selectedDevice.deviceBrand}</strong>
+                  <strong>{selectedDevice.deviceBrand || 'Not provided'}</strong>
                 </div>
                 <div>
                   <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Model</div>
-                  <strong>{selectedDevice.deviceModel}</strong>
+                  <strong>{selectedDevice.deviceModel || 'Not provided'}</strong>
                 </div>
                 <div>
                   <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Device Status</div>
-                  <span className="badge badge-paid">{selectedDevice.deviceStatus}</span>
+                  <span className="badge badge-paid">{selectedDevice.deviceStatus || 'ACTIVE'}</span>
                 </div>
                 <div>
                   <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>IMEI 1 / Primary</div>
-                  <strong className="mono">{selectedDevice.imei1}</strong>
+                  <strong className="mono">{selectedDevice.imei1 || 'Not provided'}</strong>
                 </div>
                 <div>
                   <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>IMEI 2 / Secondary</div>
-                  <strong className="mono">{selectedDevice.imei2 || '—'}</strong>
+                  <strong className="mono">{selectedDevice.imei2 || 'Not provided'}</strong>
                 </div>
                 <div>
                   <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Retail Cash Price</div>

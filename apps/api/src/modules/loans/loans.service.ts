@@ -153,7 +153,7 @@ export class LoanService {
     await runPostgresTransaction(async (client) => {
       const deviceBrand = data.deviceBrand || null;
       const deviceModel = data.deviceModel || null;
-      const deviceName = data.deviceName || (deviceBrand && deviceModel ? `${deviceBrand} ${deviceModel}` : 'Smart Device');
+      const deviceName = data.deviceName || (deviceBrand && deviceModel ? `${deviceBrand} ${deviceModel}` : (deviceBrand || deviceModel || null));
       const imei1 = data.imei1 || null;
       const imei2 = data.imei2 || null;
       const deviceStatus = data.deviceStatus || 'ACTIVE';
@@ -371,7 +371,7 @@ export class LoanService {
       dealerCode: dealerInfo?.dealer_code || null,
       deviceBrand: data.deviceBrand || null,
       deviceModel: data.deviceModel || null,
-      deviceName: data.deviceName || (data.deviceBrand && data.deviceModel ? `${data.deviceBrand} ${data.deviceModel}` : 'Smart Device'),
+      deviceName: data.deviceName || (data.deviceBrand && data.deviceModel ? `${data.deviceBrand} ${data.deviceModel}` : (data.deviceBrand || data.deviceModel || null)),
       imei1: data.imei1 || null,
       imei2: data.imei2 || null,
       deviceStatus: data.deviceStatus || 'ACTIVE',
@@ -460,7 +460,7 @@ export class LoanService {
       );
 
       const dealerName = loan.dealer_store_name || 'Dealer';
-      const deviceName = loan.device_name || `${loan.device_brand || ''} ${loan.device_model || ''}`.trim() || 'Smart Device';
+      const deviceName = loan.device_name || `${loan.device_brand || ''} ${loan.device_model || ''}`.trim() || 'Not provided';
       const title = `New Loan Approval Request: ${loan.loan_account_no}`;
       const body = `Loan ${loan.loan_account_no} for customer ${loan.customer_name} (${loan.customer_code}) submitted by ${dealerName}. Financed Amount: ₹${loan.net_disbursed_amount}, EMI: ₹${loan.emi_amount}/mo, Device: ${deviceName}. Pending review.`;
 
@@ -686,6 +686,11 @@ export class LoanService {
         l.total_payable,
         l.disbursement_date,
         l.first_emi_date,
+        l.device_brand,
+        l.device_model,
+        l.device_name,
+        l.imei1,
+        l.imei2,
         l.status,
         l.created_at,
         u.full_name AS submitted_by_name,
@@ -723,6 +728,11 @@ export class LoanService {
       dealerCode: row.dealer_code,
       dealerContact: row.dealer_contact,
       dealerPhone: row.dealer_phone,
+      deviceBrand: row.device_brand || null,
+      deviceModel: row.device_model || null,
+      deviceName: row.device_name || (row.device_brand && row.device_model ? `${row.device_brand} ${row.device_model}` : (row.device_brand || row.device_model || null)),
+      imei1: row.imei1 || null,
+      imei2: row.imei2 || null,
       principalAmount: Number(row.principal_amount),
       downPayment: Number(row.down_payment),
       netDisbursedAmount: Number(row.net_disbursed_amount),
@@ -943,12 +953,12 @@ export class LoanService {
       dealerId: l.dealer_id,
       dealerStoreName: l.dealer_store_name,
       dealerCode: l.dealer_code,
-      deviceBrand: l.device_brand || 'Smart Device',
-      deviceModel: l.device_model || (l.principal_amount ? `Asset (${l.loan_account_no})` : 'Standard Handset'),
-      deviceName: l.device_name || (l.device_brand && l.device_model ? `${l.device_brand} ${l.device_model}` : 'Smart Device'),
-      imei1: l.imei1 || `IMEI-${l.loan_account_no.replace(/[^0-9]/g, '').padEnd(15, '0')}`,
+      deviceBrand: l.device_brand || null,
+      deviceModel: l.device_model || null,
+      deviceName: l.device_name || (l.device_brand && l.device_model ? `${l.device_brand} ${l.device_model}` : (l.device_brand || l.device_model || null)),
+      imei1: l.imei1 || null,
       imei2: l.imei2 || null,
-      deviceStatus: l.device_status || 'ACTIVE',
+      deviceStatus: l.device_status || (l.device_brand || l.device_model ? 'ACTIVE' : null),
       financingSource: l.dealer_id ? 'DEALER' : 'DIRECT',
       principalAmount: Number(l.principal_amount),
       downPayment: Number(l.down_payment),
@@ -1524,10 +1534,10 @@ export class LoanService {
 
     const devices: IDeviceItem[] = result.rows.map((r: any) => {
       const emiSum = r.emi_summary || {};
-      const brand = r.device_brand || '—';
-      const model = r.device_model || '—';
-      const name = r.device_name || (r.device_brand && r.device_model ? `${r.device_brand} ${r.device_model}` : (r.device_brand || r.device_model || 'Device details unavailable'));
-      const imei = r.imei1 || '—';
+      const brand = r.device_brand || 'Not provided';
+      const model = r.device_model || 'Not provided';
+      const name = r.device_name || (r.device_brand && r.device_model ? `${r.device_brand} ${r.device_model}` : (r.device_brand || r.device_model || 'Not provided'));
+      const imei = r.imei1 || 'Not provided';
       const retailPrice = Number(r.principal_amount);
       const downPayment = Number(r.down_payment);
       const financedAmount = Number(r.net_disbursed_amount || (retailPrice - downPayment));

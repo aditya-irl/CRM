@@ -1,6 +1,7 @@
 import { generateAmortizationSchedule, allocatePaymentWaterfall, toFixed2, normalizeNumericLeadingZeros } from './financial';
 import { formatDateDDMMYYYY, parseDisplayDateToISO } from './datetime';
 import { InterestMethod, RepaymentFrequency, EMIStatus } from './enums';
+import { paymentPreviewQuerySchema } from './validation';
 
 describe('Financial Calculation Engine', () => {
   test('Monthly Flat Simple Interest — Mandatory Test Case (Retail 10k, DP 4k, Rate 1%, Tenure 6m)', () => {
@@ -526,6 +527,43 @@ describe('Financial Calculation Engine', () => {
       expect(formatDateDDMMYYYY(undefined)).toBe('-');
       expect(formatDateDDMMYYYY('')).toBe('-');
       expect(parseDisplayDateToISO('')).toBe('');
+    });
+  });
+
+  describe('Payment Preview Query Schema Validation', () => {
+    test('Validates query with loanId, installmentId, and numeric amount', () => {
+      const valid = {
+        loanId: '123e4567-e89b-12d3-a456-426614174000',
+        installmentId: '123e4567-e89b-12d3-a456-426614174001',
+        amount: 4500,
+      };
+      const parsed = paymentPreviewQuerySchema.parse(valid);
+      expect(parsed.loanId).toBe(valid.loanId);
+      expect(parsed.amount).toBe(4500);
+    });
+
+    test('Validates query with string amount and coerces correctly', () => {
+      const valid = {
+        loanId: '123e4567-e89b-12d3-a456-426614174000',
+        amount: '5000.50',
+      };
+      const parsed = paymentPreviewQuerySchema.parse(valid);
+      expect(parsed.amount).toBe(5000.50);
+    });
+
+    test('Rejects negative amount', () => {
+      const invalid = {
+        loanId: '123e4567-e89b-12d3-a456-426614174000',
+        amount: -100,
+      };
+      expect(() => paymentPreviewQuerySchema.parse(invalid)).toThrow();
+    });
+
+    test('Rejects missing loanId', () => {
+      const invalid = {
+        amount: 1000,
+      };
+      expect(() => paymentPreviewQuerySchema.parse(invalid)).toThrow();
     });
   });
 });

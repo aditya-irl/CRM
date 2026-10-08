@@ -14,6 +14,8 @@ import {
   CollectionSource,
   IPaymentsSummary,
   IPaymentDetail,
+  PaymentPreviewQuery,
+  IPaymentPreview,
 } from '@crm/shared';
 import { AppError, NotFoundError, ForbiddenError } from '../../middlewares/error.middleware';
 import { AuthenticatedUser } from '../../middlewares/auth.middleware';
@@ -716,6 +718,163 @@ export class PaymentService {
   }
 
   /**
+   * Authoritative, non-mutating payment preview and waterfall allocation calculator.
+   * Calculates current payable amounts, authoritative penalties, days overdue,
+   * total due, and prospective waterfall allocation without mutating any records.
+   */
+  public static async getPaymentPreview(
+    query: PaymentPreviewQuery,
+    user: AuthenticatedUser
+  ): Promise<IPaymentPreview> {
+    const loanRes = await queryPostgres(
+      `SELECT l.*, c.full_name as customer_name, c.customer_code
+       FROM loans l
+       JOIN customers c ON l.customer_id = c.id
+       WHERE l.id = $1`,
+      [query.loanId]
+    );
+
+    if (loanRes.rows.length === 0) {
+      throw new NotFoundError('Loan not found');
+    }
+
+    const loan = loanRes.rows[0];
+
+    // Server-side RLAC
+    if (user.role === UserRole.DEALER) {
+      if (!user.dealerId || loan.dealer_id !== user.dealerId) {
+        throw new ForbiddenError('You do not have access to this loan account');
+      }
+    } else if (user.role === UserRole.COLLECTION_AGENT) {
+      if (!loan.assigned_agent_id || loan.assigned_agent_id !== user.id) {
+        throw new ForbiddenError('You do not have access to this loan account');
+      }
+    }
+
+    const businessToday = getBusinessDate(undefined, 'Asia/Kolkata');
+
+    // Fetch all installments for this loan
+    const installmentsRes = await queryPostgres(
+      `SELECT id, installment_number, due_date, principal_component, interest_component,
+              expected_amount, paid_amount, remaining_amount, penalty_amount, status
+       FROM emi_installments
+       WHERE loan_id = $1
+       ORDER BY installment_number ASC`,
+      [query.loanId]
+    );
+
+    const allInstallments = installmentsRes.rows;
+    const unpaidInstallments = allInstallments.filter((r) => r.status !== 'PAID');
+
+    // Identify target installment
+    let targetInst: any = null;
+    if (query.installmentId) {
+      targetInst = allInstallments.find((r) => r.id === query.installmentId) || null;
+    }
+    if (!targetInst && unpaidInstallments.length > 0) {
+      targetInst = unpaidInstallments.find((r) =>
+        r.status === 'OVERDUE' ||
+        r.status === 'DUE_TODAY' ||
+        Number(r.penalty_amount || 0) > 0 ||
+        Number(r.remaining_amount || 0) > 0
+      ) || unpaidInstallments[0];
+    }
+    if (!targetInst && allInstallments.length > 0) {
+      targetInst = allInstallments[allInstallments.length - 1];
+    }
+
+    const targetDueDateStr = targetInst ? getBusinessDate(targetInst.due_date, 'Asia/Kolkata') : businessToday;
+    const expAmt = targetInst ? Number(targetInst.expected_amount) : Number(loan.emi_amount || 0);
+    const paidAmt = targetInst ? Number(targetInst.paid_amount) : 0;
+    const remAmt = targetInst ? Number(targetInst.remaining_amount) : 0;
+    const penAmt = targetInst ? Number(targetInst.penalty_amount || 0) : 0;
+
+    const evalResult = computeEmiStatus({
+      dueDate: targetDueDateStr,
+      expectedAmount: expAmt,
+      paidAmount: paidAmt,
+      penaltyAmount: penAmt,
+      businessToday,
+    });
+
+    const totalDue = remAmt + penAmt;
+    const hasInputAmount = query.amount !== undefined && query.amount !== null && String(query.amount).trim() !== '';
+    const paymentAmountNum = hasInputAmount
+      ? Math.max(0, Number(query.amount))
+      : totalDue;
+
+    let allocationPreview: IPaymentPreview['allocationPreview'];
+    let remainingAfterPayment = totalDue;
+
+    if (paymentAmountNum > 0 && unpaidInstallments.length > 0) {
+      const unpaidForWaterfall = unpaidInstallments.map((r) => ({
+        id: r.id,
+        installmentNumber: Number(r.installment_number),
+        dueDate: getBusinessDate(r.due_date, 'Asia/Kolkata'),
+        expectedAmount: Number(r.expected_amount),
+        paidAmount: Number(r.paid_amount),
+        remainingAmount: Number(r.remaining_amount),
+        penaltyAmount: Number(r.penalty_amount || 0),
+        status: r.status,
+      }));
+
+      const waterfall = allocatePaymentWaterfall(
+        paymentAmountNum,
+        unpaidForWaterfall,
+        loan.outstanding_balance,
+        businessToday
+      );
+
+      const targetAlloc = targetInst
+        ? waterfall.allocatedPayments.find((a) => a.emiId === targetInst.id)
+        : null;
+
+      if (targetAlloc) {
+        remainingAfterPayment = targetAlloc.newRemainingAmount + targetAlloc.remainingPenalty;
+      } else {
+        remainingAfterPayment = Math.max(0, totalDue - paymentAmountNum);
+      }
+
+      allocationPreview = {
+        paymentAmount: paymentAmountNum,
+        penaltyAllocated: waterfall.totalAllocatedToPenalty,
+        principalInterestAllocated: waterfall.totalAllocatedToPrincipalInterest,
+        remainingOutstanding: waterfall.newLoanOutstanding,
+        newEmiStatus: targetAlloc ? targetAlloc.newStatus : (targetInst?.status || null),
+        allocatedInstallments: waterfall.allocatedPayments,
+      };
+    } else {
+      allocationPreview = {
+        paymentAmount: paymentAmountNum,
+        penaltyAllocated: 0,
+        principalInterestAllocated: 0,
+        remainingOutstanding: Number(loan.outstanding_balance),
+        newEmiStatus: targetInst?.status || null,
+        allocatedInstallments: [],
+      };
+      remainingAfterPayment = Math.max(0, totalDue - paymentAmountNum);
+    }
+
+    return {
+      loanId: loan.id,
+      loanAccountNo: loan.loan_account_no,
+      customerId: loan.customer_id,
+      customerName: loan.customer_name,
+      installmentId: targetInst ? targetInst.id : null,
+      installmentNumber: targetInst ? Number(targetInst.installment_number) : null,
+      installmentAmount: expAmt,
+      penaltyAmount: penAmt,
+      daysOverdue: evalResult.daysOverdue,
+      totalDue,
+      alreadyPaid: paidAmt,
+      remainingAmount: remAmt,
+      paymentAmount: paymentAmountNum,
+      remainingAfterPayment,
+      allocationPreview,
+    };
+  }
+
+  /**
    * Retrieve structured payment receipt with agent RLAC scoping.
    */
   public static async getReceipt(paymentId: string, user: AuthenticatedUser) {
@@ -724,6 +883,7 @@ export class PaymentService {
              l.principal_amount as loan_principal,
              l.assigned_agent_id as loan_agent_id,
              l.dealer_id as loan_dealer_id,
+             l.device_brand, l.device_model, l.device_name,
              c.full_name as customer_name, c.customer_code, c.primary_phone,
              c.address_line1, c.area_route,
              u.full_name as collected_by_name, u.phone as agent_phone,
@@ -843,7 +1003,10 @@ export class PaymentService {
         accountNo: payment.loan_account_no,
         principalAmount: Number(payment.loan_principal || 0),
         remainingOutstanding: Number(payment.current_loan_balance),
-        financedDevice: 'Smart Device / Handset',
+        financedDevice: payment.device_name || (payment.device_brand && payment.device_model ? `${payment.device_brand} ${payment.device_model}` : (payment.device_brand || payment.device_model || 'Not provided')),
+        deviceBrand: payment.device_brand || null,
+        deviceModel: payment.device_model || null,
+        deviceName: payment.device_name || null,
       },
       dealer: payment.dealer_id ? {
         id: payment.dealer_id,
@@ -875,6 +1038,7 @@ export class PaymentService {
              l.principal_amount as loan_principal, l.status as loan_status,
              l.assigned_agent_id as loan_agent_id,
              l.dealer_id as loan_dealer_id,
+             l.device_brand, l.device_model, l.device_name,
              c.full_name as customer_name, c.customer_code, c.primary_phone,
              c.address_line1, c.area_route,
              u.full_name as collected_by_name, u.phone as agent_phone,
@@ -1006,7 +1170,10 @@ export class PaymentService {
       loanPrincipal: Number(p.loan_principal || 0),
       loanOutstanding: Number(p.current_loan_balance),
       loanStatus: p.loan_status,
-      financedItem: 'Smart Device / Handset',
+      financedItem: p.device_name || (p.device_brand && p.device_model ? `${p.device_brand} ${p.device_model}` : (p.device_brand || p.device_model || 'Not provided')),
+      deviceBrand: p.device_brand || null,
+      deviceModel: p.device_model || null,
+      deviceName: p.device_name || null,
       amount: Number(p.amount),
       paymentMode: p.payment_mode as PaymentMode,
       collectionSource: p.collection_source as CollectionSource,
@@ -1223,6 +1390,7 @@ export class PaymentService {
              p.payment_timestamp, p.status, p.is_reversal, p.reversal_reason,
              l.id as loan_id, l.loan_account_no, l.principal_amount as loan_principal,
              l.outstanding_balance as loan_outstanding, l.status as loan_status,
+             l.device_brand, l.device_model, l.device_name,
              c.id as customer_id, c.full_name as customer_name, c.customer_code,
              c.primary_phone, c.address_line1, c.area_route,
              u.id as collector_id, u.full_name as collected_by_name,
@@ -1324,6 +1492,10 @@ export class PaymentService {
         loanPrincipal: Number(row.loan_principal || 0),
         loanOutstanding: Number(row.loan_outstanding || 0),
         loanStatus: row.loan_status,
+        financedItem: row.device_name || (row.device_brand && row.device_model ? `${row.device_brand} ${row.device_model}` : (row.device_brand || row.device_model || 'Not provided')),
+        deviceBrand: row.device_brand || null,
+        deviceModel: row.device_model || null,
+        deviceName: row.device_name || null,
         customerId: row.customer_id,
         customerName: row.customer_name,
         customerCode: row.customer_code,

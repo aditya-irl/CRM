@@ -9,6 +9,7 @@ import {
   getBusinessDate,
   UserRole,
   IUser,
+  IPaymentPreview,
 } from '@crm/shared';
 import { ApiClient } from '../services/api';
 import {
@@ -86,9 +87,26 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   const [referenceNumber, setReferenceNumber] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
 
+  const [paymentPreview, setPaymentPreview] = useState<IPaymentPreview | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [showConfirmation, setShowConfirmation] = useState(false);
+  const activeRequestIdRef = React.useRef(0);
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<any | null>(null);
+
+  // Reset state when modal opens or closes
+  useEffect(() => {
+    if (!isOpen) {
+      setPaymentPreview(null);
+      setLoadingPreview(false);
+      setShowConfirmation(false);
+      setError(null);
+      setReceipt(null);
+      setPaymentAmountStr('');
+    }
+  }, [isOpen]);
 
   // Initialize or fetch loans if not preselected
   useEffect(() => {
@@ -144,6 +162,38 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     }
   };
 
+  const fetchPreview = async (loanId: string, installmentId?: string, amount?: string | number) => {
+    if (!loanId) return;
+    const reqId = ++activeRequestIdRef.current;
+    setLoadingPreview(true);
+    try {
+      const res = await ApiClient.getPaymentPreview({
+        loanId,
+        installmentId: installmentId || undefined,
+        amount: amount !== undefined && amount !== null && String(amount).trim() !== '' ? amount : undefined,
+      });
+      if (reqId !== activeRequestIdRef.current) return;
+      const preview: IPaymentPreview = res.data || res;
+      setPaymentPreview(preview);
+      setEmiDue(preview.remainingAmount);
+      setPenaltyDue(preview.penaltyAmount);
+      setTotalDue(preview.totalDue);
+      if (amount === undefined || amount === null || String(amount).trim() === '') {
+        setPaymentAmountStr(String(preview.totalDue));
+      }
+      return preview;
+    } catch (err: any) {
+      if (reqId === activeRequestIdRef.current) {
+        console.error('Failed to fetch payment preview', err);
+      }
+      return null;
+    } finally {
+      if (reqId === activeRequestIdRef.current) {
+        setLoadingPreview(false);
+      }
+    }
+  };
+
   const loadLoanDetails = async (loanId: string) => {
     try {
       const detail: any = await ApiClient.getLoanById(loanId);
@@ -169,6 +219,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
         setSelectedInstallmentId(targetInst.id);
         setSelectedInstallment(targetInst);
         computeAmounts(targetInst, insts);
+        fetchPreview(loanId, targetInst.id);
       } else {
         // Fallback to loan amounts
         const baseEmi = Number(loanObj.emiAmount || loanObj.emi_amount || 0);
@@ -176,13 +227,14 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
         setPenaltyDue(0);
         setTotalDue(baseEmi);
         setPaymentAmountStr(String(baseEmi));
+        fetchPreview(loanId);
       }
     } catch (err: any) {
       console.error('Failed to load loan details', err);
     }
   };
 
-  const computeAmounts = (inst: any, allInsts: any[]) => {
+  const computeAmounts = (inst: any, _allInsts: any[]) => {
     const emi = Number(inst.remainingAmount ?? inst.remaining_amount ?? inst.expectedAmount ?? inst.expected_amount ?? 0);
     const penalty = Number(inst.penaltyAmount ?? inst.penalty_amount ?? 0);
     const sum = emi + penalty;
@@ -208,6 +260,17 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     if (inst) {
       setSelectedInstallment(inst);
       computeAmounts(inst, installments);
+      fetchPreview(selectedLoanId, instId, paymentAmountStr);
+    }
+  };
+
+  const handleAmountChange = (val: string) => {
+    // Only accept numeric input (digits and at most one decimal point), prevent negative values
+    if (val === '' || /^\d*\.?\d*$/.test(val)) {
+      setPaymentAmountStr(val);
+      if (selectedLoanId && val !== '' && !isNaN(Number(val))) {
+        fetchPreview(selectedLoanId, selectedInstallmentId, val);
+      }
     }
   };
 
@@ -215,10 +278,13 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     if (paymentAmountStr) {
       const normalized = normalizeNumericLeadingZeros(paymentAmountStr);
       setPaymentAmountStr(normalized);
+      if (selectedLoanId && !isNaN(Number(normalized))) {
+        fetchPreview(selectedLoanId, selectedInstallmentId, normalized);
+      }
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleReviewOrSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
@@ -253,6 +319,30 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       return;
     }
 
+    // Refresh preview to ensure latest authoritative numbers before showing confirmation
+    const updated = await fetchPreview(selectedLoan.id, selectedInstallmentId, amountNum);
+    if (!updated && !paymentPreview) {
+      setError('Failed to calculate authoritative payment preview. Please try again.');
+      return;
+    }
+
+    setShowConfirmation(true);
+  };
+
+  const handleFinalPaymentSubmit = async () => {
+    setError(null);
+    const amountNum = parseFloat(paymentAmountStr);
+    if (!amountNum || amountNum <= 0 || !selectedLoan) {
+      setError('Please enter a valid payment amount greater than ₹0');
+      setShowConfirmation(false);
+      return;
+    }
+
+    const customerId =
+      selectedLoan.customerId ||
+      selectedLoan.customer_id ||
+      preselectedCustomerId;
+
     setSubmitting(true);
     try {
       const idempotencyKey = `${isDealer ? 'DEALER' : 'ADMIN'}_${selectedLoan.id}_${Date.now()}`;
@@ -272,11 +362,13 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
 
       const res = await ApiClient.recordPayment(payload);
       setReceipt(res);
+      setShowConfirmation(false);
       if (onSuccess) {
         onSuccess(res);
       }
     } catch (err: any) {
       setError(err.message || 'Failed to record payment');
+      setShowConfirmation(false);
     } finally {
       setSubmitting(false);
     }
@@ -326,51 +418,100 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
               </div>
             </div>
 
-            <div
-              style={{
-                background: 'var(--bg-surface-secondary)',
-                borderRadius: 'var(--radius-md)',
-                padding: 16,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 8,
-                fontSize: 13,
-                marginBottom: 20,
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--text-secondary)' }}>Borrower:</span>
-                <strong>{receipt.customer?.name || selectedLoan?.customerName}</strong>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--text-secondary)' }}>Loan Account:</span>
-                <span className="mono font-bold">{receipt.loan?.accountNo || selectedLoan?.loanAccountNo}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--text-secondary)' }}>Amount Collected:</span>
-                <strong className="mono font-bold" style={{ color: 'var(--success)', fontSize: 15 }}>
-                  {formatINR(receipt.amountCollected || receipt.amount)}
-                </strong>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--text-secondary)' }}>Payment Mode:</span>
-                <span className="badge badge-route">{receipt.paymentMode}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--text-secondary)' }}>Collection Source:</span>
-                <span className="badge badge-terracotta">
-                  {receipt.collectionSource === 'DEALER' ? 'DEALER' : receipt.collectionSource === 'RECOVERY_AGENT' ? 'RECOVERY AGENT' : 'DIRECT'}
-                </span>
-              </div>
-              {receipt.remainingLoanOutstanding !== undefined && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-subtle)', paddingTop: 8, marginTop: 4 }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Remaining Loan Balance:</span>
-                  <strong className="mono" style={{ color: 'var(--warning-text, #d97706)' }}>
-                    {formatINR(receipt.remainingLoanOutstanding)}
-                  </strong>
+            {(() => {
+              const receiptAllocations = receipt.allocatedInstallments || receipt.allocations || [];
+              const receiptPenaltyAllocated = receiptAllocations.reduce(
+                (sum: number, a: any) => sum + (Number(a.allocatedToPenalty ?? a.penaltyComponent ?? 0) || 0),
+                0
+              );
+              const receiptPIAllocated = receiptAllocations.reduce(
+                (sum: number, a: any) =>
+                  sum +
+                  (Number(a.allocatedToPrincipal ?? a.principalComponent ?? 0) +
+                    Number(a.allocatedToInterest ?? a.interestComponent ?? 0)),
+                0
+              );
+              const collectedAmt = Number(receipt.amountCollected || receipt.amount || 0);
+
+              return (
+                <div
+                  style={{
+                    background: 'var(--bg-surface-secondary)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: 16,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 8,
+                    fontSize: 13,
+                    marginBottom: 20,
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Borrower:</span>
+                    <strong>{receipt.customer?.name || selectedLoan?.customerName}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Loan Account:</span>
+                    <span className="mono font-bold">{receipt.loan?.accountNo || selectedLoan?.loanAccountNo}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Amount Collected:</span>
+                    <strong className="mono font-bold" style={{ color: 'var(--success)', fontSize: 15 }}>
+                      {formatINR(collectedAmt)}
+                    </strong>
+                  </div>
+
+                  {receiptPenaltyAllocated > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--danger-text)' }}>Late Penalty Satisfied:</span>
+                      <strong className="mono" style={{ color: 'var(--danger-text)' }}>
+                        {formatINR(receiptPenaltyAllocated)}
+                      </strong>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Principal & Interest Satisfied:</span>
+                    <strong className="mono">
+                      {formatINR(
+                        receiptPIAllocated > 0 ? receiptPIAllocated : Math.max(0, collectedAmt - receiptPenaltyAllocated)
+                      )}
+                    </strong>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Payment Mode:</span>
+                    <span className="badge badge-route">{receipt.paymentMode}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Collection Source:</span>
+                    <span className="badge badge-terracotta">
+                      {receipt.collectionSource === 'DEALER'
+                        ? 'DEALER'
+                        : receipt.collectionSource === 'RECOVERY_AGENT'
+                        ? 'RECOVERY AGENT'
+                        : 'DIRECT'}
+                    </span>
+                  </div>
+                  {receipt.remainingLoanOutstanding !== undefined && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        borderTop: '1px solid var(--border-subtle)',
+                        paddingTop: 8,
+                        marginTop: 4,
+                      }}
+                    >
+                      <span style={{ color: 'var(--text-secondary)' }}>Remaining Loan Balance:</span>
+                      <strong className="mono" style={{ color: 'var(--warning-text, #d97706)' }}>
+                        {formatINR(receipt.remainingLoanOutstanding)}
+                      </strong>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              );
+            })()}
 
             <div style={{ display: 'flex', gap: 10 }}>
               <button
@@ -389,6 +530,202 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                 style={{ flex: 1 }}
               >
                 Done
+              </button>
+            </div>
+          </div>
+        ) : showConfirmation ? (
+          /* Pre-Submission Review & Confirmation Screen */
+          <div>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                borderBottom: '1px solid var(--border-subtle)',
+                paddingBottom: 14,
+                marginBottom: 16,
+              }}
+            >
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'var(--primary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#ffffff',
+                }}
+              >
+                <CheckCircle2 size={18} />
+              </div>
+              <div>
+                <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+                  Review Payment Collection
+                </h3>
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                  Confirm ledger entry breakdown before final recording
+                </div>
+              </div>
+            </div>
+
+            {error && (
+              <div
+                style={{
+                  background: 'var(--danger-subtle, #fee2e2)',
+                  border: '1px solid var(--danger, #ef4444)',
+                  color: 'var(--danger-text, #b91c1c)',
+                  padding: '10px 14px',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: 12,
+                  marginBottom: 14,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+              >
+                <AlertCircle size={15} />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <div
+              style={{
+                background: 'var(--bg-surface-secondary)',
+                borderRadius: 'var(--radius-md)',
+                padding: 16,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10,
+                fontSize: 13,
+                marginBottom: 20,
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Borrower:</span>
+                <strong>{selectedLoan?.customerName || selectedLoan?.customer_name || paymentPreview?.customerName}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Loan Account:</span>
+                <span className="mono font-bold">
+                  {selectedLoan?.loanAccountNo || selectedLoan?.loan_account_no || paymentPreview?.loanAccountNo}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Target Installment:</span>
+                <span className="mono font-bold">
+                  {paymentPreview?.installmentNumber
+                    ? `EMI #${paymentPreview.installmentNumber}`
+                    : selectedInstallment
+                    ? `EMI #${selectedInstallment.installmentNumber || selectedInstallment.installment_number}`
+                    : 'Active Dues'}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Payment Mode:</span>
+                <span className="badge badge-route">{paymentMode}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Collection Source:</span>
+                <span className="badge badge-terracotta">
+                  {collectionSource === CollectionSource.DEALER
+                    ? 'DEALER'
+                    : collectionSource === CollectionSource.RECOVERY_AGENT
+                    ? 'RECOVERY AGENT'
+                    : 'DIRECT'}
+                </span>
+              </div>
+
+              <div style={{ borderTop: '1px dashed var(--border-subtle)', margin: '4px 0' }} />
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>Payment Amount:</span>
+                <strong className="mono" style={{ fontSize: 17, color: 'var(--success)', fontWeight: 800 }}>
+                  {formatINR(Number(paymentAmountStr) || 0)}
+                </strong>
+              </div>
+
+              <div
+                style={{
+                  background: 'var(--bg-surface)',
+                  padding: '10px 12px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--border-subtle)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 6,
+                  fontSize: 12,
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>1. Late Penalty Satisfied:</span>
+                  <strong
+                    className="mono"
+                    style={{
+                      color:
+                        (paymentPreview?.allocationPreview?.penaltyAllocated ?? 0) > 0
+                          ? 'var(--danger-text)'
+                          : 'var(--text-primary)',
+                    }}
+                  >
+                    {formatINR(paymentPreview?.allocationPreview?.penaltyAllocated ?? 0)}
+                  </strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>2. Applied to EMI (P&I):</span>
+                  <strong className="mono" style={{ color: 'var(--primary)' }}>
+                    {formatINR(paymentPreview?.allocationPreview?.principalInterestAllocated ?? 0)}
+                  </strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Target EMI New Status:</span>
+                  <span className="badge badge-terracotta">
+                    {paymentPreview?.allocationPreview?.newEmiStatus ||
+                      (Number(paymentAmountStr) >= (paymentPreview?.totalDue ?? totalDue) ? 'PAID' : 'PARTIALLY_PAID')}
+                  </span>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  borderTop: '1px solid var(--border-subtle)',
+                  paddingTop: 8,
+                }}
+              >
+                <span style={{ color: 'var(--text-secondary)' }}>Remaining Loan Outstanding:</span>
+                <strong className="mono" style={{ color: 'var(--warning-text, #d97706)' }}>
+                  {formatINR(
+                    paymentPreview?.allocationPreview?.remainingOutstanding ??
+                      selectedLoan?.outstandingBalance ??
+                      selectedLoan?.outstanding_balance ??
+                      0
+                  )}
+                </strong>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => setShowConfirmation(false)}
+                className="btn btn-secondary"
+                style={{ flex: 1 }}
+                disabled={submitting}
+              >
+                Back to Edit
+              </button>
+              <button
+                type="button"
+                onClick={handleFinalPaymentSubmit}
+                className="btn btn-primary"
+                style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                disabled={submitting}
+              >
+                <CheckCircle2 size={16} />
+                <span>{submitting ? 'Recording...' : 'Confirm & Record Payment'}</span>
               </button>
             </div>
           </div>
@@ -461,7 +798,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
               </div>
             )}
 
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <form onSubmit={handleReviewOrSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               {/* Loan Account Selection (if not preselected) */}
               {!preselectedLoan && (
                 <div>
@@ -573,7 +910,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                 </div>
               )}
 
-              {/* Required Penalty Breakdown Box */}
+              {/* Dedicated Late Payment Penalty & Dues Breakdown Box */}
               <div
                 style={{
                   border: '1px solid var(--border-subtle)',
@@ -582,23 +919,64 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                   background: 'linear-gradient(180deg, var(--bg-surface) 0%, var(--bg-surface-secondary) 100%)',
                 }}
               >
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  Applicable Due & Penalty Breakdown
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: 10,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: 'var(--text-secondary)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                    }}
+                  >
+                    Late Payment Penalty & Dues
+                  </div>
+                  {(paymentPreview?.daysOverdue ?? 0) > 0 ? (
+                    <span className="badge badge-warning" style={{ fontSize: 11 }}>
+                      {paymentPreview?.daysOverdue} days overdue
+                    </span>
+                  ) : (
+                    <span className="badge badge-route" style={{ fontSize: 11 }}>
+                      0 days overdue (On schedule)
+                    </span>
+                  )}
                 </div>
+
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>EMI Due</span>
-                    <span className="mono font-bold">{formatINR(emiDue)}</span>
+                    <span style={{ color: 'var(--text-secondary)' }}>EMI Due Amount</span>
+                    <span className="mono font-bold">
+                      {formatINR(paymentPreview?.remainingAmount ?? emiDue)}
+                    </span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: penaltyDue > 0 ? 'var(--danger-text)' : 'var(--text-secondary)' }}>
-                      Penalty {penaltyDue > 0 ? '(Late fee)' : ''}
+                    <span
+                      style={{
+                        color:
+                          (paymentPreview?.penaltyAmount ?? penaltyDue) > 0
+                            ? 'var(--danger-text)'
+                            : 'var(--text-secondary)',
+                      }}
+                    >
+                      Late Payment Penalty
                     </span>
                     <span
                       className="mono font-bold"
-                      style={{ color: penaltyDue > 0 ? 'var(--danger-text)' : 'inherit' }}
+                      style={{
+                        color:
+                          (paymentPreview?.penaltyAmount ?? penaltyDue) > 0 ? 'var(--danger-text)' : 'inherit',
+                      }}
                     >
-                      {formatINR(penaltyDue)}
+                      {(paymentPreview?.penaltyAmount ?? penaltyDue) > 0
+                        ? formatINR(paymentPreview?.penaltyAmount ?? penaltyDue)
+                        : '₹0 (0 days overdue)'}
                     </span>
                   </div>
                   <div
@@ -611,18 +989,70 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                     }}
                   >
                     <strong style={{ color: 'var(--text-primary)' }}>Total Due</strong>
-                    <strong className="mono" style={{ fontSize: 15, color: totalDue > 0 ? 'var(--primary)' : 'var(--success)' }}>
-                      {formatINR(totalDue)}
+                    <strong
+                      className="mono"
+                      style={{
+                        fontSize: 15,
+                        color:
+                          (paymentPreview?.totalDue ?? totalDue) > 0 ? 'var(--primary)' : 'var(--success)',
+                      }}
+                    >
+                      {formatINR(paymentPreview?.totalDue ?? totalDue)}
                     </strong>
                   </div>
                 </div>
+
+                {/* Dynamic Application Preview if amount entered */}
+                {Number(paymentAmountStr) > 0 && paymentPreview?.allocationPreview && (
+                  <div
+                    style={{
+                      marginTop: 10,
+                      paddingTop: 10,
+                      borderTop: '1px solid var(--border-subtle)',
+                      background: 'var(--bg-surface)',
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '8px 10px',
+                      fontSize: 11,
+                    }}
+                  >
+                    <div style={{ fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                      Payment Waterfall Allocation Preview:
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                      <span>1. Penalty portion deducted first:</span>
+                      <strong className="mono">
+                        {formatINR(paymentPreview.allocationPreview.penaltyAllocated)}
+                      </strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                      <span>2. Applied to EMI principal & interest:</span>
+                      <strong className="mono">
+                        {formatINR(paymentPreview.allocationPreview.principalInterestAllocated)}
+                      </strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Remaining due after payment:</span>
+                      <strong
+                        className="mono"
+                        style={{
+                          color:
+                            paymentPreview.remainingAfterPayment > 0
+                              ? 'var(--warning-text, #d97706)'
+                              : 'var(--success)',
+                        }}
+                      >
+                        {formatINR(paymentPreview.remainingAfterPayment)}
+                      </strong>
+                    </div>
+                  </div>
+                )}
 
                 <div
                   style={{
                     fontSize: 11,
                     color: 'var(--text-muted)',
-                    marginTop: 10,
-                    paddingTop: 8,
+                    marginTop: 8,
+                    paddingTop: 6,
                     borderTop: '1px solid var(--border-subtle)',
                     display: 'flex',
                     alignItems: 'center',
@@ -667,7 +1097,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                     className="form-input mono"
                     style={{ paddingLeft: 28, fontSize: 16, fontWeight: 700 }}
                     value={paymentAmountStr}
-                    onChange={(e) => setPaymentAmountStr(e.target.value)}
+                    onChange={(e) => handleAmountChange(e.target.value)}
                     onBlur={handleAmountBlur}
                     placeholder="e.g. 4200"
                     required
@@ -892,11 +1322,11 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                 <button
                   type="submit"
                   className="btn btn-primary"
-                  disabled={submitting}
+                  disabled={submitting || loadingLoans || loadingPreview}
                   style={{ display: 'flex', alignItems: 'center', gap: 6 }}
                 >
                   <CheckCircle2 size={15} />
-                  <span>{submitting ? 'Recording Payment...' : 'Record Payment Collection'}</span>
+                  <span>{loadingPreview ? 'Calculating...' : 'Review & Record Payment'}</span>
                 </button>
               </div>
             </form>

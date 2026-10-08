@@ -560,10 +560,10 @@ export class CustomerService {
 
         const deviceBrand = data.loan.deviceBrand || (data as any).productBrand || null;
         const deviceModel = data.loan.deviceModel || (data as any).productModel || null;
-        const deviceName = data.loan.deviceName || (deviceBrand && deviceModel ? `${deviceBrand} ${deviceModel}` : 'Smart Device');
+        const deviceName = data.loan.deviceName || (deviceBrand && deviceModel ? `${deviceBrand} ${deviceModel}` : (deviceBrand || deviceModel || null));
         const imei1 = data.loan.imei1 || (data as any).imeiNumber || null;
         const imei2 = data.loan.imei2 || (data as any).serialNumber || null;
-        const deviceStatus = data.loan.deviceStatus || 'ACTIVE';
+        const deviceStatus = data.loan.deviceStatus || (deviceBrand || deviceModel ? 'ACTIVE' : null);
 
         const insertLoanSql = `
           INSERT INTO loans (
@@ -725,6 +725,12 @@ export class CustomerService {
           loanAccountNo: createdLoan.loan_account_no,
           customerId: createdLoan.customer_id,
           dealerId: createdLoan.dealer_id,
+          deviceBrand: createdLoan.device_brand || null,
+          deviceModel: createdLoan.device_model || null,
+          deviceName: createdLoan.device_name || (createdLoan.device_brand && createdLoan.device_model ? `${createdLoan.device_brand} ${createdLoan.device_model}` : (createdLoan.device_brand || createdLoan.device_model || null)),
+          imei1: createdLoan.imei1 || null,
+          imei2: createdLoan.imei2 || null,
+          deviceStatus: createdLoan.device_status || (createdLoan.device_brand || createdLoan.device_model ? 'ACTIVE' : null),
           principalAmount: Number(createdLoan.principal_amount),
           downPayment: Number(createdLoan.down_payment),
           netDisbursedAmount: Number(createdLoan.net_disbursed_amount),

@@ -1090,7 +1090,7 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({ user }) => {
 
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: '#64748b' }}>Financed Item:</span>
-                <span style={{ color: '#0f172a' }}>Smart Device / Handset</span>
+                <span style={{ color: '#0f172a' }}>{selectedReceipt.loan?.financedDevice || 'Not provided'}</span>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -1158,7 +1158,7 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({ user }) => {
                   </div>
                   {selectedReceipt.allocations.map((a: any) => (
                     <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 2 }}>
-                      <span>Inst #{a.installmentNumber} (P: {formatINR(a.principalComponent)}, I: {formatINR(a.interestComponent)}):</span>
+                      <span>Inst #{a.installmentNumber} (P: {formatINR(a.principalComponent)}, I: {formatINR(a.interestComponent)}{a.penaltyComponent > 0 ? `, Penalty: ${formatINR(a.penaltyComponent)}` : ''}):</span>
                       <span className="mono font-bold">{formatINR(a.totalAmount)}</span>
                     </div>
                   ))}

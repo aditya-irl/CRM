@@ -66,6 +66,10 @@ export interface IDealerDashboardMetrics {
     outstandingBalance: number;
     status: string;
     disbursementDate: string;
+    deviceBrand?: string | null;
+    deviceModel?: string | null;
+    deviceName?: string | null;
+    imei1?: string | null;
   }>;
   recentCollections: Array<{
     id: string;
@@ -831,6 +835,9 @@ export interface IPaymentDetail extends IPayment {
   loanOutstanding?: number;
   loanStatus?: string;
   financedItem?: string;
+  deviceBrand?: string | null;
+  deviceModel?: string | null;
+  deviceName?: string | null;
   customer?: {
     id: string;
     name: string;
@@ -845,6 +852,10 @@ export interface IPaymentDetail extends IPayment {
     principalAmount?: number;
     outstandingBalance?: number;
     status?: string;
+    financedDevice?: string;
+    deviceBrand?: string | null;
+    deviceModel?: string | null;
+    deviceName?: string | null;
   };
   dealer?: {
     id: string;
@@ -1066,5 +1077,41 @@ export interface IFinanceReportResponse {
   limit: number;
   totalPages: number;
 }
+
+export interface IPaymentPreview {
+  loanId: string;
+  loanAccountNo: string;
+  customerId: string;
+  customerName: string;
+  installmentId: string | null;
+  installmentNumber: number | null;
+  installmentAmount: number;
+  penaltyAmount: number;
+  daysOverdue: number;
+  totalDue: number;
+  alreadyPaid: number;
+  remainingAmount: number;
+  paymentAmount: number;
+  remainingAfterPayment: number;
+  allocationPreview: {
+    paymentAmount: number;
+    penaltyAllocated: number;
+    principalInterestAllocated: number;
+    remainingOutstanding: number;
+    newEmiStatus: string | null;
+    allocatedInstallments: Array<{
+      emiId: string;
+      installmentNumber: number;
+      allocatedAmount: number;
+      allocatedToPenalty: number;
+      allocatedToPrincipalInterest: number;
+      remainingPenalty: number;
+      newPaidAmount: number;
+      newRemainingAmount: number;
+      newStatus: string;
+    }>;
+  };
+}
+
 
 

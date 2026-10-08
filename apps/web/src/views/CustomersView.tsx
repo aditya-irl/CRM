@@ -723,11 +723,11 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
                       const rawStatus = loan.deviceStatus || (loan as any).device_status || (rawBrand || rawModel ? 'ACTIVE' : null);
 
                       const hasDevice = Boolean(rawName || rawBrand || rawModel || rawImei1);
-                      const deviceName = hasDevice ? (rawName || `${rawBrand || ''} ${rawModel || ''}`.trim() || 'Financed Device') : 'Device details unavailable';
-                      const deviceBrand = rawBrand || '—';
-                      const deviceModel = rawModel || '—';
-                      const imei1 = rawImei1 || '—';
-                      const imei2 = rawImei2 || '—';
+                      const deviceName = hasDevice ? (rawName || `${rawBrand || ''} ${rawModel || ''}`.trim() || 'Not provided') : 'Not provided';
+                      const deviceBrand = rawBrand || 'Not provided';
+                      const deviceModel = rawModel || 'Not provided';
+                      const imei1 = rawImei1 || 'Not provided';
+                      const imei2 = rawImei2 || 'Not provided';
                       const deviceStatus = rawStatus || (hasDevice ? 'ACTIVE' : 'Unavailable');
                       const retailPrice = Number((loan as any).retailPrice || loan.principalAmount);
                       const downPayment = Number(loan.downPayment || 0);
