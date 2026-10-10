@@ -64,10 +64,20 @@ export class EMIService {
     const params: any[] = [];
     let paramIndex = 1;
 
-    // Agent assignment scoping: strictly assigned loans only
+    // Agent assignment scoping: strictly assigned loans or active collection assignments
     if (user.role === UserRole.COLLECTION_AGENT) {
-      sql += ` AND l.assigned_agent_id = $${paramIndex++}`;
+      sql += ` AND (
+        l.assigned_agent_id = $${paramIndex}
+        OR EXISTS (
+          SELECT 1 FROM collection_assignments ca
+          WHERE ca.agent_id = $${paramIndex}
+            AND (ca.loan_id = l.id OR ca.customer_id = l.customer_id OR ca.area_route = c.area_route)
+            AND ca.is_active = TRUE
+            AND (ca.effective_to IS NULL OR ca.effective_to >= CURRENT_DATE)
+        )
+      )`;
       params.push(user.id);
+      paramIndex++;
     }
 
     const filterVal = (filters.status || '').toUpperCase();

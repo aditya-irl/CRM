@@ -350,6 +350,25 @@ export const LoansView: React.FC<LoansViewProps> = ({
     }
   };
 
+  const handleDisburseLoan = async (loanId: string) => {
+    if (!window.confirm('Are you sure you want to disburse and activate this approved loan? This will activate the EMI schedule and enable payment collection.')) {
+      return;
+    }
+    setSubmittingDecision(true);
+    try {
+      await ApiClient.disburseLoan(loanId);
+      alert('Loan disbursed and activated successfully. Payment collection is now available.');
+      if (selectedLoanDetail && selectedLoanDetail.loan.id === loanId) {
+        handleViewLoan(loanId, loanModalTab);
+      }
+      loadData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to disburse loan');
+    } finally {
+      setSubmittingDecision(false);
+    }
+  };
+
   const handleOpenRejectModal = (loan: any) => {
     setRejectingLoan(loan);
     setRejectionReason('');
@@ -801,6 +820,17 @@ export const LoansView: React.FC<LoansViewProps> = ({
                               </button>
                             </>
                           ) : null}
+                          {statusStr === 'APPROVED' && (currentUser?.role === UserRole.SUPER_ADMIN || currentUser?.role === UserRole.ADMIN || currentUser?.role === UserRole.BRANCH_MANAGER) ? (
+                            <button
+                              onClick={() => handleDisburseLoan(loan.id)}
+                              className="btn btn-sm btn-primary"
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                              title="Disburse and activate loan"
+                              disabled={submittingDecision}
+                            >
+                              Disburse
+                            </button>
+                          ) : null}
                           <button
                             onClick={() => handleViewLoan(loan.id, 'schedule')}
                             className="btn btn-secondary btn-sm"
@@ -1242,10 +1272,45 @@ export const LoansView: React.FC<LoansViewProps> = ({
                 </button>
               </div>
 
-              {(currentUser?.role === UserRole.SUPER_ADMIN ||
-                currentUser?.role === UserRole.ADMIN ||
-                (currentUser?.role === UserRole.DEALER &&
-                  (selectedLoanDetail.loan.dealerId ?? selectedLoanDetail.loan.dealer_id) === currentUser.dealerId)) && (
+              {/* If APPROVED, show Disburse button for authorized roles & Pending Activation banner */}
+              {selectedLoanDetail.loan.status === 'APPROVED' && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    width: '100%',
+                    padding: '8px 12px',
+                    marginBottom: 10,
+                    background: 'rgba(217, 119, 6, 0.1)',
+                    border: '1px solid var(--warning, #d97706)',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: 12,
+                  }}
+                >
+                  <span style={{ color: 'var(--warning-text, #d97706)', fontWeight: 600 }}>
+                    Loan is APPROVED — Pending Disbursement & Activation before payment collection can begin.
+                  </span>
+                  {(currentUser?.role === UserRole.SUPER_ADMIN ||
+                    currentUser?.role === UserRole.ADMIN ||
+                    currentUser?.role === UserRole.BRANCH_MANAGER) && (
+                    <button
+                      type="button"
+                      onClick={() => handleDisburseLoan(selectedLoanDetail.loan.id)}
+                      className="btn btn-sm btn-primary"
+                      disabled={submittingDecision}
+                    >
+                      {submittingDecision ? 'Disbursing...' : 'Disburse & Activate'}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {selectedLoanDetail.loan.status === 'ACTIVE' &&
+                (currentUser?.role === UserRole.SUPER_ADMIN ||
+                  currentUser?.role === UserRole.ADMIN ||
+                  (currentUser?.role === UserRole.DEALER &&
+                    (selectedLoanDetail.loan.dealerId ?? selectedLoanDetail.loan.dealer_id) === currentUser.dealerId)) && (
                 <button
                   type="button"
                   onClick={() => {
@@ -1336,7 +1401,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
                           </td>
                           <td style={{ textAlign: 'right' }}>
                             <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                              {inst.status !== 'PAID' && remainingAmount > 0 && (
+                              {selectedLoanDetail.loan.status === 'ACTIVE' && inst.status !== 'PAID' && remainingAmount > 0 && (
                                 <button
                                   type="button"
                                   onClick={() => {

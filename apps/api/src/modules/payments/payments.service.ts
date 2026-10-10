@@ -22,6 +22,7 @@ import {
 import { AppError, NotFoundError, ForbiddenError } from '../../middlewares/error.middleware';
 import { AuthenticatedUser } from '../../middlewares/auth.middleware';
 import { AuditService } from '../audit/audit.service';
+import { SettingsService } from '../settings/settings.service';
 
 export class PaymentService {
   /**
@@ -83,6 +84,7 @@ export class PaymentService {
         const receipt = await this.getReceipt(existing.id, user);
         return {
           ...receipt,
+          id: existing.id,
           isIdempotentReplay: true,
         };
       }
@@ -228,7 +230,7 @@ export class PaymentService {
 
         // 4. Overpayment Validation against Loan Outstanding
         const loanOutstanding = new Decimal(loan.outstanding_balance);
-        const paymentAmount = new Decimal(data.amount);
+        const inputAmount = new Decimal(data.amount);
 
         // Penalty Handling & Backend Validation
         let penaltyAmount = new Decimal(0);
@@ -244,11 +246,7 @@ export class PaymentService {
 
         if (hasManualPenalty && penaltyAmount.greaterThan(0)) {
           if (user.role === UserRole.DEALER) {
-            const settingRes = await client.query(
-              `SELECT setting_value FROM system_settings WHERE setting_key = $1`,
-              [SYSTEM_SETTING_KEYS.ALLOW_DEALER_PENALTY]
-            );
-            const allow = settingRes.rows.length > 0 && settingRes.rows[0].setting_value === 'true';
+            const allow = await SettingsService.isDealerPenaltyAllowed();
             if (!allow) {
               throw new ForbiddenError('Dealer late-payment penalty creation is disabled by Super Admin');
             }
@@ -282,15 +280,29 @@ export class PaymentService {
           ) || installmentsRes.rows[0];
         }
 
-        // Overpayment check:
-        if (hasManualPenalty) {
+        // Determine P&I paymentAmount vs totalPaymentCollected.
+        // Do not double-charge penalty if caller already sent gross collected amount in data.amount.
+        let paymentAmount: Decimal;
+        let totalPaymentCollected: Decimal;
+
+        if (hasManualPenalty && penaltyAmount.greaterThan(0)) {
+          if (inputAmount.greaterThan(loanOutstanding) && inputAmount.minus(penaltyAmount).lessThanOrEqualTo(loanOutstanding)) {
+            paymentAmount = inputAmount.minus(penaltyAmount);
+            totalPaymentCollected = inputAmount;
+          } else {
+            paymentAmount = inputAmount;
+            totalPaymentCollected = inputAmount.plus(penaltyAmount);
+          }
+
           if (paymentAmount.greaterThan(loanOutstanding)) {
             throw new AppError(
-              `Payment amount ₹${data.amount} exceeds outstanding loan balance ₹${loan.outstanding_balance}`
+              `Payment amount ₹${paymentAmount.toNumber()} exceeds outstanding loan balance ₹${loan.outstanding_balance}`
             );
           }
         } else {
-          // If no manual penalty was specified, ensure payment amount does not exceed loan balance plus pre-existing penalties
+          paymentAmount = inputAmount;
+          totalPaymentCollected = inputAmount;
+
           const totalExistingPenalties = installmentsRes.rows.reduce(
             (sum: Decimal, r: any) => sum.plus(new Decimal(r.penalty_amount || 0)),
             new Decimal(0)
@@ -305,11 +317,6 @@ export class PaymentService {
 
         if (hasManualPenalty && penaltyAmount.greaterThan(0)) {
           if (targetInstForPenalty) {
-            const exp = new Decimal(targetInstForPenalty.expected_amount);
-            if (penaltyAmount.greaterThan(exp.times(3))) {
-              throw new AppError('Penalty amount exceeds authorized maximum', 400);
-            }
-
             // Create emi_penalties record for audit & ledger compliance
             const penaltyId = uuidv4();
             await client.query(
@@ -343,8 +350,6 @@ export class PaymentService {
           status: r.status,
         }));
 
-        const totalPaymentCollected = hasManualPenalty ? paymentAmount.plus(penaltyAmount) : paymentAmount;
-
         // 6. Run Deterministic Waterfall Allocation
         const allocation = allocatePaymentWaterfall(
           totalPaymentCollected.toNumber(),
@@ -353,12 +358,15 @@ export class PaymentService {
           businessToday
         );
 
-        // 7. Generate Atomic Sequential Receipt Number
-        const countRes = await client.query(
-          `SELECT COUNT(*) as count FROM payments WHERE receipt_number LIKE $1`,
+        // 7. Generate Atomic Sequential Receipt Number (advisory lock prevents concurrent collisions)
+        await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`receipt_${datePrefix}`]);
+        const maxRes = await client.query(
+          `SELECT COALESCE(MAX(CAST(SPLIT_PART(receipt_number, '-', 3) AS INTEGER)), 1000) as max_seq
+           FROM payments
+           WHERE receipt_number LIKE $1`,
           [`RCP-${datePrefix}-%`]
         );
-        const seqNumber = 1001 + parseInt(countRes.rows[0].count, 10);
+        const seqNumber = parseInt(maxRes.rows[0].max_seq, 10) + 1;
         const receiptNumber = `RCP-${datePrefix}-${seqNumber}`;
         const paymentId = uuidv4();
 
@@ -444,9 +452,10 @@ export class PaymentService {
           }
         }
 
-        // 10. Update Loan Balances
+        // 10. Update Loan Balances:
+        // Outstanding balance decreases by the principal & interest satisfied, NOT by the penalty!
         const newTotalPaid = new Decimal(loan.total_paid).plus(totalPaymentCollected).toNumber();
-        const newOutstanding = allocation.newLoanOutstanding;
+        const newOutstanding = Decimal.max(0, loanOutstanding.minus(allocation.totalAllocatedToPrincipalInterest)).toDecimalPlaces(2, Decimal.ROUND_HALF_EVEN).toNumber();
         const newLoanStatus = newOutstanding <= 0 ? LoanStatus.CLOSED : loan.status;
 
         await client.query(
@@ -480,6 +489,7 @@ export class PaymentService {
         });
 
         return {
+          id: paymentId,
           paymentId,
           receiptNumber,
           loanId: loan.id,
@@ -544,6 +554,7 @@ export class PaymentService {
           const receipt = await this.getReceipt(existing.id, user);
           return {
             ...receipt,
+            id: existing.id,
             isIdempotentReplay: true,
           };
         }
@@ -876,6 +887,10 @@ export class PaymentService {
     }
 
     const loan = loanRes.rows[0];
+
+    if (loan.status !== LoanStatus.ACTIVE) {
+      throw new AppError(`Loan is not in an active status for payment collection (current status: ${loan.status})`);
+    }
 
     // Server-side RLAC
     if (user.role === UserRole.DEALER) {

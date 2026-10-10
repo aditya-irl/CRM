@@ -55,9 +55,27 @@ export function initDatabase() {
   try {
     const tableInfo = db.pragma('table_info(loans)') as Array<{ name: string }>;
     if (tableInfo && tableInfo.length > 0) {
-      const hasDealerId = tableInfo.some((col) => col.name === 'dealer_id');
-      if (!hasDealerId) {
+      const colNames = tableInfo.map((c) => c.name);
+      if (!colNames.includes('dealer_id')) {
         db.exec('ALTER TABLE loans ADD COLUMN dealer_id TEXT REFERENCES dealers(id);');
+      }
+      if (!colNames.includes('device_brand')) {
+        db.exec('ALTER TABLE loans ADD COLUMN device_brand TEXT;');
+      }
+      if (!colNames.includes('device_model')) {
+        db.exec('ALTER TABLE loans ADD COLUMN device_model TEXT;');
+      }
+      if (!colNames.includes('device_name')) {
+        db.exec('ALTER TABLE loans ADD COLUMN device_name TEXT;');
+      }
+      if (!colNames.includes('imei1')) {
+        db.exec('ALTER TABLE loans ADD COLUMN imei1 TEXT;');
+      }
+      if (!colNames.includes('imei2')) {
+        db.exec('ALTER TABLE loans ADD COLUMN imei2 TEXT;');
+      }
+      if (!colNames.includes('device_status')) {
+        db.exec("ALTER TABLE loans ADD COLUMN device_status TEXT DEFAULT 'ACTIVE';");
       }
     }
   } catch (err) {

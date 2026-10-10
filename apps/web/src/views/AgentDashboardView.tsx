@@ -655,6 +655,7 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
             customerCode: selectedItemForPayment.customerCode,
             outstandingBalance: selectedItemForPayment.totalOutstandingLoan,
             emiAmount: selectedItemForPayment.emiAmount,
+            status: 'ACTIVE',
           }}
           preselectedInstallment={{
             id: selectedItemForPayment.installmentId,

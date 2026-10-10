@@ -182,6 +182,10 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     penaltyAmount?: string | number
   ) => {
     if (!loanId) return;
+    if (selectedLoan?.status && selectedLoan.status !== 'ACTIVE') {
+      setPaymentPreview(null);
+      return;
+    }
     const reqId = ++activeRequestIdRef.current;
     setLoadingPreview(true);
     try {
@@ -979,6 +983,31 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                 </div>
               )}
 
+              {/* Inactive Loan Warning Banner */}
+              {selectedLoan && selectedLoan.status && selectedLoan.status !== 'ACTIVE' && (
+                <div
+                  style={{
+                    background: 'rgba(239, 68, 68, 0.1)',
+                    border: '1px solid var(--danger, #ef4444)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: 12,
+                    fontSize: 12,
+                    color: 'var(--danger-text, #ef4444)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}
+                >
+                  <AlertCircle size={16} />
+                  <span>
+                    Payment collection unavailable: Loan status is <strong>{selectedLoan.status}</strong>.
+                    {selectedLoan.status === 'APPROVED'
+                      ? ' This loan must be disbursed & activated before payments can be collected.'
+                      : ' Payments can only be collected on ACTIVE loans.'}
+                  </span>
+                </div>
+              )}
+
               {/* Installment selection if multiple */}
               {installments.length > 1 && (
                 <div>
@@ -1526,7 +1555,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                 <button
                   type="submit"
                   className="btn btn-primary"
-                  disabled={submitting || loadingLoans || loadingPreview}
+                  disabled={submitting || loadingLoans || loadingPreview || Boolean(selectedLoan?.status && selectedLoan.status !== 'ACTIVE')}
                   style={{ display: 'flex', alignItems: 'center', gap: 6 }}
                 >
                   <CheckCircle2 size={15} />

@@ -405,6 +405,7 @@ export const QueueView: React.FC = () => {
             customerName: selectedItemForPayment.customerName,
             customerCode: selectedItemForPayment.customerCode,
             outstandingBalance: selectedItemForPayment.totalOutstandingLoan,
+            status: 'ACTIVE',
           }}
           preselectedInstallment={{
             id: selectedItemForPayment.installmentId,

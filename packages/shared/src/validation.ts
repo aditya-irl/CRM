@@ -204,8 +204,15 @@ export const recordPaymentSchema = z.object({
   loanId: z.string().uuid('Invalid loan ID'),
   emiId: z.string().uuid('Invalid EMI ID').optional().nullable(),
   customerId: z.string().uuid('Invalid customer ID'),
-  amount: z.number().positive('Payment amount must be greater than 0'),
-  penaltyAmount: z.number().nonnegative('Penalty amount cannot be negative').optional().nullable(),
+  amount: z.preprocess((val) => {
+    if (typeof val === 'string' && val.trim() !== '') return Number(val);
+    return val;
+  }, z.number().positive('Payment amount must be greater than 0')),
+  penaltyAmount: z.preprocess((val) => {
+    if (val === undefined || val === null || val === '') return undefined;
+    if (typeof val === 'string' && val.trim() !== '') return Number(val);
+    return val;
+  }, z.number().nonnegative('Penalty amount cannot be negative')).optional().nullable(),
   paymentMode: z.nativeEnum(PaymentMode).default(PaymentMode.CASH),
   collectionSource: z.nativeEnum(CollectionSource).optional(),
   dealerId: z.string().uuid('Invalid dealer ID').optional().nullable(),
