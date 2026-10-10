@@ -23,10 +23,8 @@ import {
   FileText,
   X,
   Share2,
-  Receipt as ReceiptIcon,
-  Store,
-  UserCheck,
 } from 'lucide-react';
+import { RecordPaymentModal } from '../components/RecordPaymentModal';
 
 export const QueueView: React.FC = () => {
   const [queue, setQueue] = useState<IAgentQueueItem[]>([]);
@@ -40,25 +38,12 @@ export const QueueView: React.FC = () => {
   // Modals state
   const [selectedItemForCall, setSelectedItemForCall] = useState<IAgentQueueItem | null>(null);
   const [selectedItemForPayment, setSelectedItemForPayment] = useState<IAgentQueueItem | null>(null);
-  const [activeReceipt, setActiveReceipt] = useState<any | null>(null);
 
   // Call form state
   const [callOutcome, setCallOutcome] = useState<CallOutcome>(CallOutcome.PROMISED_TO_PAY);
   const [promisedDate, setPromisedDate] = useState('');
   const [callNotes, setCallNotes] = useState('');
   const [submittingCall, setSubmittingCall] = useState(false);
-
-  // Payment form state
-  const [paymentAmount, setPaymentAmount] = useState<number>(0);
-  const [paymentMode, setPaymentMode] = useState<PaymentMode>(PaymentMode.CASH);
-  const [collectionSource, setCollectionSource] = useState<CollectionSource>(CollectionSource.DIRECT_CUSTOMER);
-  const [selectedDealerId, setSelectedDealerId] = useState<string>('');
-  const [selectedAgentId, setSelectedAgentId] = useState<string>('');
-  const [dealersList, setDealersList] = useState<IDealer[]>([]);
-  const [agentsList, setAgentsList] = useState<any[]>([]);
-  const [refNumber, setRefNumber] = useState('');
-  const [paymentNotes, setPaymentNotes] = useState('');
-  const [submittingPayment, setSubmittingPayment] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -117,66 +102,6 @@ export const QueueView: React.FC = () => {
 
   const handleOpenPaymentModal = (item: IAgentQueueItem) => {
     setSelectedItemForPayment(item);
-    const fullDue = item.remainingAmount + item.penaltyAmount;
-    setPaymentAmount(fullDue);
-    setPaymentMode(PaymentMode.CASH);
-    setRefNumber('');
-    setPaymentNotes('');
-
-    const currentUser = ApiClient.getUser();
-    if (currentUser?.role === 'COLLECTION_AGENT') {
-      setCollectionSource(CollectionSource.RECOVERY_AGENT);
-      setSelectedAgentId(currentUser.id);
-    } else {
-      setCollectionSource(CollectionSource.DIRECT_CUSTOMER);
-      setSelectedDealerId('');
-      setSelectedAgentId('');
-      // Fetch active dealers and collection agents if not loaded
-      if (dealersList.length === 0) {
-        ApiClient.getDealers(undefined, 'ACTIVE').then(setDealersList).catch(console.error);
-      }
-      if (agentsList.length === 0) {
-        ApiClient.getUsers('COLLECTION_AGENT', 'ACTIVE').then(setAgentsList).catch(console.error);
-      }
-    }
-  };
-
-  const handleSubmitPayment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedItemForPayment) return;
-    if (collectionSource === CollectionSource.DEALER && !selectedDealerId) {
-      alert('Please select a partner store');
-      return;
-    }
-    if (collectionSource === CollectionSource.RECOVERY_AGENT && !selectedAgentId) {
-      alert('Please select a recovery agent');
-      return;
-    }
-
-    setSubmittingPayment(true);
-    try {
-      const idempotencyKey = `WEB_${selectedItemForPayment.installmentId}_${Date.now()}`;
-      const res = await ApiClient.recordPayment({
-        loanId: selectedItemForPayment.loanId,
-        emiId: selectedItemForPayment.installmentId,
-        customerId: selectedItemForPayment.customerId,
-        amount: Number(paymentAmount),
-        paymentMode,
-        collectionSource,
-        dealerId: collectionSource === CollectionSource.DEALER ? selectedDealerId : undefined,
-        agentId: collectionSource === CollectionSource.RECOVERY_AGENT ? selectedAgentId : undefined,
-        referenceNumber: refNumber || undefined,
-        notes: paymentNotes || undefined,
-        idempotencyKey,
-      });
-      setSelectedItemForPayment(null);
-      setActiveReceipt(res);
-      loadData();
-    } catch (err: any) {
-      alert(err.message || 'Failed to record payment');
-    } finally {
-      setSubmittingPayment(false);
-    }
   };
 
   const sendWhatsAppReminder = (item: IAgentQueueItem) => {
@@ -463,188 +388,35 @@ export const QueueView: React.FC = () => {
         </div>
       )}
 
-      {/* Collect Payment Modal */}
+      {/* Record Payment Modal for Collection Queue */}
       {selectedItemForPayment && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ width: '100%', maxWidth: 440, padding: 24 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <h3 style={{ fontSize: 16, fontWeight: 700 }}>Record Payment Collection</h3>
-              <button onClick={() => setSelectedItemForPayment(null)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                <X size={18} />
-              </button>
-            </div>
-
-            <div style={{ background: 'var(--bg-surface-secondary)', padding: 12, borderRadius: 'var(--radius-sm)', marginBottom: 14, fontSize: 12 }}>
-              <div>Borrower: <strong>{selectedItemForPayment.customerName}</strong></div>
-              <div>Loan Acc: <span className="mono">{selectedItemForPayment.loanAccountNo}</span></div>
-              <div style={{ marginTop: 4 }}>
-                Outstanding Loan: <span className="mono">{formatINR(selectedItemForPayment.totalOutstandingLoan)}</span>
-              </div>
-            </div>
-
-            <form onSubmit={handleSubmitPayment} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                  Payment Amount (₹)
-                </label>
-                <input
-                  type="number"
-                  step="1"
-                  className="form-input mono"
-                  style={{ fontSize: 16, fontWeight: 700 }}
-                  value={paymentAmount}
-                  onChange={(e) => setPaymentAmount(Number(e.target.value))}
-                  onBlur={(e) => setPaymentAmount(Number(normalizeNumericLeadingZeros(e.target.value)))}
-                  required
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                  Collection Through
-                </label>
-                <select
-                  className="form-select"
-                  value={collectionSource}
-                  onChange={(e) => {
-                    const src = e.target.value as CollectionSource;
-                    setCollectionSource(src);
-                    if (src === CollectionSource.DEALER && !selectedDealerId && dealersList.length > 0) {
-                      setSelectedDealerId(dealersList[0].id);
-                    }
-                    if (src === CollectionSource.RECOVERY_AGENT && !selectedAgentId && agentsList.length > 0) {
-                      setSelectedAgentId(agentsList[0].id);
-                    }
-                  }}
-                >
-                  <option value={CollectionSource.DIRECT_CUSTOMER}>Direct Customer</option>
-                  <option value={CollectionSource.DEALER}>Partner Store</option>
-                  <option value={CollectionSource.RECOVERY_AGENT}>Recovery Agent</option>
-                </select>
-              </div>
-
-              {collectionSource === CollectionSource.DEALER && (
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                    Partner Store (Active Stores Only)
-                  </label>
-                  <select
-                    className="form-select"
-                    value={selectedDealerId}
-                    onChange={(e) => setSelectedDealerId(e.target.value)}
-                    required
-                  >
-                    <option value="">-- Select Partner Store --</option>
-                    {dealersList.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.storeName} ({d.dealerCode}) - {d.areaCity}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {collectionSource === CollectionSource.RECOVERY_AGENT && (
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                    Recovery Agent
-                  </label>
-                  <select
-                    className="form-select"
-                    value={selectedAgentId}
-                    onChange={(e) => setSelectedAgentId(e.target.value)}
-                    required
-                  >
-                    <option value="">-- Select Recovery Agent --</option>
-                    {agentsList.map((ag) => (
-                      <option key={ag.id} value={ag.id}>
-                        {ag.fullName || ag.full_name} ({ag.phone})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                  Payment Mode
-                </label>
-                <select
-                  className="form-select"
-                  value={paymentMode}
-                  onChange={(e) => setPaymentMode(e.target.value as PaymentMode)}
-                >
-                  <option value={PaymentMode.CASH}>Cash</option>
-                  <option value={PaymentMode.UPI}>UPI (QR / App)</option>
-                  <option value={PaymentMode.BANK_TRANSFER}>Bank Transfer (NEFT/IMPS)</option>
-                </select>
-              </div>
-
-              {paymentMode !== PaymentMode.CASH && (
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                    Reference / UTR Number
-                  </label>
-                  <input
-                    type="text"
-                    className="form-input mono"
-                    placeholder="e.g. UPI Ref / Txn ID"
-                    value={refNumber}
-                    onChange={(e) => setRefNumber(e.target.value)}
-                  />
-                </div>
-              )}
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 6 }}>
-                <button type="button" onClick={() => setSelectedItemForPayment(null)} className="btn btn-secondary">
-                  Cancel
-                </button>
-                <button type="submit" disabled={submittingPayment} className="btn btn-success">
-                  {submittingPayment ? 'Processing...' : 'Settle & Generate Receipt'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Active Receipt Result Popup */}
-      {activeReceipt && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ width: '100%', maxWidth: 420, padding: 24, textAlign: 'center' }}>
-            <CheckCircle2 size={36} color="var(--success)" style={{ margin: '0 auto 8px' }} />
-            <h3 style={{ fontSize: 17, fontWeight: 800 }}>PAYMENT COLLECTED</h3>
-            <div className="mono" style={{ color: 'var(--primary)', fontWeight: 700, fontSize: 13, marginTop: 2 }}>
-              {activeReceipt.receiptNumber}
-            </div>
-
-            <div
-              style={{
-                background: 'var(--bg-surface-secondary)',
-                padding: 12,
-                borderRadius: 'var(--radius-sm)',
-                margin: '14px 0',
-                fontSize: 13,
-                textAlign: 'left',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 6,
-              }}
-            >
-              <div>Loan Acc: <span className="mono">{activeReceipt.loanAccountNo}</span></div>
-              <div style={{ fontWeight: 700, color: 'var(--success-text)' }}>
-                Amount: {formatINR(activeReceipt.amountCollected)}
-              </div>
-              <div>
-                Remaining Balance: <span className="mono">{formatINR(activeReceipt.remainingLoanOutstanding)}</span>
-              </div>
-            </div>
-
-            <button onClick={() => setActiveReceipt(null)} className="btn btn-primary" style={{ width: '100%' }}>
-              Done
-            </button>
-          </div>
-        </div>
+        <RecordPaymentModal
+          isOpen={!!selectedItemForPayment}
+          onClose={() => setSelectedItemForPayment(null)}
+          onSuccess={(_receipt) => {
+            setSelectedItemForPayment(null);
+            loadData();
+          }}
+          user={ApiClient.getUser() || undefined}
+          preselectedLoan={{
+            id: selectedItemForPayment.loanId,
+            loanAccountNo: selectedItemForPayment.loanAccountNo,
+            customerId: selectedItemForPayment.customerId,
+            customerName: selectedItemForPayment.customerName,
+            customerCode: selectedItemForPayment.customerCode,
+            outstandingBalance: selectedItemForPayment.totalOutstandingLoan,
+          }}
+          preselectedInstallment={{
+            id: selectedItemForPayment.installmentId,
+            loanId: selectedItemForPayment.loanId,
+            installmentNumber: selectedItemForPayment.installmentNumber,
+            dueDate: selectedItemForPayment.dueDate,
+            expectedAmount: selectedItemForPayment.expectedAmount,
+            remainingAmount: selectedItemForPayment.remainingAmount,
+            penaltyAmount: selectedItemForPayment.penaltyAmount,
+            status: selectedItemForPayment.status,
+          }}
+        />
       )}
     </div>
   );

@@ -52,7 +52,9 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   dealerStoreName,
 }) => {
   const isDealer = isDealerContext || user?.role === UserRole.DEALER;
+  const isAgent = user?.role === UserRole.COLLECTION_AGENT;
   const effectiveDealerId = dealerId || user?.dealerId;
+  const effectiveAgentId = isAgent ? user?.id : '';
 
   // Form State
   const [activeLoans, setActiveLoans] = useState<any[]>([]);
@@ -78,10 +80,14 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   const [penaltyError, setPenaltyError] = useState<string | null>(null);
   const [paymentMode, setPaymentMode] = useState<PaymentMode>(PaymentMode.CASH);
   const [collectionSource, setCollectionSource] = useState<CollectionSource>(
-    isDealer ? CollectionSource.DEALER : CollectionSource.DIRECT_CUSTOMER
+    isDealer
+      ? CollectionSource.DEALER
+      : isAgent
+      ? CollectionSource.RECOVERY_AGENT
+      : CollectionSource.DIRECT_CUSTOMER
   );
   const [selectedDealerId, setSelectedDealerId] = useState<string>(effectiveDealerId || '');
-  const [selectedAgentId, setSelectedAgentId] = useState<string>('');
+  const [selectedAgentId, setSelectedAgentId] = useState<string>(effectiveAgentId || '');
   const [dealersList, setDealersList] = useState<any[]>([]);
   const [agentsList, setAgentsList] = useState<any[]>([]);
 
@@ -127,8 +133,8 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       loadActiveLoans();
     }
 
-    // Load dealers and agents for admin selection if not dealer
-    if (!isDealer) {
+    // Load dealers and agents for admin selection if not dealer or agent
+    if (!isDealer && !isAgent) {
       ApiClient.getDealers(undefined, 'ACTIVE')
         .then(setDealersList)
         .catch(() => []);
@@ -136,7 +142,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
         .then(setAgentsList)
         .catch(() => []);
     }
-  }, [isOpen, preselectedLoan, isDealer, effectiveDealerId]);
+  }, [isOpen, preselectedLoan, isDealer, isAgent, effectiveDealerId, effectiveAgentId]);
 
   const loadActiveLoans = async () => {
     setLoadingLoans(true);
@@ -367,7 +373,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       return;
     }
 
-    if (collectionSource === CollectionSource.RECOVERY_AGENT && !selectedAgentId) {
+    if (!isAgent && collectionSource === CollectionSource.RECOVERY_AGENT && !selectedAgentId) {
       setError('Please select a recovery agent');
       return;
     }
@@ -398,7 +404,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
 
     setSubmitting(true);
     try {
-      const idempotencyKey = `${isDealer ? 'DEALER' : 'ADMIN'}_${selectedLoan.id}_${Date.now()}`;
+      const idempotencyKey = `${isDealer ? 'DEALER' : isAgent ? 'AGT' : 'ADMIN'}_${selectedLoan.id}_${Date.now()}`;
       const payload: any = {
         loanId: selectedLoan.id,
         emiId: selectedInstallmentId || undefined,
@@ -408,9 +414,9 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
           ? (parseFloat(penaltyAmountStr) || 0)
           : undefined,
         paymentMode,
-        collectionSource,
+        collectionSource: isAgent ? CollectionSource.RECOVERY_AGENT : collectionSource,
         dealerId: collectionSource === CollectionSource.DEALER ? (effectiveDealerId || selectedDealerId) : undefined,
-        agentId: collectionSource === CollectionSource.RECOVERY_AGENT ? selectedAgentId : undefined,
+        agentId: (isAgent || collectionSource === CollectionSource.RECOVERY_AGENT) ? (effectiveAgentId || selectedAgentId) : undefined,
         referenceNumber: referenceNumber.trim() || undefined,
         notes: notes.trim() || undefined,
         idempotencyKey,
@@ -852,11 +858,17 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                 </div>
                 <div>
                   <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
-                    {isDealer ? 'Record Store EMI Payment' : 'Record EMI / Loan Payment'}
+                    {isDealer
+                      ? 'Record Store EMI Payment'
+                      : isAgent
+                      ? 'Record Field Collection Payment'
+                      : 'Record EMI / Loan Payment'}
                   </h3>
                   <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
                     {isDealer
                       ? `Partner Store Collection • ${dealerStoreName || 'Dealer Store'}`
+                      : isAgent
+                      ? `Field Recovery Collection • ${user?.fullName || 'Collection Agent'}`
                       : 'Financial Central Payment Ledger • Super Admin / Finance Ops'}
                   </div>
                 </div>
@@ -1051,14 +1063,8 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                     id="add-penalty-btn"
                     onClick={() => {
                       setIsPenaltyExpanded(true);
-                      const initialPen =
-                        paymentPreview?.calculatedPenalty ?? paymentPreview?.penaltyAmount ?? 0;
-                      const initialStr = String(initialPen);
-                      setPenaltyAmountStr(initialStr);
+                      setPenaltyAmountStr('');
                       setPenaltyError(null);
-                      if (selectedLoanId) {
-                        fetchPreview(selectedLoanId, selectedInstallmentId, paymentAmountStr, initialStr);
-                      }
                     }}
                     className="btn btn-secondary btn-sm"
                     style={{
@@ -1131,44 +1137,6 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                     </button>
                   </div>
 
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      fontSize: 12,
-                    }}
-                  >
-                    <span style={{ color: 'var(--text-secondary)' }}>Days Overdue:</span>
-                    <span
-                      className="mono font-bold"
-                      style={{
-                        color:
-                          (paymentPreview?.daysOverdue ?? 0) > 0
-                            ? 'var(--danger-text)'
-                            : 'inherit',
-                      }}
-                    >
-                      {paymentPreview?.daysOverdue ?? 0} days
-                    </span>
-                  </div>
-
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      fontSize: 12,
-                    }}
-                  >
-                    <span style={{ color: 'var(--text-secondary)' }}>
-                      Calculated Penalty:
-                    </span>
-                    <span className="mono font-bold">
-                      {formatINR(
-                        paymentPreview?.calculatedPenalty ?? paymentPreview?.penaltyAmount ?? 0
-                      )}
-                    </span>
-                  </div>
-
                   <div>
                     <label
                       style={{
@@ -1204,7 +1172,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                         value={penaltyAmountStr}
                         onChange={(e) => handlePenaltyAmountChange(e.target.value)}
                         onBlur={handlePenaltyAmountBlur}
-                        placeholder="e.g. 120"
+                        placeholder="e.g. 150"
                       />
                     </div>
                     {penaltyError && (
@@ -1256,6 +1224,27 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                     </span>
                     <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
                       Collected at store • Unsettled dealer collection
+                    </span>
+                  </div>
+                ) : isAgent ? (
+                  /* Fixed Recovery Agent Badge */
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '8px 12px',
+                      background: 'rgba(59, 130, 246, 0.08)',
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid rgba(59, 130, 246, 0.2)',
+                    }}
+                  >
+                    <span className="badge badge-route" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <UserCheck size={12} />
+                      <span>RECOVERY AGENT</span>
+                    </span>
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                      Field recovery collection • Collected by {user?.fullName || 'Agent'}
                     </span>
                   </div>
                 ) : (

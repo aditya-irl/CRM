@@ -45,6 +45,17 @@ export class PaymentService {
     },
     user: AuthenticatedUser
   ) {
+    console.log('[PaymentService:recordPayment] Request received:', {
+      loanId: data.loanId,
+      customerId: data.customerId,
+      amount: data.amount,
+      penaltyAmount: data.penaltyAmount,
+      paymentMode: data.paymentMode,
+      collectionSource: data.collectionSource,
+      userId: user.id,
+      role: user.role,
+    });
+
     if (data.amount <= 0) {
       throw new AppError('Payment amount must be greater than zero');
     }
@@ -126,8 +137,21 @@ export class PaymentService {
           source = CollectionSource.RECOVERY_AGENT;
           finalAgentId = user.id;
 
-          // Row-Level Access Control (RLAC) for Collection Agents: must be directly assigned to this loan
-          if (!loan.assigned_agent_id || loan.assigned_agent_id !== user.id) {
+          // Row-Level Access Control (RLAC) for Collection Agents: directly assigned or active assignment in collection_assignments
+          let isAssigned = loan.assigned_agent_id === user.id;
+          if (!isAssigned) {
+            const assignRes = await client.query(
+              `SELECT id FROM collection_assignments
+               WHERE agent_id = $1
+                 AND (loan_id = $2 OR customer_id = $3 OR area_route = (SELECT area_route FROM customers WHERE id = $3))
+                 AND is_active = TRUE
+                 AND (effective_to IS NULL OR effective_to >= CURRENT_DATE)
+               LIMIT 1`,
+              [user.id, loan.id, loan.customer_id]
+            );
+            isAssigned = assignRes.rows.length > 0;
+          }
+          if (!isAssigned) {
             throw new ForbiddenError('You are not authorized to collect payments for this customer or loan');
           }
         } else if (user.role === UserRole.DEALER) {
@@ -218,16 +242,7 @@ export class PaymentService {
           hasManualPenalty = true;
         }
 
-        if (paymentAmount.greaterThan(loanOutstanding)) {
-          throw new AppError(
-            `Payment amount ₹${data.amount} exceeds outstanding loan balance ₹${loan.outstanding_balance}`
-          );
-        }
-
         if (hasManualPenalty && penaltyAmount.greaterThan(0)) {
-          if (user.role === UserRole.COLLECTION_AGENT) {
-            throw new ForbiddenError('Collection agents cannot add penalties');
-          }
           if (user.role === UserRole.DEALER) {
             const settingRes = await client.query(
               `SELECT setting_value FROM system_settings WHERE setting_key = $1`,
@@ -267,17 +282,29 @@ export class PaymentService {
           ) || installmentsRes.rows[0];
         }
 
+        // Overpayment check:
+        if (hasManualPenalty) {
+          if (paymentAmount.greaterThan(loanOutstanding)) {
+            throw new AppError(
+              `Payment amount ₹${data.amount} exceeds outstanding loan balance ₹${loan.outstanding_balance}`
+            );
+          }
+        } else {
+          // If no manual penalty was specified, ensure payment amount does not exceed loan balance plus pre-existing penalties
+          const totalExistingPenalties = installmentsRes.rows.reduce(
+            (sum: Decimal, r: any) => sum.plus(new Decimal(r.penalty_amount || 0)),
+            new Decimal(0)
+          );
+          const maxAllowed = loanOutstanding.plus(totalExistingPenalties);
+          if (paymentAmount.greaterThan(maxAllowed)) {
+            throw new AppError(
+              `Payment amount ₹${data.amount} exceeds outstanding loan balance ₹${loan.outstanding_balance}`
+            );
+          }
+        }
+
         if (hasManualPenalty && penaltyAmount.greaterThan(0)) {
           if (targetInstForPenalty) {
-            const dueDate = getBusinessDate(targetInstForPenalty.due_date, 'Asia/Kolkata');
-            const daysDiff = getDaysDifference(dueDate, businessToday);
-            const existingPen = Number(targetInstForPenalty.penalty_amount || 0);
-            if (daysDiff <= 0 && existingPen <= 0) {
-              throw new AppError(
-                `Penalty can only be applied to overdue installments (due date: ${dueDate}, business today: ${businessToday})`,
-                400
-              );
-            }
             const exp = new Decimal(targetInstForPenalty.expected_amount);
             if (penaltyAmount.greaterThan(exp.times(3))) {
               throw new AppError('Penalty amount exceeds authorized maximum', 400);
@@ -471,12 +498,29 @@ export class PaymentService {
           allocatedInstallments: allocation.allocatedPayments,
           remainingLoanOutstanding: newOutstanding,
           loanStatus: newLoanStatus,
+          customer: {
+            id: data.customerId,
+            name: loan.customer_name,
+            code: loan.customer_code,
+          },
+          loan: {
+            id: loan.id,
+            accountNo: loan.loan_account_no,
+            remainingOutstanding: newOutstanding,
+          },
           isIdempotentReplay: false,
         };
       });
 
       return result;
     } catch (err: any) {
+      console.error('[PaymentService:recordPayment] Payment processing failed:', {
+        loanId: data.loanId,
+        customerId: data.customerId,
+        error: err.message,
+        userId: user.id,
+      });
+
       // Handle race condition on duplicate idempotency key
       if (err.code === '23505' && data.idempotencyKey && err.constraint?.includes('idempotency')) {
         const existingRes = await queryPostgres(
@@ -839,7 +883,20 @@ export class PaymentService {
         throw new ForbiddenError('You do not have access to this loan account');
       }
     } else if (user.role === UserRole.COLLECTION_AGENT) {
-      if (!loan.assigned_agent_id || loan.assigned_agent_id !== user.id) {
+      let isAssigned = loan.assigned_agent_id === user.id;
+      if (!isAssigned) {
+        const assignRes = await queryPostgres(
+          `SELECT id FROM collection_assignments
+           WHERE agent_id = $1
+             AND (loan_id = $2 OR customer_id = $3 OR area_route = (SELECT area_route FROM customers WHERE id = $3))
+             AND is_active = TRUE
+             AND (effective_to IS NULL OR effective_to >= CURRENT_DATE)
+           LIMIT 1`,
+          [user.id, loan.id, loan.customer_id]
+        );
+        isAssigned = assignRes.rows.length > 0;
+      }
+      if (!isAssigned) {
         throw new ForbiddenError('You do not have access to this loan account');
       }
     }
@@ -890,19 +947,12 @@ export class PaymentService {
       businessToday,
     });
 
-    const calculatedPenalty = existingPenAmt > 0
-      ? existingPenAmt
-      : (evalResult.daysOverdue > 0 ? evalResult.daysOverdue * 10 : 0);
-
     let penAmt = existingPenAmt;
     const hasManualPenaltyInput = (query as any).penaltyAmount !== undefined && (query as any).penaltyAmount !== null && String((query as any).penaltyAmount).trim() !== '';
     if (hasManualPenaltyInput) {
       const parsedPen = Number((query as any).penaltyAmount);
       if (isNaN(parsedPen) || !isFinite(parsedPen) || parsedPen < 0) {
         throw new AppError('Penalty amount must be a non-negative number', 400);
-      }
-      if (parsedPen > 0 && evalResult.daysOverdue <= 0 && existingPenAmt <= 0) {
-        throw new AppError('Penalty can only be applied to overdue installments', 400);
       }
       penAmt = new Decimal(parsedPen).toDecimalPlaces(2, Decimal.ROUND_HALF_EVEN).toNumber();
     }
@@ -980,7 +1030,6 @@ export class PaymentService {
       installmentNumber: targetInst ? Number(targetInst.installment_number) : null,
       installmentAmount: expAmt,
       penaltyAmount: penAmt,
-      calculatedPenalty,
       daysOverdue: evalResult.daysOverdue,
       totalDue,
       alreadyPaid: paidAmt,

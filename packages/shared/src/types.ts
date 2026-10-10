@@ -1090,7 +1090,6 @@ export interface IPaymentPreview {
   installmentNumber: number | null;
   installmentAmount: number;
   penaltyAmount: number;
-  calculatedPenalty?: number;
   daysOverdue: number;
   totalDue: number;
   alreadyPaid: number;

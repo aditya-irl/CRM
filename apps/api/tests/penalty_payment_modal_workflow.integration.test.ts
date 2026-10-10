@@ -27,6 +27,8 @@ describe('Penalty Payment Modal Workflow Backend Integration Tests', () => {
   let loanId: string;
   let overdueEmiId: string;
   let futureEmiId: string;
+  let nonOverdueLoanId: string;
+  let nonOverdueEmiId: string;
 
   const businessToday = getBusinessDate(undefined, 'Asia/Kolkata');
   const pastDueDate = addDays(businessToday, -12); // 12 days overdue
@@ -41,6 +43,8 @@ describe('Penalty Payment Modal Workflow Backend Integration Tests', () => {
     loanId = uuidv4();
     overdueEmiId = uuidv4();
     futureEmiId = uuidv4();
+    nonOverdueLoanId = uuidv4();
+    nonOverdueEmiId = uuidv4();
 
     // 1. Seed Dealer
     await queryPostgres(
@@ -105,10 +109,33 @@ describe('Penalty Payment Modal Workflow Backend Integration Tests', () => {
         ($5, $2, $3, 2, $6, 5000, 0, 5000, 0, 5000, 0, 'UPCOMING', 0, NOW(), NOW())`,
       [overdueEmiId, loanId, customerId, pastDueDate, futureEmiId, futureDueDate]
     );
+
+    // 7. Seed Non-Overdue Loan
+    await queryPostgres(
+      `INSERT INTO loans (
+        id, customer_id, dealer_id, loan_account_no,
+        principal_amount, down_payment, net_disbursed_amount, total_interest, total_payable,
+        total_paid, outstanding_balance, emi_amount, total_installments,
+        tenure_months, annual_interest_rate, status, disbursement_date, first_emi_date, maturity_date,
+        created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, 5000.00, 0.00, 5000.00, 0.00, 5000.00, 0.00, 5000.00, 5000.00, 1, 1, 0.00, 'ACTIVE', $5, $5, $6, NOW(), NOW())`,
+      [nonOverdueLoanId, customerId, dealerId, `LN-NO-${runId}`, businessToday, futureDueDate]
+    );
+
+    await queryPostgres(
+      `INSERT INTO emi_installments (
+        id, loan_id, customer_id, installment_number, due_date,
+        principal_component, interest_component, expected_amount,
+        paid_amount, remaining_amount, penalty_amount, status, days_overdue,
+        created_at, updated_at
+      ) VALUES 
+        ($1, $2, $3, 1, $4, 5000, 0, 5000, 0, 5000, 0, 'UPCOMING', 0, NOW(), NOW())`,
+      [nonOverdueEmiId, nonOverdueLoanId, customerId, futureDueDate]
+    );
   });
 
   describe('1. Payment Preview Recalculation', () => {
-    test('preview calculates calculatedPenalty for overdue installment (12 days * 10 = ₹120)', async () => {
+    test('preview does NOT auto-calculate penalty when not manually entered', async () => {
       const res = await request(app)
         .get(`/api/v1/payments/preview?loanId=${loanId}&installmentId=${overdueEmiId}&amount=5000`)
         .set('Authorization', `Bearer ${superAdminToken}`);
@@ -117,11 +144,13 @@ describe('Penalty Payment Modal Workflow Backend Integration Tests', () => {
       expect(res.body.success).toBe(true);
       const preview = res.body.data;
       expect(preview.daysOverdue).toBe(12);
-      expect(preview.calculatedPenalty).toBe(120);
+      // Auto-calculated penalty must NOT exist
+      expect(preview.calculatedPenalty).toBeUndefined();
+      expect(preview.penaltyAmount).toBe(0);
       expect(preview.remainingAmount).toBe(5000);
     });
 
-    test('preview updates allocation dynamically when penaltyAmount is passed', async () => {
+    test('preview updates allocation dynamically when manual penaltyAmount is passed', async () => {
       const res = await request(app)
         .get(`/api/v1/payments/preview?loanId=${loanId}&installmentId=${overdueEmiId}&amount=5000&penaltyAmount=120`)
         .set('Authorization', `Bearer ${superAdminToken}`);
@@ -156,23 +185,24 @@ describe('Penalty Payment Modal Workflow Backend Integration Tests', () => {
       expect(JSON.stringify(res.body.error)).toMatch(/Penalty amount cannot be negative/i);
     });
 
-    test('rejects penalty assessment on future non-overdue installment', async () => {
+    test('accepts manual penalty even if installment is not overdue (business discretion)', async () => {
       const res = await request(app)
         .post('/api/v1/payments')
         .set('Authorization', `Bearer ${superAdminToken}`)
         .send({
-          loanId,
-          emiId: futureEmiId,
+          loanId: nonOverdueLoanId,
+          emiId: nonOverdueEmiId,
           customerId,
           amount: 5000,
-          penaltyAmount: 150,
+          penaltyAmount: 50,
           paymentMode: 'CASH',
           collectionSource: 'DIRECT_CUSTOMER',
+          idempotencyKey: `IDEMP_NONOVERDUE_${runId}`,
         });
 
-      expect(res.status).toBe(400);
-      expect(res.body.success).toBe(false);
-      expect(JSON.stringify(res.body.error)).toMatch(/overdue/i);
+      expect(res.status).toBe(201);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.penaltyAmount).toBe(50);
     });
   });
 

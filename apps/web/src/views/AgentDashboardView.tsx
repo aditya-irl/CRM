@@ -9,6 +9,7 @@ import {
   CollectionSource,
   IUser,
 } from '@crm/shared';
+import { RecordPaymentModal } from '../components/RecordPaymentModal';
 import {
   LayoutDashboard,
   Users,
@@ -105,12 +106,6 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
   // Open Payment Modal
   const handleOpenPayment = (item: IAgentQueueItem) => {
     setSelectedItemForPayment(item);
-    const fullDue = (item.remainingAmount || item.expectedAmount || 0) + (item.penaltyAmount || 0);
-    setPaymentAmount(fullDue);
-    setPaymentMode(PaymentMode.CASH);
-    setRefNumber('');
-    setPaymentNotes('');
-    setPaymentError(null);
   };
 
   // Submit Payment using existing payment engine
@@ -644,184 +639,34 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
 
       {/* Record Payment Modal */}
       {selectedItemForPayment && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: 440, width: '100%', padding: 24 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <DollarSign size={20} color="var(--success)" />
-                <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>Record Field Collection</h3>
-              </div>
-              <button onClick={() => setSelectedItemForPayment(null)} className="btn btn-secondary btn-sm">
-                <X size={15} />
-              </button>
-            </div>
-
-            <div
-              style={{
-                background: 'var(--bg-surface-secondary)',
-                padding: 12,
-                borderRadius: 'var(--radius-sm)',
-                marginBottom: 16,
-                fontSize: 12,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 4,
-              }}
-            >
-              <div><strong>Customer:</strong> {selectedItemForPayment.customerName}</div>
-              <div><strong>Loan Account:</strong> <span className="mono">{selectedItemForPayment.loanAccountNo}</span> (EMI #{selectedItemForPayment.installmentNumber})</div>
-              <div><strong>Base EMI:</strong> {formatINR(selectedItemForPayment.emiAmount)}</div>
-              {selectedItemForPayment.penaltyAmount > 0 && (
-                <div style={{ color: 'var(--danger-text)' }}>
-                  <strong>Late Penalty:</strong> {formatINR(selectedItemForPayment.penaltyAmount)}
-                </div>
-              )}
-            </div>
-
-            {paymentError && (
-              <div
-                style={{
-                  background: 'var(--danger-subtle)',
-                  color: 'var(--danger-text)',
-                  padding: '10px 14px',
-                  borderRadius: 'var(--radius-sm)',
-                  fontSize: 12,
-                  marginBottom: 14,
-                }}
-              >
-                {paymentError}
-              </div>
-            )}
-
-            <form onSubmit={handleSubmitPayment} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                  Collected Amount (₹) <span style={{ color: 'var(--danger)' }}>*</span>
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  className="form-input mono"
-                  style={{ fontSize: 16, fontWeight: 700 }}
-                  value={paymentAmount}
-                  onChange={(e) => setPaymentAmount(parseFloat(e.target.value) || 0)}
-                  onBlur={(e) => setPaymentAmount(parseFloat(normalizeNumericLeadingZeros(e.target.value)) || 0)}
-                  required
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                  Payment Mode
-                </label>
-                <select
-                  className="form-select"
-                  value={paymentMode}
-                  onChange={(e) => setPaymentMode(e.target.value as PaymentMode)}
-                >
-                  <option value={PaymentMode.CASH}>Cash (Field Handover)</option>
-                  <option value={PaymentMode.UPI}>UPI (QR Code / Direct)</option>
-                  <option value={PaymentMode.BANK_TRANSFER}>Bank Transfer</option>
-                </select>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                  Collection Source
-                </label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value="RECOVERY_AGENT (Field Collection)"
-                  disabled
-                  style={{ background: 'var(--bg-surface-secondary)', color: 'var(--text-secondary)' }}
-                />
-              </div>
-
-              {paymentMode !== PaymentMode.CASH && (
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                    Reference / UTR Number
-                  </label>
-                  <input
-                    type="text"
-                    className="form-input mono"
-                    placeholder="e.g. UPI Ref / Txn ID"
-                    value={refNumber}
-                    onChange={(e) => setRefNumber(e.target.value)}
-                  />
-                </div>
-              )}
-
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                  Field Notes / Remarks (Optional)
-                </label>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="e.g. Collected at customer residence"
-                  value={paymentNotes}
-                  onChange={(e) => setPaymentNotes(e.target.value)}
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
-                <button
-                  type="button"
-                  onClick={() => setSelectedItemForPayment(null)}
-                  className="btn btn-secondary"
-                >
-                  Cancel
-                </button>
-                <button type="submit" disabled={submittingPayment} className="btn btn-success">
-                  {submittingPayment ? 'Processing Waterfall...' : 'Settle & Generate Receipt'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Active Receipt Result Popup */}
-      {activeReceipt && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ width: '100%', maxWidth: 440, padding: 24, textAlign: 'center' }}>
-            <CheckCircle2 size={40} color="var(--success)" style={{ margin: '0 auto 8px' }} />
-            <h3 style={{ fontSize: 18, fontWeight: 800 }}>PAYMENT COLLECTED</h3>
-            <div className="mono" style={{ color: 'var(--primary)', fontWeight: 700, fontSize: 14, marginTop: 4 }}>
-              {activeReceipt.receiptNumber}
-            </div>
-
-            <div
-              style={{
-                background: 'var(--bg-surface-secondary)',
-                padding: 14,
-                borderRadius: 'var(--radius-sm)',
-                margin: '16px 0',
-                fontSize: 13,
-                textAlign: 'left',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 8,
-              }}
-            >
-              <div>Alpha Mobile Gallery / Shubh Pvt Ltd</div>
-              <div>Loan Acc: <span className="mono">{activeReceipt.loanAccountNo}</span></div>
-              <div style={{ fontWeight: 700, color: 'var(--success-text)', fontSize: 15 }}>
-                Amount: {formatINR(activeReceipt.amountCollected)}
-              </div>
-              <div>Source: <span className="badge badge-neutral">RECOVERY_AGENT</span></div>
-              <div>
-                Remaining Balance: <span className="mono">{formatINR(activeReceipt.remainingLoanOutstanding)}</span>
-              </div>
-            </div>
-
-            <button onClick={() => setActiveReceipt(null)} className="btn btn-primary" style={{ width: '100%' }}>
-              Done
-            </button>
-          </div>
-        </div>
+        <RecordPaymentModal
+          isOpen={!!selectedItemForPayment}
+          onClose={() => setSelectedItemForPayment(null)}
+          onSuccess={(_receipt) => {
+            setSelectedItemForPayment(null);
+            loadDashboardData();
+          }}
+          user={currentUser || ApiClient.getUser() || undefined}
+          preselectedLoan={{
+            id: selectedItemForPayment.loanId,
+            loanAccountNo: selectedItemForPayment.loanAccountNo,
+            customerId: selectedItemForPayment.customerId,
+            customerName: selectedItemForPayment.customerName,
+            customerCode: selectedItemForPayment.customerCode,
+            outstandingBalance: selectedItemForPayment.totalOutstandingLoan,
+            emiAmount: selectedItemForPayment.emiAmount,
+          }}
+          preselectedInstallment={{
+            id: selectedItemForPayment.installmentId,
+            loanId: selectedItemForPayment.loanId,
+            installmentNumber: selectedItemForPayment.installmentNumber,
+            dueDate: selectedItemForPayment.dueDate,
+            expectedAmount: selectedItemForPayment.expectedAmount,
+            remainingAmount: selectedItemForPayment.remainingAmount,
+            penaltyAmount: selectedItemForPayment.penaltyAmount,
+            status: selectedItemForPayment.status,
+          }}
+        />
       )}
     </div>
   );

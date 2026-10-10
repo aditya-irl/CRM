@@ -54,6 +54,17 @@ describe('RecordPaymentModal - Add Penalty UI & Workflow Tests', () => {
     updatedAt: new Date().toISOString(),
   };
 
+  const mockAgentUser: IUser = {
+    id: 'agent-uuid-001',
+    email: 'agent@recovery.com',
+    phone: '9876543212',
+    fullName: 'Ramesh Field Agent',
+    role: UserRole.COLLECTION_AGENT,
+    status: 'ACTIVE' as any,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
   const sampleLoan: any = {
     id: 'loan-123',
     loanAccountNo: 'LN-2026-9999',
@@ -176,6 +187,27 @@ describe('RecordPaymentModal - Add Penalty UI & Workflow Tests', () => {
 
       // Ensure total calculation satisfies strict equality
       expect(paymentAmt + penaltyAmt).toBe(4495);
+    });
+  });
+
+  describe('5. Collection Agent Context Rendering', () => {
+    test('renders Recovery Agent badge and restricts collection source for collection agent', () => {
+      const html = renderToString(
+        <RecordPaymentModal
+          isOpen={true}
+          onClose={() => {}}
+          user={mockAgentUser}
+          preselectedLoan={sampleLoan}
+          preselectedInstallment={sampleInstallment}
+        />
+      );
+
+      expect(html).toContain('RECOVERY AGENT');
+      expect(html).toContain('Field Recovery Collection • Ramesh Field Agent');
+      expect(html).toContain('+ Add Penalty');
+      // Must not display "Calculated Penalty" or "Days Overdue" anywhere
+      expect(html).not.toContain('Calculated Penalty');
+      expect(html).not.toContain('Days Overdue');
     });
   });
 });
