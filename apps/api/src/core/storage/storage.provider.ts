@@ -17,6 +17,7 @@ export interface StorageProvider {
   delete(key: string): Promise<void>;
   getSignedUrl(params: PresignedUrlParams): Promise<string>;
   exists(key: string): Promise<boolean>;
+  getStream?(key: string): Promise<{ stream: NodeJS.ReadableStream; contentType?: string; contentLength?: number }>;
 }
 
 export const MAX_KYC_URL_EXPIRY_SECONDS = 300;

@@ -713,16 +713,25 @@ export class ApiClient {
 
   // KYC
   public static async getKYCDownloadUrl(docId: string) {
-    const res = await this.request<{ downloadUrl: string }>(`/kyc/${docId}/presigned-download`);
+    const res = await this.request<{
+      documentId: string;
+      customerId: string;
+      docType: string;
+      docNumberMasked?: string;
+      downloadUrl: string;
+      fileMimeType?: string;
+      expiresInSeconds?: number;
+    }>(`/kyc/${docId}/presigned-download`);
+
     let url = res.downloadUrl;
     if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
-      let base = (import.meta as any).env?.VITE_API_BASE_URL || '';
-      base = base.trim().replace(/\/api\/v1\/?$/, '').replace(/\/+$/, '');
-      if (base) {
-        url = `${base}${url.startsWith('/') ? '' : '/'}${url}`;
-      }
+      url = buildApiUrl(url.replace(/^\/api\/v1/, ''));
     }
     return { ...res, downloadUrl: url };
+  }
+
+  public static async getKYCDocuments(customerId: string) {
+    return this.request<any[]>(`/kyc/customer/${customerId}`);
   }
 
   public static async initKYCUpload(data: { customerId: string; docType: string; fileName: string; mimeType: string; fileSizeBytes: number }) {

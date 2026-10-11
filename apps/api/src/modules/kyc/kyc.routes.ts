@@ -8,27 +8,44 @@ import { kycUploadInitSchema, kycConfirmSchema, UserRole } from '@crm/shared';
 
 const router = Router();
 
-// Local development storage vault stream (Safe path validation)
+// Local development storage vault stream (Safe multi-directory path validation)
 router.get('/local-vault', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const rawKey = req.query.key as string;
     if (!rawKey) {
       return res.status(400).send('Storage key missing');
     }
-    const baseDir = path.resolve(process.cwd(), 'data/storage_vault');
-    const safePath = path.resolve(baseDir, rawKey);
-    if (!safePath.startsWith(baseDir)) {
-      return res.status(403).send('Invalid file path');
+
+    const cwd = process.cwd();
+    const candidateDirs = [
+      path.resolve(cwd, 'data/storage_vault'),
+      path.resolve(cwd, 'apps/api/data/storage_vault'),
+      path.resolve(__dirname, '../../../../data/storage_vault'),
+      path.resolve(__dirname, '../../../data/storage_vault'),
+    ];
+
+    let safePath: string | null = null;
+    for (const dir of candidateDirs) {
+      const candidate = path.resolve(dir, rawKey);
+      if (candidate.startsWith(dir) && fs.existsSync(candidate)) {
+        safePath = candidate;
+        break;
+      }
     }
-    if (!fs.existsSync(safePath)) {
+
+    if (!safePath) {
       return res.status(404).send('Document file not found in local vault');
     }
+
     const ext = path.extname(safePath).toLowerCase();
-    let mimeType = 'application/octet-stream';
-    if (ext === '.pdf') mimeType = 'application/pdf';
-    else if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg';
-    else if (ext === '.png') mimeType = 'image/png';
-    else if (ext === '.webp') mimeType = 'image/webp';
+    const queryMime = req.query.mimeType as string | undefined;
+    let mimeType = queryMime || 'application/octet-stream';
+    if (!queryMime) {
+      if (ext === '.pdf') mimeType = 'application/pdf';
+      else if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg';
+      else if (ext === '.png') mimeType = 'image/png';
+      else if (ext === '.webp') mimeType = 'image/webp';
+    }
 
     res.setHeader('Content-Type', mimeType);
     res.setHeader('Content-Disposition', 'inline');
@@ -46,7 +63,11 @@ router.put('/local-vault', async (req: Request, res: Response, next: NextFunctio
     if (!rawKey) {
       return res.status(400).send('Storage key missing');
     }
-    const baseDir = path.resolve(process.cwd(), 'data/storage_vault');
+    const cwd = process.cwd();
+    const baseDir = fs.existsSync(path.resolve(cwd, 'apps/api'))
+      ? path.resolve(cwd, 'apps/api/data/storage_vault')
+      : path.resolve(cwd, 'data/storage_vault');
+
     const safePath = path.resolve(baseDir, rawKey);
     if (!safePath.startsWith(baseDir)) {
       return res.status(403).send('Invalid file path');
@@ -112,7 +133,7 @@ router.post(
   }
 );
 
-// Generate pre-signed download URL (Admin, Branch Manager, or Dealer for own customer; blocked for agents)
+// Generate pre-signed download URL (Super Admin, Admin, Branch Manager, or Dealer)
 router.get(
   '/:id/presigned-download',
   requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER, UserRole.DEALER),
@@ -124,6 +145,25 @@ router.get(
         data: result,
         timestamp: new Date().toISOString(),
       });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// Authenticated document streaming for inline viewing or download
+router.get(
+  '/:id/view',
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER, UserRole.DEALER),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await KYCService.streamKYCDocument(req.params.id, req.user!);
+      res.setHeader('Content-Type', result.mimeType);
+      res.setHeader('Content-Disposition', `inline; filename="${result.docNumberMasked || result.docType}"`);
+      if (result.contentLength) {
+        res.setHeader('Content-Length', result.contentLength);
+      }
+      return (result.stream as any).pipe(res);
     } catch (err) {
       next(err);
     }

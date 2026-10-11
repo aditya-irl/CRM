@@ -12,6 +12,7 @@ import {
   Eye,
 } from 'lucide-react';
 import { compressImageFile } from '../utils/imageCompressor';
+import { DocumentViewerModal } from './DocumentViewerModal';
 
 export interface AttachmentItem {
   id: string;
@@ -75,6 +76,7 @@ export const DynamicAttachmentManager: React.FC<DynamicAttachmentManagerProps> =
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const activeItemIdRef = useRef<string | null>(null);
+  const [viewingItem, setViewingItem] = React.useState<AttachmentItem | null>(null);
 
   const categories =
     allowedCategories ||
@@ -362,11 +364,12 @@ export const DynamicAttachmentManager: React.FC<DynamicAttachmentManagerProps> =
                   </div>
 
                   <div style={{ display: 'flex', gap: 6 }}>
-                    {item.remoteUrl && onViewRemote && (
+                    {(item.remoteUrl || item.previewUrl) && (
                       <button
                         type="button"
-                        onClick={() => onViewRemote(item)}
+                        onClick={() => (onViewRemote ? onViewRemote(item) : setViewingItem(item))}
                         className="btn btn-secondary btn-sm"
+                        title="View Document"
                       >
                         <Eye size={12} />
                         <span>View</span>
@@ -399,6 +402,16 @@ export const DynamicAttachmentManager: React.FC<DynamicAttachmentManagerProps> =
             );
           })}
         </div>
+      )}
+
+      {viewingItem && (
+        <DocumentViewerModal
+          initialUrl={viewingItem.remoteUrl || viewingItem.previewUrl || undefined}
+          title={viewingItem.title || viewingItem.category || 'Attachment'}
+          docType={viewingItem.category}
+          fileMimeType={viewingItem.mimeType}
+          onClose={() => setViewingItem(null)}
+        />
       )}
     </div>
   );

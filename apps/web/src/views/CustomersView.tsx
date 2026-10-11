@@ -9,11 +9,13 @@ import {
   CallOutcome,
   PaymentMode,
   KYCType,
+  UserRole,
 } from '@crm/shared';
 import { AddCustomerWizard } from '../components/AddCustomerWizard';
 import { EditCustomerModal } from '../components/EditCustomerModal';
 import { DynamicAttachmentManager, AttachmentItem } from '../components/DynamicAttachmentManager';
 import { PortalLinkManager } from '../components/PortalLinkManager';
+import { DocumentViewerModal } from '../components/DocumentViewerModal';
 import {
   Plus,
   Search,
@@ -83,14 +85,14 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
   const [selectedReceipt, setSelectedReceipt] = useState<any | null>(null);
   const [selectedPaymentDetail, setSelectedPaymentDetail] = useState<any | null>(null);
 
-  // Inline KYC Document Viewer Modal State
+  // Document Viewer Modal State
   const [previewDoc, setPreviewDoc] = useState<{
     id: string;
-    url: string;
+    url?: string;
     title: string;
     docType: string;
+    fileMimeType?: string;
   } | null>(null);
-  const [loadingDoc, setLoadingDoc] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -142,21 +144,13 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
     }
   };
 
-  const handleDownloadKYC = async (docId: string, docMeta?: any) => {
-    setLoadingDoc(true);
-    try {
-      const res = await ApiClient.getKYCDownloadUrl(docId);
-      setPreviewDoc({
-        id: docId,
-        url: res.downloadUrl,
-        title: docMeta?.docNumberMasked || docMeta?.docType || 'KYC Document',
-        docType: docMeta?.docType || 'DOCUMENT',
-      });
-    } catch (err: any) {
-      alert(err.message || 'Access to document preview denied');
-    } finally {
-      setLoadingDoc(false);
-    }
+  const handleDownloadKYC = (docId: string, docMeta?: any) => {
+    setPreviewDoc({
+      id: docId,
+      title: docMeta?.docNumberMasked || docMeta?.docType || 'KYC Document',
+      docType: docMeta?.docType || 'DOCUMENT',
+      fileMimeType: docMeta?.fileMimeType || docMeta?.file_mime_type,
+    });
   };
 
   const handleDeleteKYC = async (docId: string) => {
@@ -603,14 +597,18 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
                             <ExternalLink size={12} />
                             <span>View</span>
                           </button>
-                          <button
-                            onClick={() => handleDeleteKYC(doc.id)}
-                            className="btn btn-secondary btn-sm"
-                            style={{ color: 'var(--danger-text)' }}
-                            title="Remove document"
-                          >
-                            <Trash2 size={12} />
-                          </button>
+                          {(currentUser?.role === UserRole.SUPER_ADMIN ||
+                            currentUser?.role === UserRole.ADMIN ||
+                            currentUser?.role === UserRole.BRANCH_MANAGER) && (
+                            <button
+                              onClick={() => handleDeleteKYC(doc.id)}
+                              className="btn btn-secondary btn-sm"
+                              style={{ color: 'var(--danger-text)' }}
+                              title="Remove document"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -1443,64 +1441,16 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
         </div>
       )}
 
-      {/* Inline KYC Document Viewer Modal */}
+      {/* Document Viewer Modal */}
       {previewDoc && (
-        <div className="modal-overlay" style={{ zIndex: 3100 }} onClick={() => setPreviewDoc(null)}>
-          <div
-            className="modal-content"
-            style={{ width: '90%', maxWidth: 840, height: '85vh', display: 'flex', flexDirection: 'column', padding: 0 }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Viewer Header */}
-            <div
-              style={{
-                padding: '16px 20px',
-                borderBottom: '1px solid var(--border-subtle)',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                background: 'var(--bg-surface-secondary)',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <FileText size={18} color="var(--primary)" />
-                <div>
-                  <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>{previewDoc.title}</h3>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                    {previewDoc.docType} • Authorized KYC Storage Vault • Secure 5-minute Presigned Access
-                  </div>
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <a
-                  href={previewDoc.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn btn-secondary btn-sm"
-                  title="Open full document in new tab or download"
-                >
-                  <ExternalLink size={13} />
-                  <span>Open in Tab</span>
-                </a>
-                <button
-                  onClick={() => setPreviewDoc(null)}
-                  style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 4 }}
-                >
-                  <X size={18} />
-                </button>
-              </div>
-            </div>
-
-            {/* Viewer Body */}
-            <div style={{ flex: 1, background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-              <iframe
-                src={previewDoc.url}
-                title={previewDoc.title}
-                style={{ width: '100%', height: '100%', border: 'none' }}
-              />
-            </div>
-          </div>
-        </div>
+        <DocumentViewerModal
+          documentId={previewDoc.id}
+          initialUrl={previewDoc.url}
+          title={previewDoc.title}
+          docType={previewDoc.docType}
+          fileMimeType={previewDoc.fileMimeType}
+          onClose={() => setPreviewDoc(null)}
+        />
       )}
     </div>
   );

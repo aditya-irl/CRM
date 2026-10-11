@@ -663,14 +663,16 @@ export const DealersView: React.FC<DealersViewProps> = ({
                           <Power size={12} />
                           <span>{isActive ? 'Deactivate' : 'Activate'}</span>
                         </button>
-                        <button
-                          onClick={() => handleDeleteDealer(dealer)}
-                          className="btn btn-secondary btn-sm"
-                          style={{ color: 'var(--danger-text)' }}
-                          title="Delete Store"
-                        >
-                          <Trash2 size={12} />
-                        </button>
+                        {(currentUser?.role === UserRole.SUPER_ADMIN || currentUser?.role === UserRole.ADMIN) && (
+                          <button
+                            onClick={() => handleDeleteDealer(dealer)}
+                            className="btn btn-secondary btn-sm"
+                            style={{ color: 'var(--danger-text)' }}
+                            title="Delete Store"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

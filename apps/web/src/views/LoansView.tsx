@@ -30,9 +30,11 @@ import {
   AlertTriangle,
   History,
   CreditCard,
+  FileText,
 } from 'lucide-react';
 import { PortalLinkManager } from '../components/PortalLinkManager';
 import { RecordPaymentModal } from '../components/RecordPaymentModal';
+import { DocumentViewerModal } from '../components/DocumentViewerModal';
 
 export interface LoansViewProps {
   initialStatusTab?: 'ALL' | 'PENDING_APPROVAL' | 'ACTIVE' | 'CLOSED' | 'REJECTED';
@@ -52,7 +54,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
   const [search, setSearch] = useState(initialSearch || '');
 
   // Portfolio Filtering & Approval Queue States
-  const [activeStatusTab, setActiveStatusTab] = useState<'ALL' | 'PENDING_APPROVAL' | 'ACTIVE' | 'CLOSED' | 'REJECTED'>(
+  const [activeStatusTab, setActiveStatusTab] = useState<'ALL' | 'PENDING_APPROVAL' | 'APPROVED' | 'ACTIVE' | 'CLOSED' | 'REJECTED'>(
     initialStatusTab || (focusLoanId ? 'PENDING_APPROVAL' : 'ALL')
   );
   const [pendingApprovalsList, setPendingApprovalsList] = useState<any[]>([]);
@@ -79,10 +81,22 @@ export const LoansView: React.FC<LoansViewProps> = ({
   const [bookingLoan, setBookingLoan] = useState(false);
 
   // Detail Modal State
-  const [selectedLoanDetail, setSelectedLoanDetail] = useState<{ loan: any; installments: any[]; payments: any[] } | null>(null);
-  const [loanModalTab, setLoanModalTab] = useState<'schedule' | 'payments' | 'portal'>('schedule');
+  const [selectedLoanDetail, setSelectedLoanDetail] = useState<{
+    loan: any;
+    installments: any[];
+    payments: any[];
+    kycDocs?: any[];
+  } | null>(null);
+  const [loanModalTab, setLoanModalTab] = useState<'schedule' | 'payments' | 'portal' | 'kyc'>('schedule');
   const [selectedReceipt, setSelectedReceipt] = useState<any | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [viewingDoc, setViewingDoc] = useState<{
+    id?: string;
+    url?: string;
+    title: string;
+    docType?: string;
+    fileMimeType?: string;
+  } | null>(null);
 
   // Penalty Management States
   const [allowDealerPenalty, setAllowDealerPenalty] = useState(false);
@@ -512,7 +526,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
     }
   };
 
-  const handleViewLoan = async (loanId: string, initialTab: 'schedule' | 'payments' | 'portal' = 'schedule') => {
+  const handleViewLoan = async (loanId: string, initialTab: 'schedule' | 'payments' | 'portal' | 'kyc' = 'schedule') => {
     setLoadingDetail(true);
     try {
       const [loanData, paymentsData] = await Promise.all([
@@ -521,10 +535,13 @@ export const LoansView: React.FC<LoansViewProps> = ({
       ]);
       const loanObj = (loanData as any).loan || loanData;
       const installmentsList = (loanData as any).installments || [];
+      const customerId = loanObj.customerId || loanObj.customer_id;
+      const kycDocs = customerId ? await ApiClient.getKYCDocuments(customerId).catch(() => []) : [];
       setSelectedLoanDetail({
         loan: loanObj,
         installments: installmentsList,
         payments: paymentsData || [],
+        kycDocs,
       });
       setLoanModalTab(initialTab);
     } catch (err: any) {
@@ -578,6 +595,12 @@ export const LoansView: React.FC<LoansViewProps> = ({
           </button>
         )}
         <button
+          onClick={() => setActiveStatusTab('APPROVED')}
+          className={`btn btn-sm ${activeStatusTab === 'APPROVED' ? 'btn-primary' : 'btn-secondary'}`}
+        >
+          Approved ({loans.filter((l) => (l.status || (l as any).status) === 'APPROVED').length})
+        </button>
+        <button
           onClick={() => setActiveStatusTab('ACTIVE')}
           className={`btn btn-sm ${activeStatusTab === 'ACTIVE' ? 'btn-primary' : 'btn-secondary'}`}
         >
@@ -613,7 +636,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
                 <th>EMI Amount</th>
                 <th>Start Date</th>
                 <th>KYC Status</th>
-                <th>Super Admin Approval</th>
+                <th>Review & Approval</th>
               </tr>
             </thead>
             <tbody>
@@ -659,9 +682,21 @@ export const LoansView: React.FC<LoansViewProps> = ({
                     </td>
                     <td className="mono">{loan.firstEmiDate ? formatDateDDMMYYYY(loan.firstEmiDate) : 'Next month'}</td>
                     <td>
-                      <span className={`badge ${loan.kycStatus === 'VERIFIED' ? 'badge-paid' : 'badge-warning'}`}>
-                        {loan.kycStatus || 'SUBMITTED'}
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <span className={`badge ${loan.kycStatus === 'VERIFIED' ? 'badge-paid' : 'badge-warning'}`}>
+                          {loan.kycStatus || 'SUBMITTED'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleViewLoan(loan.id, 'kyc')}
+                          className="btn btn-secondary btn-sm"
+                          style={{ padding: '2px 6px', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                          title="View borrower KYC documents before approval"
+                        >
+                          <Eye size={11} />
+                          <span>View Docs</span>
+                        </button>
+                      </div>
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: 6 }}>
@@ -1270,6 +1305,15 @@ export const LoansView: React.FC<LoansViewProps> = ({
                   <LinkIcon size={13} />
                   <span>Customer Portal Link</span>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setLoanModalTab('kyc')}
+                  className={`btn btn-sm ${loanModalTab === 'kyc' ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                >
+                  <FileText size={13} />
+                  <span>Borrower KYC Documents ({selectedLoanDetail.kycDocs?.length || 0})</span>
+                </button>
               </div>
 
               {/* If APPROVED, show Disburse button for authorized roles & Pending Activation banner */}
@@ -1355,6 +1399,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
                       const canAddPenaltyRole =
                         currentUser?.role === UserRole.SUPER_ADMIN ||
                         currentUser?.role === UserRole.ADMIN ||
+                        currentUser?.role === UserRole.BRANCH_MANAGER ||
                         (currentUser?.role === UserRole.DEALER &&
                           (selectedLoanDetail.loan.dealerId ?? selectedLoanDetail.loan.dealer_id) === currentUser.dealerId);
 
@@ -1551,7 +1596,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
                   </table>
                 )}
               </div>
-            ) : (
+            ) : loanModalTab === 'portal' ? (
               <PortalLinkManager
                 loanId={selectedLoanDetail.loan.id}
                 loanAccountNo={selectedLoanDetail.loan.loanAccountNo || (selectedLoanDetail.loan as any).loan_account_no}
@@ -1559,6 +1604,73 @@ export const LoansView: React.FC<LoansViewProps> = ({
                 primaryPhone={selectedLoanDetail.loan.primaryPhone || (selectedLoanDetail.loan as any).primary_phone || (selectedLoanDetail.loan as any).phone}
                 userRole={currentUser?.role}
               />
+            ) : (
+              /* Borrower KYC Documents Tab */
+              <div className="table-container" style={{ maxHeight: 340, overflowY: 'auto' }}>
+                {(!selectedLoanDetail.kycDocs || selectedLoanDetail.kycDocs.length === 0) ? (
+                  <div style={{ textAlign: 'center', padding: 36, color: 'var(--text-muted)', fontSize: 13 }}>
+                    No KYC documents uploaded for this borrower account yet.
+                  </div>
+                ) : (
+                  <table className="crm-table">
+                    <thead>
+                      <tr>
+                        <th>Doc Type</th>
+                        <th>Document Number / ID</th>
+                        <th>Status</th>
+                        <th>File Type</th>
+                        <th>Uploaded Date</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedLoanDetail.kycDocs.map((doc: any) => (
+                        <tr key={doc.id}>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <FileText size={14} color="var(--primary)" />
+                              <span style={{ fontWeight: 600 }}>{doc.docType}</span>
+                            </div>
+                          </td>
+                          <td className="mono" style={{ fontSize: 12 }}>
+                            {doc.docNumberMasked || '—'}
+                          </td>
+                          <td>
+                            <span className={`badge ${doc.status === 'VERIFIED' ? 'badge-paid' : 'badge-warning'}`}>
+                              {doc.status || 'SUBMITTED'}
+                            </span>
+                          </td>
+                          <td className="mono" style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                            {doc.fileMimeType || 'DOCUMENT'}
+                          </td>
+                          <td className="mono" style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                            {formatDateDDMMYYYY(doc.createdAt || doc.created_at)}
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setViewingDoc({
+                                  id: doc.id,
+                                  title: `${doc.docType} - ${doc.docNumberMasked || 'Borrower KYC'}`,
+                                  docType: doc.docType,
+                                  fileMimeType: doc.fileMimeType || doc.file_mime_type,
+                                })
+                              }
+                              className="btn btn-secondary btn-sm"
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                              title="View Document"
+                            >
+                              <Eye size={12} />
+                              <span>View</span>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
             )}
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
@@ -2141,6 +2253,18 @@ export const LoansView: React.FC<LoansViewProps> = ({
           user={currentUser}
           preselectedLoan={selectedLoanDetail?.loan}
           preselectedInstallment={selectedInstallmentForPayment}
+        />
+      )}
+
+      {/* Secure Document Viewer Modal */}
+      {viewingDoc && (
+        <DocumentViewerModal
+          documentId={viewingDoc.id}
+          initialUrl={viewingDoc.url}
+          title={viewingDoc.title}
+          docType={viewingDoc.docType}
+          fileMimeType={viewingDoc.fileMimeType}
+          onClose={() => setViewingDoc(null)}
         />
       )}
     </div>

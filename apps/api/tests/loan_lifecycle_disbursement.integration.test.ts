@@ -166,7 +166,7 @@ describe('Loan Lifecycle Disbursement & Manual Penalty Integration Tests', () =>
         .set('Authorization', `Bearer ${superAdminToken}`)
         .send({});
       expect(disbRes.status).toBe(400);
-      expect(JSON.stringify(disbRes.body.error || disbRes.body.message)).toContain('pending Super Admin approval');
+      expect(JSON.stringify(disbRes.body.error || disbRes.body.message)).toContain('pending approval');
     });
 
     test('Unauthorized roles cannot disburse loans', async () => {

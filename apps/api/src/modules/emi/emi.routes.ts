@@ -72,11 +72,11 @@ router.get(
 );
 
 // Add Late Payment Penalty to Overdue EMI
-// Allowed: SUPER_ADMIN, ADMIN, DEALER (subject to ALLOW_DEALER_PENALTY setting + RLAC)
-// Blocked: COLLECTION_AGENT (403), BRANCH_MANAGER (403), unauthenticated (401)
+// Allowed: SUPER_ADMIN, ADMIN, BRANCH_MANAGER, DEALER (subject to ALLOW_DEALER_PENALTY setting + RLAC)
+// Blocked: COLLECTION_AGENT (403), unauthenticated (401)
 router.post(
   '/:emiId/penalties',
-  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.DEALER),
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER, UserRole.DEALER),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { emiId } = req.params;

@@ -394,7 +394,8 @@ export class EMIService {
       }
     } else if (
       user.role !== UserRole.SUPER_ADMIN &&
-      user.role !== UserRole.ADMIN
+      user.role !== UserRole.ADMIN &&
+      user.role !== UserRole.BRANCH_MANAGER
     ) {
       throw new ForbiddenError('You are not authorized to add late-payment penalties');
     }

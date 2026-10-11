@@ -247,7 +247,7 @@ export class LoanService {
         );
 
         const title = `New Dealer Loan Approval Request: ${loanAccountNo}`;
-        const body = `Dealer "${dealerName}" has originated a new loan ${loanAccountNo} for customer ${customer.full_name} (${customer.customer_code}). Financed Amount: ₹${calc.netDisbursedAmount}, EMI: ₹${calc.emiAmount}/mo, Device: ${deviceName}. Pending Super Admin review.`;
+        const body = `Dealer "${dealerName}" has originated a new loan ${loanAccountNo} for customer ${customer.full_name} (${customer.customer_code}). Financed Amount: ₹${calc.netDisbursedAmount}, EMI: ₹${calc.emiAmount}/mo, Device: ${deviceName}. Pending Administrative review.`;
 
         for (const admin of adminUsers.rows) {
           await client.query(
@@ -522,8 +522,12 @@ export class LoanService {
    * Approve a pending loan application.
    */
   public static async approveLoan(id: string, user: AuthenticatedUser, data?: { notes?: string }) {
-    if (user.role === UserRole.DEALER) {
-      throw new ForbiddenError('Dealers cannot approve loans. Super Admin approval is required.');
+    if (
+      user.role !== UserRole.SUPER_ADMIN &&
+      user.role !== UserRole.ADMIN &&
+      user.role !== UserRole.BRANCH_MANAGER
+    ) {
+      throw new ForbiddenError('Only authorized administrators and branch managers can approve loans.');
     }
 
     const loanRes = await queryPostgres('SELECT * FROM loans WHERE id = $1', [id]);
@@ -610,8 +614,12 @@ export class LoanService {
    * Reject a pending loan application.
    */
   public static async rejectLoan(id: string, user: AuthenticatedUser, data: { reason: string }) {
-    if (user.role === UserRole.DEALER) {
-      throw new ForbiddenError('Dealers cannot reject loans. Super Admin approval is required.');
+    if (
+      user.role !== UserRole.SUPER_ADMIN &&
+      user.role !== UserRole.ADMIN &&
+      user.role !== UserRole.BRANCH_MANAGER
+    ) {
+      throw new ForbiddenError('Only authorized administrators and branch managers can reject loans.');
     }
 
     const loanRes = await queryPostgres('SELECT * FROM loans WHERE id = $1', [id]);
@@ -761,6 +769,14 @@ export class LoanService {
     user: AuthenticatedUser,
     data?: { disbursementDate?: string; firstEmiDate?: string; assignedAgentId?: string | null }
   ) {
+    if (
+      user.role !== UserRole.SUPER_ADMIN &&
+      user.role !== UserRole.ADMIN &&
+      user.role !== UserRole.BRANCH_MANAGER
+    ) {
+      throw new ForbiddenError('Only authorized administrators and branch managers can disburse approved loans.');
+    }
+
     const loanRes = await queryPostgres('SELECT * FROM loans WHERE id = $1', [id]);
     if (loanRes.rows.length === 0) {
       throw new NotFoundError('Loan not found');
@@ -768,7 +784,7 @@ export class LoanService {
 
     const loan = loanRes.rows[0];
     if (loan.status === LoanStatus.PENDING_APPROVAL) {
-      throw new AppError('Dealer-originated loan is pending Super Admin approval and cannot be disbursed yet. Please approve the loan first.');
+      throw new AppError('Dealer-originated loan is pending approval and cannot be disbursed yet. Please approve the loan first.');
     }
     if (loan.status !== LoanStatus.APPROVED && loan.status !== LoanStatus.ACTIVE) {
       throw new AppError(`Cannot disburse loan with current status '${loan.status}'`);

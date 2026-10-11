@@ -8,6 +8,7 @@ import {
   SettlementStatus,
   SettlementPaymentMethod,
   DealerStatus,
+  UserRole,
   getBusinessDate,
   formatDateDDMMYYYY,
 } from '@crm/shared';
@@ -61,6 +62,12 @@ export const DealerSettlementsView: React.FC<DealerSettlementsViewProps> = ({
   onNavigateToDealers,
   onNavigateToCollections,
 }) => {
+  const currentUser = ApiClient.getUser();
+  const canManageSettlements =
+    currentUser?.role === UserRole.SUPER_ADMIN ||
+    currentUser?.role === UserRole.ADMIN ||
+    currentUser?.role === UserRole.BRANCH_MANAGER;
+
   const [dealers, setDealers] = useState<IDealer[]>([]);
   const [selectedDealerId, setSelectedDealerId] = useState<string>(initialDealerId || '');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
@@ -324,10 +331,12 @@ export const DealerSettlementsView: React.FC<DealerSettlementsViewProps> = ({
               <span>Customer Collection Ledger</span>
             </button>
           )}
-          <button onClick={() => handleOpenRecordModal()} className="btn btn-primary">
-            <Plus size={15} />
-            <span>Record Settlement</span>
-          </button>
+          {canManageSettlements && (
+            <button onClick={() => handleOpenRecordModal()} className="btn btn-primary">
+              <Plus size={15} />
+              <span>Record Settlement</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -661,7 +670,7 @@ export const DealerSettlementsView: React.FC<DealerSettlementsViewProps> = ({
                           <ExternalLink size={12} />
                           <span>View</span>
                         </button>
-                        {isCompleted && (
+                        {canManageSettlements && isCompleted && (
                           <button
                             onClick={() => {
                               setReversingSettlement(settlement);
@@ -1203,8 +1212,8 @@ export const DealerSettlementsView: React.FC<DealerSettlementsViewProps> = ({
                     )}
                   </div>
 
-                  {/* Reverse Button (if completed) */}
-                  {settlementDetail.status === SettlementStatus.COMPLETED && (
+                  {/* Reverse Button (if completed and authorized) */}
+                  {canManageSettlements && settlementDetail.status === SettlementStatus.COMPLETED && (
                     <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
                       <button
                         onClick={() => {

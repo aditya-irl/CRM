@@ -654,7 +654,7 @@ export class CustomerService {
           );
 
           const title = `New Dealer Loan Approval Request: ${loanAccountNo}`;
-          const body = `Dealer "${dealerName}" has originated a new loan ${loanAccountNo} for customer ${createdCustomer.full_name} (${customerCode}). Financed Amount: ₹${calc.netDisbursedAmount}, EMI: ₹${calc.emiAmount}/mo, Device: ${deviceName}. Pending Super Admin review.`;
+          const body = `Dealer "${dealerName}" has originated a new loan ${loanAccountNo} for customer ${createdCustomer.full_name} (${customerCode}). Financed Amount: ₹${calc.netDisbursedAmount}, EMI: ₹${calc.emiAmount}/mo, Device: ${deviceName}. Pending Administrative review.`;
 
           for (const admin of adminUsers.rows) {
             await client.query(

@@ -5,6 +5,7 @@ import { closeRedisConnection } from '../src/core/redis';
 import { closeAllQueues } from '../src/core/queue';
 import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
+import { getStorageProvider } from '../src/core/storage';
 
 describe('Regression & Fix Tests: KYC View Access and Customer Device Details (LN-2026-1006)', () => {
   const runId = Math.random().toString(36).substring(2, 8);
@@ -157,6 +158,12 @@ describe('Regression & Fix Tests: KYC View Access and Customer Device Details (L
     );
 
     // 5. KYC Documents
+    const storage = getStorageProvider();
+    const dummyBuffer = Buffer.from('TEST_DUMMY_FILE_CONTENT');
+    await storage.upload({ key: `kyc/${customerAId}/aadhaar_a.jpg`, body: dummyBuffer, mimeType: 'image/jpeg' });
+    await storage.upload({ key: `kyc/${customerBId}/pan_b.jpg`, body: dummyBuffer, mimeType: 'image/jpeg' });
+    await storage.upload({ key: `kyc/${customerDirectId}/aadhaar_dir.pdf`, body: dummyBuffer, mimeType: 'application/pdf' });
+
     kycDocAId = uuidv4();
     await queryPostgres(
       `INSERT INTO kyc_documents (id, customer_id, doc_type, doc_number_masked, storage_key, file_mime_type, file_size_bytes, status, verified_by, verified_at, created_at)

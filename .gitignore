@@ -24,8 +24,10 @@ apps/data/*.db*
 *.db-wal
 data/storage_vault/*
 apps/data/storage_vault/*
+apps/api/data/*
 !data/.gitkeep
 !apps/data/.gitkeep
+!apps/api/data/.gitkeep
 
 # Logs
 npm-debug.log*

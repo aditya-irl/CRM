@@ -5,6 +5,7 @@ import { closeRedisConnection } from '../src/core/redis';
 import { closeAllQueues } from '../src/core/queue';
 import { UserRole, KYCType, PaymentMode } from '@crm/shared';
 import { v4 as uuidv4 } from 'uuid';
+import { getStorageProvider } from '../src/core/storage';
 
 describe('Production Security & Data Isolation Audit Integration Tests', () => {
   const runId = Date.now().toString(36);
@@ -125,6 +126,8 @@ describe('Production Security & Data Isolation Audit Integration Tests', () => {
     );
 
     // KYC Document A
+    const storage = getStorageProvider();
+    await storage.upload({ key: `kyc/${customerAId}/doc-a.jpg`, body: Buffer.from('TEST_A'), mimeType: 'image/jpeg' });
     kycDocAId = uuidv4();
     await queryPostgres(
       `INSERT INTO kyc_documents (id, customer_id, doc_type, doc_number_masked, storage_key, file_mime_type, file_size_bytes, status, verified_by, verified_at, created_at)
@@ -160,6 +163,7 @@ describe('Production Security & Data Isolation Audit Integration Tests', () => {
     );
 
     // KYC Document B
+    await storage.upload({ key: `kyc/${customerBId}/doc-b.png`, body: Buffer.from('TEST_B'), mimeType: 'image/png' });
     kycDocBId = uuidv4();
     await queryPostgres(
       `INSERT INTO kyc_documents (id, customer_id, doc_type, doc_number_masked, storage_key, file_mime_type, file_size_bytes, status, verified_by, verified_at, created_at)

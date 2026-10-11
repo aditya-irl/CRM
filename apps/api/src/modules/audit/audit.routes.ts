@@ -9,7 +9,7 @@ router.use(authenticate);
 
 router.get(
   '/',
-  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN),
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const limit = Number(req.query.limit) || 50;
@@ -38,7 +38,7 @@ router.get(
 
 router.get(
   '/:id',
-  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN),
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const log = await AuditService.getLogById(req.params.id);
