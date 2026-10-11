@@ -161,16 +161,6 @@ export class KYCService {
       numberHash = crypto.createHash('sha256').update(raw.toUpperCase()).digest('hex');
     }
 
-    const storage = getStorageProvider();
-    const exists = await storage.exists(data.storageKey);
-    if (!exists) {
-      await storage.upload({
-        key: data.storageKey,
-        body: Buffer.from('%PDF-1.4 Mock Uploaded Document\n%%EOF'),
-        mimeType: data.fileMimeType,
-      }).catch(() => {});
-    }
-
     const sql = `
       INSERT INTO kyc_documents (
         id, customer_id, doc_type, doc_number_masked, doc_number_hash,

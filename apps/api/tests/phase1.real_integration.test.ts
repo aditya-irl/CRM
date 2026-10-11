@@ -7,6 +7,7 @@ import { Worker } from 'bullmq';
 import { UserRole, UserStatus, KYCType } from '@crm/shared';
 import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
+import { getStorageProvider } from '../src/core/storage';
 
 describe('PHASE 1: Real Integration & Security Test Suite (PostgreSQL & Redis)', () => {
   const runId = Date.now().toString(36);
@@ -597,6 +598,13 @@ describe('PHASE 1: Real Integration & Security Test Suite (PostgreSQL & Redis)',
     });
 
     test('Confirm KYC: Stores SHA-256 hash and masks Aadhaar / PAN numbers', async () => {
+      const storage = getStorageProvider();
+      await storage.upload({
+        key: `kyc/${customer1Id}/aadhaar_123.pdf`,
+        body: Buffer.from('%PDF-1.4 Mock Aadhaar PDF\n%%EOF'),
+        mimeType: 'application/pdf',
+      });
+
       const confirmRes = await request(app)
         .post('/api/v1/kyc/confirm')
         .set('Authorization', `Bearer ${adminToken}`)
