@@ -47,8 +47,11 @@ router.get('/local-vault', async (req: Request, res: Response, next: NextFunctio
       else if (ext === '.webp') mimeType = 'image/webp';
     }
 
-    res.setHeader('Content-Type', mimeType);
-    res.setHeader('Content-Disposition', 'inline');
+    const safeInlineMimes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+    const isSafeInline = safeInlineMimes.includes(mimeType);
+    res.setHeader('Content-Type', isSafeInline ? mimeType : 'application/octet-stream');
+    res.setHeader('Content-Disposition', isSafeInline ? 'inline' : 'attachment');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     const stream = fs.createReadStream(safePath);
     return stream.pipe(res);
   } catch (err) {
@@ -158,8 +161,12 @@ router.get(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const result = await KYCService.streamKYCDocument(req.params.id, req.user!);
-      res.setHeader('Content-Type', result.mimeType);
-      res.setHeader('Content-Disposition', `inline; filename="${result.docNumberMasked || result.docType}"`);
+      const safeInlineMimes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+      const isSafeInline = safeInlineMimes.includes(result.mimeType);
+      const safeFilename = (result.docNumberMasked || result.docType || 'document').replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+      res.setHeader('Content-Type', isSafeInline ? result.mimeType : 'application/octet-stream');
+      res.setHeader('Content-Disposition', `${isSafeInline ? 'inline' : 'attachment'}; filename="${safeFilename}"`);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
       if (result.contentLength) {
         res.setHeader('Content-Length', result.contentLength);
       }

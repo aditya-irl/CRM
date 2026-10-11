@@ -18,7 +18,7 @@ router.get(
       const entityId = req.query.entityId as string | undefined;
       const userId = req.query.userId as string | undefined;
 
-      const result = await AuditService.getLogs(limit, offset, entity, entityId, userId);
+      const result = await AuditService.getLogs(limit, offset, entity, entityId, userId, req.user);
 
       return res.json({
         success: true,
@@ -41,7 +41,7 @@ router.get(
   requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const log = await AuditService.getLogById(req.params.id);
+      const log = await AuditService.getLogById(req.params.id, req.user);
       return res.json({
         success: true,
         data: log,

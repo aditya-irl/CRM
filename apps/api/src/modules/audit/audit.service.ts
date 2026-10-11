@@ -1,7 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import { queryPostgres } from '../../database/postgres';
-import { NotFoundError } from '../../middlewares/error.middleware';
-import { IAuditLogDetail, redactSensitiveData, computeAuditDiff } from '@crm/shared';
+import { NotFoundError, ForbiddenError } from '../../middlewares/error.middleware';
+import { IAuditLogDetail, redactSensitiveData, computeAuditDiff, UserRole } from '@crm/shared';
+import { AuthenticatedUser } from '../../middlewares/auth.middleware';
 
 export interface LogAuditParams {
   userId?: string | null;
@@ -73,7 +74,8 @@ export class AuditService {
     offset = 0,
     entity?: string,
     entityId?: string,
-    userId?: string
+    userId?: string,
+    currentUser?: AuthenticatedUser
   ) {
     const lim = Math.min(100, Math.max(1, limit));
     const off = Math.max(0, offset);
@@ -89,6 +91,11 @@ export class AuditService {
     `;
     const params: (string | number)[] = [];
     let paramIndex = 1;
+
+    if (currentUser?.role === UserRole.BRANCH_MANAGER && currentUser.assignedBranch) {
+      sql += ` AND (u.assigned_branch = $${paramIndex++} OR a.user_id = $${paramIndex++})`;
+      params.push(currentUser.assignedBranch, currentUser.id);
+    }
 
     if (entity) {
       sql += ` AND a.entity = $${paramIndex++}`;
@@ -151,12 +158,13 @@ export class AuditService {
    * Retrieve a single audit log entry with complete enriched details, actor context,
    * target resource resolution, visual diff, and recursive sensitive data redaction.
    */
-  public static async getLogById(id: string): Promise<IAuditLogDetail> {
+  public static async getLogById(id: string, currentUser?: AuthenticatedUser): Promise<IAuditLogDetail> {
     const sql = `
       SELECT 
         a.id, a.user_id, a.action, a.entity, a.entity_id as "entityId",
         a.previous_state, a.new_state, a.ip_address, a.user_agent, a.created_at,
         u.full_name as user_full_name, u.email as user_email, u.role as user_role, u.dealer_id as user_dealer_id,
+        u.assigned_branch as user_assigned_branch,
         d.store_name as dealer_store_name, d.owner_name as dealer_owner_name
       FROM audit_logs a
       LEFT JOIN users u ON a.user_id = u.id
@@ -170,6 +178,12 @@ export class AuditService {
     }
 
     const row = res.rows[0];
+
+    if (currentUser?.role === UserRole.BRANCH_MANAGER && currentUser.assignedBranch) {
+      if (row.user_assigned_branch && row.user_assigned_branch !== currentUser.assignedBranch && row.user_id !== currentUser.id) {
+        throw new ForbiddenError('You are not authorized to view audit logs outside your assigned branch');
+      }
+    }
 
     // Safely parse JSON states
     let rawPrevState: Record<string, any> | null = null;
