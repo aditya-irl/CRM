@@ -129,6 +129,7 @@ export const onboardCustomerSchema = z.object({
       }
     }
   }).optional(),
+  idempotencyKey: z.string().min(5).max(150).optional().nullable(),
 });
 export type OnboardCustomerInput = z.infer<typeof onboardCustomerSchema>;
 

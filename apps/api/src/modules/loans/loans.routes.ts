@@ -11,7 +11,9 @@ import {
   assignLoanAgentSchema,
   unassignLoanAgentSchema,
   UserRole,
+  DEALER_ALLOWED_INTEREST_RATES,
 } from '@crm/shared';
+import { AppError } from '../../middlewares/error.middleware';
 
 const router = Router();
 
@@ -27,6 +29,15 @@ router.post(
   validateBody(calculateLoanSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
+      if (req.user?.role === UserRole.DEALER) {
+        const rateNum = Number(req.body.annualInterestRate);
+        if (!DEALER_ALLOWED_INTEREST_RATES.includes(rateNum as any)) {
+          throw new AppError(
+            `Dealer-originated loans only support interest rates of 4%, 5%, or 6% per month. Received: ${req.body.annualInterestRate}%`,
+            400
+          );
+        }
+      }
       const result = LoanService.calculatePreview(req.body);
       return res.json({
         success: true,

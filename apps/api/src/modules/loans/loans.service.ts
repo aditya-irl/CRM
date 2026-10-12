@@ -13,6 +13,7 @@ import {
   RepaymentFrequency,
   EMIStatus,
   IDeviceItem,
+  DEALER_ALLOWED_INTEREST_RATES,
 } from '@crm/shared';
 import { AppError, NotFoundError, ForbiddenError, ConflictError } from '../../middlewares/error.middleware';
 import { AuthenticatedUser } from '../../middlewares/auth.middleware';
@@ -71,6 +72,36 @@ export class LoanService {
         throw new ForbiddenError('Dealer context missing');
       }
       dealerId = user.dealerId;
+
+      // Enforce Dealer Interest Configuration (Requirements 2, 3, 4, 6):
+      // 1. Rate must be strictly 4%, 5%, or 6% per month
+      const rateNum = Number(data.annualInterestRate);
+      if (!DEALER_ALLOWED_INTEREST_RATES.includes(rateNum as any)) {
+        throw new AppError(
+          `Dealer-originated loans only support interest rates of 4%, 5%, or 6% per month. Received: ${data.annualInterestRate}%`,
+          400
+        );
+      }
+
+      // 2. Repayment frequency must be MONTHLY only
+      const freq = data.installmentFrequency || RepaymentFrequency.MONTHLY;
+      if (freq !== RepaymentFrequency.MONTHLY) {
+        throw new AppError(
+          `Dealer-originated loans only support MONTHLY repayment frequency. Received: ${freq}`,
+          400
+        );
+      }
+      data.installmentFrequency = RepaymentFrequency.MONTHLY;
+
+      // 3. Calculation method must be FLAT_RATE only
+      const method = data.interestCalcMethod || InterestMethod.FLAT_RATE;
+      if (method !== InterestMethod.FLAT_RATE) {
+        throw new AppError(
+          `Dealer-originated loans only support FLAT_RATE interest method. Received: ${method}`,
+          400
+        );
+      }
+      data.interestCalcMethod = InterestMethod.FLAT_RATE;
     }
 
     let dealerInfo: { store_name: string; dealer_code: string } | null = null;
