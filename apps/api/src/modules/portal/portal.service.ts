@@ -6,6 +6,7 @@ import { AuthenticatedUser } from '../../middlewares/auth.middleware';
 import { AuditService } from '../audit/audit.service';
 import { env } from '../../config/env';
 import { computeEmiStatus, getBusinessDate, EMIStatus } from '@crm/shared';
+import { getStorageProvider, MAX_KYC_URL_EXPIRY_SECONDS } from '../../core/storage';
 
 const PORTAL_BASE_URL = env?.PORTAL_BASE_URL || process.env.PORTAL_BASE_URL || 'http://localhost:5173/portal';
 
@@ -423,6 +424,199 @@ export class PortalService {
         daysOverdue: i.daysOverdue,
         status: i.status,
       })),
+    };
+  }
+
+  /**
+   * Validate opaque portal token and resolve active borrower context.
+   */
+  public static async validatePortalTokenContext(rawToken: string): Promise<{
+    tokenId: string;
+    loanId: string;
+    customerId: string;
+    customerName: string;
+    loanAccountNo: string;
+  }> {
+    if (!rawToken || typeof rawToken !== 'string' || !rawToken.trim()) {
+      throw new UnauthorizedError('Portal token is required');
+    }
+
+    const tokenHash = crypto.createHash('sha256').update(rawToken.trim()).digest('hex');
+
+    const tokenRes = await queryPostgres(
+      `SELECT t.id as token_id, t.loan_id, t.customer_id, t.is_active, t.revoked_at,
+              c.id as cust_id, c.full_name as customer_name, c.deleted_at as customer_deleted_at,
+              l.id as loan_id, l.loan_account_no, l.status as loan_status
+       FROM customer_portal_tokens t
+       JOIN loans l ON l.id = t.loan_id
+       JOIN customers c ON c.id = t.customer_id
+       WHERE t.token_hash = $1`,
+      [tokenHash]
+    );
+
+    if (tokenRes.rows.length === 0) {
+      throw new UnauthorizedError('Invalid or expired portal link');
+    }
+
+    const row = tokenRes.rows[0];
+
+    if (!row.is_active || row.revoked_at) {
+      throw new UnauthorizedError('This portal link has been revoked or is no longer active');
+    }
+
+    if (row.customer_deleted_at) {
+      throw new UnauthorizedError('Customer account is no longer active');
+    }
+
+    if (row.loan_status === 'CANCELLED') {
+      throw new ForbiddenError('Loan account is cancelled');
+    }
+
+    queryPostgres('UPDATE customer_portal_tokens SET last_accessed_at = NOW() WHERE id = $1', [row.token_id]).catch(() => {});
+
+    return {
+      tokenId: row.token_id,
+      loanId: row.loan_id,
+      customerId: row.customer_id,
+      customerName: row.customer_name,
+      loanAccountNo: row.loan_account_no,
+    };
+  }
+
+  /**
+   * List customer's own KYC documents in Customer Portal.
+   * Only returns documents belonging strictly to the validated borrower.
+   * Strips all internal storage keys and sensitive metadata.
+   */
+  public static async getPortalKYCDocuments(rawToken: string) {
+    const context = await this.validatePortalTokenContext(rawToken);
+
+    const docsRes = await queryPostgres(
+      `SELECT id, customer_id, doc_type, doc_number_masked, status,
+              file_mime_type, file_size_bytes, verified_at, created_at
+       FROM kyc_documents
+       WHERE customer_id = $1
+       ORDER BY created_at DESC`,
+      [context.customerId]
+    );
+
+    return docsRes.rows.map((doc: any) => ({
+      id: doc.id,
+      docType: doc.doc_type,
+      docNumberMasked: doc.doc_number_masked,
+      status: doc.status,
+      fileMimeType: doc.file_mime_type,
+      fileSizeBytes: Number(doc.file_size_bytes),
+      verifiedAt: doc.verified_at,
+      createdAt: doc.created_at,
+    }));
+  }
+
+  /**
+   * Generate short-lived presigned download URL for customer's own KYC document in Portal.
+   * Validates document ownership against validated portal token.
+   */
+  public static async getPortalKYCDownloadUrl(rawToken: string, docId: string) {
+    const context = await this.validatePortalTokenContext(rawToken);
+
+    const docRes = await queryPostgres(
+      `SELECT * FROM kyc_documents WHERE id = $1 AND customer_id = $2`,
+      [docId, context.customerId]
+    );
+
+    if (docRes.rows.length === 0) {
+      throw new NotFoundError('KYC document not found or unauthorized');
+    }
+
+    const doc = docRes.rows[0];
+    if (!doc.storage_key) {
+      throw new NotFoundError('KYC document has no storage reference');
+    }
+
+    const storage = getStorageProvider();
+    let fileExists = false;
+    try {
+      fileExists = await storage.exists(doc.storage_key);
+    } catch (storageErr: any) {
+      console.error(`[Portal KYC] Storage provider check failed for doc ${docId}:`, storageErr?.message || storageErr);
+      throw new AppError('Storage service temporarily unavailable. Please retry shortly.', 503, 'STORAGE_PROVIDER_ERROR');
+    }
+
+    if (!fileExists) {
+      throw new AppError(
+        'Document file not found in storage vault. Please contact support.',
+        404,
+        'DOCUMENT_FILE_MISSING'
+      );
+    }
+
+    const downloadUrl = await storage.getSignedUrl({
+      key: doc.storage_key,
+      expiresInSeconds: MAX_KYC_URL_EXPIRY_SECONDS,
+      operation: 'getObject',
+      mimeType: doc.file_mime_type,
+    });
+
+    return {
+      documentId: doc.id,
+      docType: doc.doc_type,
+      docNumberMasked: doc.doc_number_masked,
+      downloadUrl,
+      fileMimeType: doc.file_mime_type,
+      expiresInSeconds: MAX_KYC_URL_EXPIRY_SECONDS,
+    };
+  }
+
+  /**
+   * Stream customer's own KYC document directly in Portal.
+   * Validates ownership and sets strict safe headers.
+   */
+  public static async streamPortalKYCDocument(rawToken: string, docId: string) {
+    const context = await this.validatePortalTokenContext(rawToken);
+
+    const docRes = await queryPostgres(
+      `SELECT * FROM kyc_documents WHERE id = $1 AND customer_id = $2`,
+      [docId, context.customerId]
+    );
+
+    if (docRes.rows.length === 0) {
+      throw new NotFoundError('KYC document not found or unauthorized');
+    }
+
+    const doc = docRes.rows[0];
+    if (!doc.storage_key) {
+      throw new NotFoundError('KYC document has no storage reference');
+    }
+
+    const storage = getStorageProvider();
+    let fileExists = false;
+    try {
+      fileExists = await storage.exists(doc.storage_key);
+    } catch (storageErr: any) {
+      console.error(`[Portal KYC] Storage provider check failed for doc ${docId}:`, storageErr?.message || storageErr);
+      throw new AppError('Storage service temporarily unavailable. Please retry shortly.', 503, 'STORAGE_PROVIDER_ERROR');
+    }
+
+    if (!fileExists) {
+      throw new AppError(
+        'Document file not found in storage vault. Please contact support.',
+        404,
+        'DOCUMENT_FILE_MISSING'
+      );
+    }
+
+    if (!storage.getStream) {
+      throw new AppError('Streaming not supported for active storage provider', 500);
+    }
+
+    const streamResult = await storage.getStream(doc.storage_key);
+
+    return {
+      stream: streamResult.stream,
+      mimeType: doc.file_mime_type || streamResult.contentType || 'application/octet-stream',
+      contentLength: streamResult.contentLength,
+      docType: doc.doc_type,
+      docNumberMasked: doc.doc_number_masked,
     };
   }
 }

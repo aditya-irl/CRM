@@ -21,6 +21,7 @@ export interface DocumentViewerModalProps {
   title: string;
   docType?: string;
   fileMimeType?: string;
+  portalToken?: string;
   onClose: () => void;
 }
 
@@ -30,6 +31,7 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
   title,
   docType = 'KYC Document',
   fileMimeType,
+  portalToken,
   onClose,
 }) => {
   const [url, setUrl] = useState<string | null>(initialUrl || null);
@@ -45,7 +47,9 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
     setLoading(true);
     setError(null);
     try {
-      const res = await ApiClient.getKYCDownloadUrl(documentId);
+      const res = portalToken
+        ? await ApiClient.getCustomerPortalKYCDownloadUrl(documentId, portalToken)
+        : await ApiClient.getKYCDownloadUrl(documentId);
       setUrl(res.downloadUrl);
       if (res.fileMimeType) {
         setMimeType(res.fileMimeType);

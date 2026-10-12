@@ -15,8 +15,10 @@ import {
   Phone,
   MessageCircle,
   HelpCircle,
+  Eye,
 } from 'lucide-react';
 import { BrandLogo } from '../components/BrandLogo';
+import { DocumentViewerModal } from '../components/DocumentViewerModal';
 
 interface CustomerPortalViewProps {
   token: string | null;
@@ -30,7 +32,37 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
   const [error, setError] = useState<string | null>(
     !initialData && (!token || !token.trim()) ? 'A valid customer portal token is required in the link.' : null
   );
-  const [activeTab, setActiveTab] = useState<'schedule' | 'history'>('schedule');
+  const [activeTab, setActiveTab] = useState<'schedule' | 'history' | 'kyc'>('schedule');
+  const [kycDocs, setKycDocs] = useState<any[]>([]);
+  const [loadingKyc, setLoadingKyc] = useState<boolean>(false);
+  const [kycError, setKycError] = useState<string | null>(null);
+  const [viewingKycDoc, setViewingKycDoc] = useState<{
+    id: string;
+    title: string;
+    docType: string;
+    fileMimeType?: string;
+  } | null>(null);
+
+  const fetchKycDocuments = useCallback(async () => {
+    if (!token || !token.trim()) return;
+    setLoadingKyc(true);
+    setKycError(null);
+    try {
+      const docs = await ApiClient.getCustomerPortalKYCDocuments(token);
+      setKycDocs(docs);
+    } catch (err: any) {
+      console.error('Failed to load portal KYC documents:', err);
+      setKycError(err.message || 'Unable to load KYC documents for this account.');
+    } finally {
+      setLoadingKyc(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (token) {
+      fetchKycDocuments();
+    }
+  }, [token, fetchKycDocuments]);
 
   // Fetch portal data using token only (never writes to localStorage)
   const fetchPortalData = useCallback(async (isSilent = false) => {
@@ -695,6 +727,25 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                   <Receipt size={14} />
                   <span>Payment History ({data.paymentHistory?.length || 0})</span>
                 </button>
+                <button
+                  onClick={() => setActiveTab('kyc')}
+                  style={{
+                    background: activeTab === 'kyc' ? 'var(--primary-subtle)' : 'transparent',
+                    color: activeTab === 'kyc' ? 'var(--primary)' : 'var(--text-secondary)',
+                    border: activeTab === 'kyc' ? '1px solid var(--primary-border)' : '1px solid transparent',
+                    fontWeight: 700,
+                    fontSize: 14,
+                    padding: '8px 16px',
+                    borderRadius: 'var(--radius-md)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                  }}
+                >
+                  <ShieldCheck size={14} />
+                  <span>KYC Documents ({kycDocs.length})</span>
+                </button>
               </div>
 
               {/* Tab 1: EMI Schedule */}
@@ -797,6 +848,114 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                   </table>
                 </div>
               )}
+
+              {/* Tab 3: KYC Documents */}
+              {activeTab === 'kyc' && (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
+                    <div>
+                      <h4 style={{ margin: '0 0 4px 0', fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>
+                        Borrower Identity & KYC Documents
+                      </h4>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                        Official identification and agreement documents registered to your account
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={fetchKycDocuments}
+                      disabled={loadingKyc}
+                      className="btn btn-secondary btn-sm"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                    >
+                      <RefreshCw size={12} className={loadingKyc ? 'spin' : ''} />
+                      <span>Refresh</span>
+                    </button>
+                  </div>
+
+                  {loadingKyc && (
+                    <div style={{ textAlign: 'center', padding: '36px 16px', color: 'var(--text-muted)' }}>
+                      <RefreshCw size={24} className="spin" color="var(--primary)" style={{ marginBottom: 8 }} />
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>Loading borrower documents...</div>
+                    </div>
+                  )}
+
+                  {kycError && !loadingKyc && (
+                    <div style={{ padding: 16, background: 'var(--danger-bg)', borderRadius: 'var(--radius-md)', color: 'var(--danger)', fontSize: 13, marginBottom: 16 }}>
+                      <div style={{ fontWeight: 600 }}>Unable to load KYC documents</div>
+                      <div style={{ fontSize: 12, marginTop: 4 }}>{kycError}</div>
+                    </div>
+                  )}
+
+                  {!loadingKyc && !kycError && (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, textAlign: 'left' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-secondary)' }}>
+                            <th style={{ padding: '10px 12px' }}>Document Type</th>
+                            <th style={{ padding: '10px 12px' }}>Document Number</th>
+                            <th style={{ padding: '10px 12px' }}>Status</th>
+                            <th style={{ padding: '10px 12px' }}>Format</th>
+                            <th style={{ padding: '10px 12px' }}>Date</th>
+                            <th style={{ padding: '10px 12px', textAlign: 'center' }}>Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {kycDocs && kycDocs.length > 0 ? (
+                            kycDocs.map((doc: any) => (
+                              <tr key={doc.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                                <td style={{ padding: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <FileText size={14} color="var(--primary)" />
+                                    <span>{doc.docType}</span>
+                                  </div>
+                                </td>
+                                <td style={{ padding: '12px', fontFamily: 'monospace', fontSize: 12 }}>
+                                  {doc.docNumberMasked || 'Verified Customer File'}
+                                </td>
+                                <td style={{ padding: '12px' }}>
+                                  <span className="badge badge-paid">{doc.status || 'VERIFIED'}</span>
+                                </td>
+                                <td style={{ padding: '12px', fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                                  {doc.fileMimeType ? doc.fileMimeType.split('/')[1] || doc.fileMimeType : 'DOCUMENT'}
+                                </td>
+                                <td style={{ padding: '12px', fontSize: 12, color: 'var(--text-secondary)' }}>
+                                  {doc.createdAt ? formatDateDDMMYYYY(doc.createdAt) : '—'}
+                                </td>
+                                <td style={{ padding: '12px', textAlign: 'center' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setViewingKycDoc({
+                                        id: doc.id,
+                                        title: `${doc.docType} (${doc.docNumberMasked || 'Borrower KYC'})`,
+                                        docType: doc.docType,
+                                        fileMimeType: doc.fileMimeType,
+                                      })
+                                    }
+                                    className="btn btn-secondary btn-sm"
+                                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                                  >
+                                    <Eye size={12} />
+                                    <span>View</span>
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={6} style={{ padding: 32, textAlign: 'center', color: 'var(--text-secondary)' }}>
+                                <ShieldCheck size={28} color="var(--text-muted)" style={{ marginBottom: 6 }} />
+                                <div>No KYC documents are currently available for this loan account.</div>
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* ─── Footer Assistance Note ─────────────────────────────────── */}
@@ -817,6 +976,18 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
           </>
         )}
       </main>
+
+      {/* Customer Portal Secure KYC Document Viewer Modal */}
+      {viewingKycDoc && (
+        <DocumentViewerModal
+          documentId={viewingKycDoc.id}
+          portalToken={token || undefined}
+          title={viewingKycDoc.title}
+          docType={viewingKycDoc.docType}
+          fileMimeType={viewingKycDoc.fileMimeType}
+          onClose={() => setViewingKycDoc(null)}
+        />
+      )}
     </div>
   );
 };

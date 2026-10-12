@@ -226,6 +226,70 @@ export class ApiClient {
     return json.data as ICustomerPortalLoanData;
   }
 
+  /**
+   * Public Customer Portal - list borrower's own KYC documents.
+   */
+  public static async getCustomerPortalKYCDocuments(token: string): Promise<Array<{
+    id: string;
+    docType: string;
+    docNumberMasked?: string;
+    status: string;
+    fileMimeType: string;
+    fileSizeBytes: number;
+    createdAt: string;
+    verifiedAt?: string;
+  }>> {
+    const url = buildApiUrl(`/portal/kyc?token=${encodeURIComponent(token)}`);
+    const res = await fetch(url, {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    let json: any;
+    try {
+      json = await res.json();
+    } catch {
+      throw new Error(`Unable to reach the customer portal server (HTTP ${res.status}).`);
+    }
+
+    if (!res.ok || !json.success) {
+      throw new Error(json.error?.message || 'Failed to load KYC documents');
+    }
+
+    return json.data || [];
+  }
+
+  /**
+   * Public Customer Portal - get short-lived presigned download URL for borrower's own KYC document.
+   */
+  public static async getCustomerPortalKYCDownloadUrl(docId: string, token: string) {
+    const url = buildApiUrl(`/portal/kyc/${encodeURIComponent(docId)}/presigned-download?token=${encodeURIComponent(token)}`);
+    const res = await fetch(url, {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    let json: any;
+    try {
+      json = await res.json();
+    } catch {
+      throw new Error(`Unable to retrieve document preview (HTTP ${res.status}).`);
+    }
+
+    if (!res.ok || !json.success) {
+      throw new Error(json.error?.message || 'Failed to generate document preview link');
+    }
+
+    let downloadUrl = json.data.downloadUrl;
+    if (downloadUrl && !downloadUrl.startsWith('http://') && !downloadUrl.startsWith('https://')) {
+      downloadUrl = buildApiUrl(downloadUrl.replace(/^\/api\/v1/, ''));
+    }
+
+    return { ...json.data, downloadUrl };
+  }
+
   // Admin Customer Portal Link Management
   public static async getPortalLinkStatus(loanId: string): Promise<IPortalLinkStatus> {
     return this.request<IPortalLinkStatus>(`/portal/loans/${loanId}/link`);
@@ -464,9 +528,15 @@ export class ApiClient {
   public static async onboardCustomer(data: {
     customer: any;
     loan?: any;
+    idempotencyKey?: string | null;
   }): Promise<{ customer: ICustomer; loan: ILoan | null }> {
+    const headers: Record<string, string> = {};
+    if (data.idempotencyKey) {
+      headers['Idempotency-Key'] = data.idempotencyKey;
+    }
     return this.request<{ customer: ICustomer; loan: ILoan | null }>('/customers/onboard', {
       method: 'POST',
+      headers,
       body: JSON.stringify(data),
     });
   }
