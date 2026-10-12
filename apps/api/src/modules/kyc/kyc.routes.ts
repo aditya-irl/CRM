@@ -26,8 +26,11 @@ router.get('/local-vault', async (req: Request, res: Response, next: NextFunctio
 
     let safePath: string | null = null;
     for (const dir of candidateDirs) {
-      const candidate = path.resolve(dir, rawKey);
-      if (candidate.startsWith(dir) && fs.existsSync(candidate)) {
+      const base = path.resolve(dir);
+      const cleanKey = (rawKey || '').replace(/\\/g, '/').replace(/^\/+/, '');
+      const candidate = path.resolve(base, cleanKey);
+      const rel = path.relative(base, candidate);
+      if (rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel) && fs.existsSync(candidate)) {
         safePath = candidate;
         break;
       }
@@ -71,8 +74,10 @@ router.put('/local-vault', async (req: Request, res: Response, next: NextFunctio
       ? path.resolve(cwd, 'apps/api/data/storage_vault')
       : path.resolve(cwd, 'data/storage_vault');
 
-    const safePath = path.resolve(baseDir, rawKey);
-    if (!safePath.startsWith(baseDir)) {
+    const cleanKey = (rawKey || '').replace(/\\/g, '/').replace(/^\/+/, '');
+    const safePath = path.resolve(baseDir, cleanKey);
+    const rel = path.relative(baseDir, safePath);
+    if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) {
       return res.status(403).send('Invalid file path');
     }
     const parent = path.dirname(safePath);
@@ -200,6 +205,42 @@ router.delete(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const result = await KYCService.deleteKYCDocument(req.params.id, req.user!);
+      return res.json({
+        success: true,
+        data: result,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// Initialize KYC document re-upload / replacement (Admin / Branch Manager only)
+router.post(
+  '/:id/reupload',
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await KYCService.initReuploadKYCDocument(req.params.id, req.body, req.user!);
+      return res.json({
+        success: true,
+        data: result,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// Confirm KYC document replacement (Admin / Branch Manager only)
+router.post(
+  '/:id/confirm-replacement',
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await KYCService.confirmReplacementKYCDocument(req.params.id, req.body, req.user!);
       return res.json({
         success: true,
         data: result,

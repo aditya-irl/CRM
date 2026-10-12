@@ -260,9 +260,36 @@ export class KYCService {
     }
 
     const storage = getStorageProvider();
-    const fileExists = await storage.exists(doc.storage_key);
+    let fileExists = false;
+    try {
+      fileExists = await storage.exists(doc.storage_key);
+    } catch (storageErr: any) {
+      console.error(`[KYC Storage Error] Storage provider check failed for doc ${docId}:`, storageErr?.message || storageErr);
+      throw new AppError('Storage service temporarily unavailable. Please retry shortly.', 503, 'STORAGE_PROVIDER_ERROR');
+    }
+
     if (!fileExists) {
-      throw new NotFoundError('Document file not found in storage vault');
+      const correlationId = `kyc_miss_${Date.now().toString(36)}_${crypto.randomBytes(3).toString('hex')}`;
+      console.error(`[KYC Diagnostic] Storage object missing: docId=${docId}, customerId=${doc.customer_id}, docType=${doc.doc_type}, key=${doc.storage_key}, correlationId=${correlationId}`);
+
+      await AuditService.log({
+        userId: user.id,
+        action: 'KYC_STORAGE_OBJECT_MISSING',
+        entity: 'KYCDocument',
+        entityId: docId,
+        newState: {
+          customerId: doc.customer_id,
+          docType: doc.doc_type,
+          correlationId,
+          reason: 'Underlying file missing from storage vault'
+        }
+      });
+
+      throw new AppError(
+        `Document file not found in storage vault. An authorized administrator can safely re-upload the document from the customer profile. (Ref: ${correlationId})`,
+        404,
+        'DOCUMENT_FILE_MISSING'
+      );
     }
 
     const downloadUrl = await storage.getSignedUrl({
@@ -345,9 +372,36 @@ export class KYCService {
     }
 
     const storage = getStorageProvider();
-    const fileExists = await storage.exists(doc.storage_key);
+    let fileExists = false;
+    try {
+      fileExists = await storage.exists(doc.storage_key);
+    } catch (storageErr: any) {
+      console.error(`[KYC Storage Error] Storage provider check failed for doc ${docId}:`, storageErr?.message || storageErr);
+      throw new AppError('Storage service temporarily unavailable. Please retry shortly.', 503, 'STORAGE_PROVIDER_ERROR');
+    }
+
     if (!fileExists) {
-      throw new NotFoundError('Document file not found in storage vault');
+      const correlationId = `kyc_miss_${Date.now().toString(36)}_${crypto.randomBytes(3).toString('hex')}`;
+      console.error(`[KYC Diagnostic] Storage object missing: docId=${docId}, customerId=${doc.customer_id}, docType=${doc.doc_type}, key=${doc.storage_key}, correlationId=${correlationId}`);
+
+      await AuditService.log({
+        userId: user.id,
+        action: 'KYC_STORAGE_OBJECT_MISSING',
+        entity: 'KYCDocument',
+        entityId: docId,
+        newState: {
+          customerId: doc.customer_id,
+          docType: doc.doc_type,
+          correlationId,
+          reason: 'Underlying file missing from storage vault'
+        }
+      });
+
+      throw new AppError(
+        `Document file not found in storage vault. An authorized administrator can safely re-upload the document from the customer profile. (Ref: ${correlationId})`,
+        404,
+        'DOCUMENT_FILE_MISSING'
+      );
     }
 
     if (!storage.getStream) {
@@ -435,6 +489,149 @@ export class KYCService {
       verifiedAt: doc.verified_at,
       createdAt: doc.created_at,
     }));
+  }
+
+  /**
+   * Initialize safe replacement / re-upload of a missing or updated KYC document.
+   * Allowed for Super Admin, Admin, and Branch Manager.
+   */
+  public static async initReuploadKYCDocument(
+    docId: string,
+    data: { fileName: string; mimeType: string; fileSizeBytes: number },
+    user: AuthenticatedUser
+  ) {
+    if (
+      user.role !== UserRole.SUPER_ADMIN &&
+      user.role !== UserRole.ADMIN &&
+      user.role !== UserRole.BRANCH_MANAGER
+    ) {
+      throw new ForbiddenError('Only administrators and branch managers can replace KYC documents');
+    }
+
+    if (!ALLOWED_MIME_TYPES.includes(data.mimeType)) {
+      throw new ValidationError(`Invalid file type ${data.mimeType}. Only JPEG, PNG, WEBP, or PDF are permitted.`);
+    }
+
+    if (data.fileSizeBytes <= 0 || data.fileSizeBytes > MAX_FILE_SIZE) {
+      throw new ValidationError('File size must be greater than 0 and less than or equal to 10 MB.');
+    }
+
+    const docRes = await queryPostgres('SELECT * FROM kyc_documents WHERE id = $1', [docId]);
+    if (docRes.rows.length === 0) {
+      throw new NotFoundError('KYC document not found');
+    }
+    const doc = docRes.rows[0];
+
+    const fileExt = data.fileName.split('.').pop()?.toLowerCase() || 'bin';
+    const newStorageKey = `kyc/${doc.customer_id}/${uuidv4()}.${fileExt}`;
+
+    const storage = getStorageProvider();
+    const uploadUrl = await storage.getSignedUrl({
+      key: newStorageKey,
+      expiresInSeconds: MAX_KYC_URL_EXPIRY_SECONDS,
+      operation: 'putObject',
+      mimeType: data.mimeType,
+    });
+
+    return {
+      uploadUrl,
+      storageKey: newStorageKey,
+      fileMimeType: data.mimeType,
+      fileSizeBytes: data.fileSizeBytes,
+      expiresInSeconds: MAX_KYC_URL_EXPIRY_SECONDS,
+    };
+  }
+
+  /**
+   * Confirm replacement / re-upload of a KYC document.
+   * Updates database record ONLY after ensuring new object is present in storage.
+   * Cleans up old storage object only AFTER database update succeeds.
+   */
+  public static async confirmReplacementKYCDocument(
+    docId: string,
+    data: { storageKey: string; fileMimeType: string; fileSizeBytes: number; docNumber?: string | null },
+    user: AuthenticatedUser
+  ) {
+    if (
+      user.role !== UserRole.SUPER_ADMIN &&
+      user.role !== UserRole.ADMIN &&
+      user.role !== UserRole.BRANCH_MANAGER
+    ) {
+      throw new ForbiddenError('Only administrators and branch managers can replace KYC documents');
+    }
+
+    const docRes = await queryPostgres('SELECT * FROM kyc_documents WHERE id = $1', [docId]);
+    if (docRes.rows.length === 0) {
+      throw new NotFoundError('KYC document not found');
+    }
+    const doc = docRes.rows[0];
+
+    if (!data.storageKey.startsWith(`kyc/${doc.customer_id}/`)) {
+      throw new ValidationError('Invalid storage key: document must be uploaded to the customer directory');
+    }
+
+    const storage = getStorageProvider();
+    const newFileExists = await storage.exists(data.storageKey);
+    if (!newFileExists) {
+      throw new ValidationError('Uploaded replacement file was not found in storage. Ensure file upload completed before confirming.');
+    }
+
+    const oldStorageKey = doc.storage_key;
+
+    let maskedNumber = doc.doc_number_masked;
+    let numberHash = doc.doc_number_hash;
+    if (data.docNumber && data.docNumber.trim()) {
+      const raw = data.docNumber.trim();
+      if (doc.doc_type === KYCType.AADHAAR) {
+        maskedNumber = maskAadhaar(raw);
+      } else if (doc.doc_type === KYCType.PAN) {
+        maskedNumber = maskPan(raw);
+      } else {
+        maskedNumber = raw.length > 4 ? `XXXX${raw.slice(-4)}` : raw;
+      }
+      numberHash = crypto.createHash('sha256').update(raw.toUpperCase()).digest('hex');
+    }
+
+    const updateRes = await queryPostgres(
+      `UPDATE kyc_documents
+       SET storage_key = $1, file_mime_type = $2, file_size_bytes = $3,
+           doc_number_masked = $4, doc_number_hash = $5, status = 'VERIFIED',
+           verified_by = $6, verified_at = NOW()
+       WHERE id = $7
+       RETURNING *`,
+      [data.storageKey, data.fileMimeType, data.fileSizeBytes, maskedNumber, numberHash, user.id, docId]
+    );
+
+    const updated = updateRes.rows[0];
+
+    if (oldStorageKey && oldStorageKey !== data.storageKey) {
+      try {
+        await storage.delete(oldStorageKey);
+      } catch (cleanErr) {
+        console.warn('[KYC Re-upload] Non-fatal cleanup warning for old key:', cleanErr);
+      }
+    }
+
+    await AuditService.log({
+      userId: user.id,
+      action: 'KYC_DOCUMENT_REPLACED',
+      entity: 'KYCDocument',
+      entityId: docId,
+      newState: { customerId: doc.customer_id, docType: doc.doc_type, newStorageKey: data.storageKey },
+      previousState: { oldStorageKey },
+    });
+
+    return {
+      id: updated.id,
+      customerId: updated.customer_id,
+      docType: updated.doc_type,
+      docNumberMasked: updated.doc_number_masked,
+      status: updated.status,
+      fileMimeType: updated.file_mime_type,
+      fileSizeBytes: Number(updated.file_size_bytes),
+      verifiedAt: updated.verified_at,
+      createdAt: updated.created_at,
+    };
   }
 
   /**

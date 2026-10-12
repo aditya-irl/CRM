@@ -408,4 +408,170 @@ describe('Storage Configuration Enforcement', () => {
       }
     });
   });
+
+  describe('10. Path Traversal Security & Storage Vault Containment Enforcement', () => {
+    let provider: LocalStorageProvider;
+
+    beforeEach(() => {
+      provider = new LocalStorageProvider();
+    });
+
+    test('valid nested KYC keys are accepted for upload, exists, stream, and delete', async () => {
+      const nestedKey = `kyc/cust_valid_${Date.now()}/subfolder/aadhaar_card.pdf`;
+      const payload = Buffer.from('PDF Mock Content For Valid KYC');
+
+      const uploadResult = await provider.upload({
+        key: nestedKey,
+        body: payload,
+        mimeType: 'application/pdf',
+      });
+      expect(uploadResult.key).toBe(nestedKey);
+
+      const exists = await provider.exists(nestedKey);
+      expect(exists).toBe(true);
+
+      const resolved = provider.resolvePath(nestedKey);
+      expect(resolved).toContain('aadhaar_card.pdf');
+
+      const streamResult = await provider.getStream(nestedKey);
+      expect(streamResult.contentType).toBe('application/pdf');
+      expect(streamResult.contentLength).toBe(payload.length);
+
+      // Verify stream read
+      const chunks: Buffer[] = [];
+      for await (const chunk of streamResult.stream as any) {
+        chunks.push(Buffer.from(chunk));
+      }
+      expect(Buffer.concat(chunks).toString()).toBe('PDF Mock Content For Valid KYC');
+
+      await provider.delete(nestedKey);
+      expect(await provider.exists(nestedKey)).toBe(false);
+    });
+
+    test('../ traversal attempts are strictly rejected across all provider methods', async () => {
+      const traversalKeys = [
+        '../../package.json',
+        'kyc/test/../../../package.json',
+        '../outside_vault.txt',
+        'kyc/cust_1/../../../../etc/passwd',
+      ];
+
+      for (const badKey of traversalKeys) {
+        // resolvePath must throw
+        expect(() => provider.resolvePath(badKey)).toThrow(/path traversal detected/i);
+
+        // upload must throw and never write
+        await expect(
+          provider.upload({ key: badKey, body: 'evil payload', mimeType: 'text/plain' })
+        ).rejects.toThrow(/path traversal detected/i);
+
+        // delete must throw
+        await expect(provider.delete(badKey)).rejects.toThrow(/path traversal detected/i);
+
+        // getStream must throw
+        await expect(provider.getStream(badKey)).rejects.toThrow(/path traversal detected/i);
+
+        // getSignedUrl must throw
+        await expect(
+          provider.getSignedUrl({ key: badKey, expiresInSeconds: 60, operation: 'getObject' })
+        ).rejects.toThrow(/path traversal detected/i);
+
+        // exists must return false, never leaking external file existence
+        const exists = await provider.exists(badKey);
+        expect(exists).toBe(false);
+      }
+    });
+
+    test('absolute paths are rejected across all provider methods', async () => {
+      const absoluteKeys = [
+        '/etc/passwd',
+        '/var/log/syslog',
+        '/Users/someone/secret.txt',
+        'C:\\Windows\\System32\\drivers\\etc\\hosts',
+        'D:/vault/secret.key',
+      ];
+
+      for (const absKey of absoluteKeys) {
+        expect(() => provider.resolvePath(absKey)).toThrow(/absolute paths are not permitted/i);
+
+        await expect(
+          provider.upload({ key: absKey, body: 'payload', mimeType: 'text/plain' })
+        ).rejects.toThrow(/absolute paths are not permitted/i);
+
+        await expect(provider.delete(absKey)).rejects.toThrow(/absolute paths are not permitted/i);
+
+        await expect(provider.getStream(absKey)).rejects.toThrow(/absolute paths are not permitted/i);
+
+        await expect(
+          provider.getSignedUrl({ key: absKey, expiresInSeconds: 60, operation: 'getObject' })
+        ).rejects.toThrow(/absolute paths are not permitted/i);
+
+        expect(await provider.exists(absKey)).toBe(false);
+      }
+    });
+
+    test('Windows-style backslash traversal is normalized and rejected', async () => {
+      const backslashKeys = [
+        '..\\..\\package.json',
+        'kyc\\cust_1\\..\\..\\package.json',
+        'sub\\..\\..\\outside.txt',
+      ];
+
+      for (const bsKey of backslashKeys) {
+        expect(() => provider.resolvePath(bsKey)).toThrow(/path traversal detected/i);
+        await expect(
+          provider.upload({ key: bsKey, body: 'payload', mimeType: 'text/plain' })
+        ).rejects.toThrow(/path traversal detected/i);
+        expect(await provider.exists(bsKey)).toBe(false);
+      }
+    });
+
+    test('URL-encoded traversal sequences are rejected', async () => {
+      const encodedKeys = [
+        '%2e%2e%2fpackage.json',
+        'kyc%2f%2e%2e%2f%2e%2e%2fpackage.json',
+        '..%2foutside.txt',
+      ];
+
+      for (const encKey of encodedKeys) {
+        expect(() => provider.resolvePath(encKey)).toThrow(/path traversal detected/i);
+        expect(await provider.exists(encKey)).toBe(false);
+      }
+    });
+
+    test('empty keys, whitespace-only, and null-byte injection are rejected', async () => {
+      expect(() => provider.resolvePath('')).toThrow(/key cannot be empty|non-empty string/i);
+      expect(() => provider.resolvePath('   ')).toThrow(/key cannot be empty/i);
+      expect(() => provider.resolvePath('kyc/doc.pdf\0.png')).toThrow(/null bytes are not permitted/i);
+
+      expect(await provider.exists('')).toBe(false);
+      expect(await provider.exists('   ')).toBe(false);
+      expect(await provider.exists('kyc/doc.pdf\0.png')).toBe(false);
+    });
+
+    test('existing standard upload, existence, read, and delete behavior is preserved', async () => {
+      const standardKey = `standard_lifecycle_${Date.now()}.pdf`;
+      const content = Buffer.from('Standard storage lifecycle content');
+
+      const uploadResult = await provider.upload({
+        key: standardKey,
+        body: content,
+        mimeType: 'application/pdf',
+      });
+      expect(uploadResult.key).toBe(standardKey);
+      expect(await provider.exists(standardKey)).toBe(true);
+
+      const streamRes = await provider.getStream(standardKey);
+      expect(streamRes.contentType).toBe('application/pdf');
+      await new Promise<void>((resolve, reject) => {
+        streamRes.stream.on('error', reject);
+        streamRes.stream.on('data', () => {});
+        streamRes.stream.on('end', () => resolve());
+        streamRes.stream.resume();
+      });
+
+      await provider.delete(standardKey);
+      expect(await provider.exists(standardKey)).toBe(false);
+    });
+  });
 });
