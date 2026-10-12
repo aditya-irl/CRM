@@ -931,7 +931,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
                               {loan.installments.map((inst) => (
                                 <tr key={inst.id}>
                                   <td className="mono">{inst.installmentNumber}</td>
-                                  <td className="mono">{inst.dueDate}</td>
+                                  <td className="mono">{formatDateDDMMYYYY(inst.dueDate)}</td>
                                   <td className="mono">{formatINR(inst.expectedAmount)}</td>
                                   <td
                                     className="mono"

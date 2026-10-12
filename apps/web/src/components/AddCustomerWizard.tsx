@@ -5,6 +5,8 @@ import {
   InterestMethod,
   RepaymentFrequency,
   formatINR,
+  formatDateDDMMYYYY,
+  calculateNextDueDate,
   ICustomer,
   ILoan,
   IDealer,
@@ -130,7 +132,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
   const [tenureMonths, setTenureMonths] = useState<number>(6);
   const [frequency, setFrequency] = useState<RepaymentFrequency>(RepaymentFrequency.MONTHLY);
   const [disbursementDate, setDisbursementDate] = useState(new Date().toISOString().split('T')[0]);
-  const [firstEmiDate, setFirstEmiDate] = useState('');
+  const [firstEmiDate, setFirstEmiDate] = useState(() => calculateNextDueDate(new Date().toISOString().split('T')[0], 1, RepaymentFrequency.MONTHLY));
 
   // Server Calculated Preview
   const [previewSchedule, setPreviewSchedule] = useState<any | null>(null);
@@ -181,7 +183,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
     setTenureMonths(6);
     setFrequency(RepaymentFrequency.MONTHLY);
     setDisbursementDate(new Date().toISOString().split('T')[0]);
-    setFirstEmiDate('');
+    setFirstEmiDate(calculateNextDueDate(new Date().toISOString().split('T')[0], 1, RepaymentFrequency.MONTHLY));
   };
 
   const handleClose = () => {
@@ -278,6 +280,10 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
     if (currentStep === 1) {
       if (!fullName.trim() || !primaryPhone.trim() || !addressLine1.trim() || !areaRoute.trim() || !pincode.trim()) {
         setErrorMsg('Please complete all required customer fields including Collection Area / Route.');
+        return;
+      }
+      if (addressLine1.trim().length < 5) {
+        setErrorMsg('Address line 1 must be at least 5 characters.');
         return;
       }
       setCurrentStep(2);
@@ -1345,7 +1351,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                         <div>
                           <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>EMI START DATE</div>
                           <div className="mono" style={{ fontSize: 14, fontWeight: 700, color: 'var(--primary)' }}>
-                            {previewSchedule.firstEmiDate}
+                            {formatDateDDMMYYYY(previewSchedule.firstEmiDate)}
                           </div>
                         </div>
                         <div>
@@ -1357,13 +1363,13 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                         <div>
                           <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>FIRST EMI DUE</div>
                           <div className="mono" style={{ fontSize: 14, fontWeight: 700 }}>
-                            {previewSchedule.schedule[0]?.dueDate || previewSchedule.firstEmiDate}
+                            {formatDateDDMMYYYY(previewSchedule.schedule[0]?.dueDate || previewSchedule.firstEmiDate)}
                           </div>
                         </div>
                         <div>
                           <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>LAST EMI DUE</div>
                           <div className="mono" style={{ fontSize: 14, fontWeight: 700 }}>
-                            {previewSchedule.maturityDate}
+                            {formatDateDDMMYYYY(previewSchedule.maturityDate)}
                           </div>
                         </div>
                       </div>
@@ -1470,7 +1476,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                         <div>
                           <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Tenure & Schedule</div>
                           <div className="mono" style={{ fontSize: 14, fontWeight: 800 }}>
-                            {previewSchedule.totalInstallments} EMIs (Starts {previewSchedule.firstEmiDate})
+                            {previewSchedule.totalInstallments} EMIs (Starts {formatDateDDMMYYYY(previewSchedule.firstEmiDate)})
                           </div>
                         </div>
                       </div>

@@ -337,7 +337,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
           Active Window:{' '}
           <strong style={{ color: 'var(--text-primary)' }}>
-            {stats.period.startDate} to {stats.period.endDate}
+            {formatDisplayDate(stats.period.startDate)} to {formatDisplayDate(stats.period.endDate)}
           </strong>
         </div>
       </div>

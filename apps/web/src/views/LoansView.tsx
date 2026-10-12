@@ -5,6 +5,7 @@ import {
   ICustomer,
   formatINR,
   formatDateDDMMYYYY,
+  calculateNextDueDate,
   normalizeNumericLeadingZeros,
   InterestMethod,
   RepaymentFrequency,
@@ -73,7 +74,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
   const [tenureMonths, setTenureMonths] = useState<number>(12);
   const [frequency, setFrequency] = useState<RepaymentFrequency>(RepaymentFrequency.MONTHLY);
   const [disbDate, setDisbDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [emiStartDate, setEmiStartDate] = useState<string>('');
+  const [emiStartDate, setEmiStartDate] = useState<string>(() => calculateNextDueDate(new Date().toISOString().split('T')[0], 1, RepaymentFrequency.MONTHLY));
   const [originationError, setOriginationError] = useState<string | null>(null);
 
   const [previewSchedule, setPreviewSchedule] = useState<any | null>(null);
@@ -567,7 +568,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
             ensureCustomersLoaded();
             setShowOriginationModal(true);
             setPreviewSchedule(null);
-            setEmiStartDate('');
+            setEmiStartDate(calculateNextDueDate(disbDate, 1, frequency));
             setOriginationError(null);
           }}
           className="btn btn-primary"
@@ -1074,7 +1075,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 14, textAlign: 'center' }}>
                     <div style={{ background: '#ffffff', padding: 10, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
                       <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>EMI Start Date</div>
-                      <div className="mono" style={{ fontSize: 13, fontWeight: 700, color: 'var(--primary)' }}>{previewSchedule.firstEmiDate}</div>
+                      <div className="mono" style={{ fontSize: 13, fontWeight: 700, color: 'var(--primary)' }}>{formatDateDDMMYYYY(previewSchedule.firstEmiDate)}</div>
                     </div>
                     <div style={{ background: '#ffffff', padding: 10, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
                       <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>EMI Tenure</div>
@@ -1082,11 +1083,11 @@ export const LoansView: React.FC<LoansViewProps> = ({
                     </div>
                     <div style={{ background: '#ffffff', padding: 10, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
                       <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>First EMI Due Date</div>
-                      <div className="mono" style={{ fontSize: 13, fontWeight: 700 }}>{previewSchedule.schedule[0]?.dueDate || previewSchedule.firstEmiDate}</div>
+                      <div className="mono" style={{ fontSize: 13, fontWeight: 700 }}>{formatDateDDMMYYYY(previewSchedule.schedule[0]?.dueDate || previewSchedule.firstEmiDate)}</div>
                     </div>
                     <div style={{ background: '#ffffff', padding: 10, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
                       <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Last EMI Due Date</div>
-                      <div className="mono" style={{ fontSize: 13, fontWeight: 700 }}>{previewSchedule.maturityDate}</div>
+                      <div className="mono" style={{ fontSize: 13, fontWeight: 700 }}>{formatDateDDMMYYYY(previewSchedule.maturityDate)}</div>
                     </div>
                   </div>
 
@@ -1105,7 +1106,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
                         {previewSchedule.schedule.map((row: any) => (
                           <tr key={row.installmentNumber}>
                             <td className="mono">{row.installmentNumber}</td>
-                            <td className="mono">{row.dueDate}</td>
+                            <td className="mono">{formatDateDDMMYYYY(row.dueDate)}</td>
                             <td className="mono">{formatINR(row.principalComponent)}</td>
                             <td className="mono">{formatINR(row.interestComponent)}</td>
                             <td className="mono" style={{ fontWeight: 700, color: 'var(--success-text)' }}>

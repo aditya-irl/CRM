@@ -1006,7 +1006,7 @@ export const DealersView: React.FC<DealersViewProps> = ({
                                   </span>
                                 </div>
                                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                                  Borrower Phone: {loan.primaryPhone} • Disbursed: {loan.disbursementDate || 'Pending'}
+                                  Borrower Phone: {loan.primaryPhone} • Disbursed: {loan.disbursementDate ? formatDate(loan.disbursementDate) : 'Pending'}
                                 </div>
                               </div>
                               <div style={{ textAlign: 'right' }}>
