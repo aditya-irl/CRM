@@ -49,7 +49,12 @@ router.post(
   validateBody(onboardCustomerSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const result = await CustomerService.onboardCustomer(req.body, req.user!);
+      const headerKey = (req.headers['idempotency-key'] as string) || (req.headers['x-idempotency-key'] as string);
+      const idempotencyKey = headerKey ? headerKey.trim() : req.body.idempotencyKey;
+      const result = await CustomerService.onboardCustomer(
+        { ...req.body, ...(idempotencyKey ? { idempotencyKey } : {}) },
+        req.user!
+      );
       return res.status(201).json({
         success: true,
         data: result,

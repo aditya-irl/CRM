@@ -1,7 +1,18 @@
 import { v4 as uuidv4 } from 'uuid';
 import { queryPostgres, runPostgresTransaction } from '../../database/postgres';
 import { db } from '../../database/db';
-import { UserRole, maskPhone, maskAadhaar, maskPan, generateAmortizationSchedule, LoanStatus, OnboardCustomerInput } from '@crm/shared';
+import {
+  UserRole,
+  maskPhone,
+  maskAadhaar,
+  maskPan,
+  generateAmortizationSchedule,
+  LoanStatus,
+  OnboardCustomerInput,
+  InterestMethod,
+  RepaymentFrequency,
+  DEALER_ALLOWED_INTEREST_RATES,
+} from '@crm/shared';
 import { AppError, NotFoundError, ForbiddenError } from '../../middlewares/error.middleware';
 import { AuthenticatedUser } from '../../middlewares/auth.middleware';
 import { AuditService } from '../audit/audit.service';
@@ -439,6 +450,128 @@ export class CustomerService {
     };
   }
 
+  private static validateIdempotencyPayload(
+    cached: any,
+    data: OnboardCustomerInput,
+    phone: string,
+    idempotencyKey: string
+  ) {
+    if (!cached) return;
+    const phoneMismatch = cached.primaryPhone && cached.primaryPhone !== phone;
+    const nameMismatch = cached.fullName && data.customer.fullName && cached.fullName !== data.customer.fullName.trim().toLowerCase();
+    const principalMismatch =
+      cached.principalAmount !== undefined &&
+      cached.principalAmount !== null &&
+      data.loan &&
+      Number(cached.principalAmount) !== Number(data.loan.principalAmount);
+    const downPaymentMismatch =
+      cached.downPayment !== undefined &&
+      cached.downPayment !== null &&
+      data.loan &&
+      Number(cached.downPayment) !== Number(data.loan.downPayment || 0);
+    const rateMismatch =
+      cached.annualInterestRate !== undefined &&
+      cached.annualInterestRate !== null &&
+      data.loan &&
+      Number(cached.annualInterestRate) !== Number(data.loan.annualInterestRate);
+    const tenureMismatch =
+      cached.tenureMonths !== undefined &&
+      cached.tenureMonths !== null &&
+      data.loan &&
+      Number(cached.tenureMonths) !== Number(data.loan.tenureMonths);
+
+    if (phoneMismatch || nameMismatch || principalMismatch || downPaymentMismatch || rateMismatch || tenureMismatch) {
+      throw new AppError(
+        `Idempotency key "${idempotencyKey}" was previously used with a different onboarding payload`,
+        409
+      );
+    }
+  }
+
+  private static buildOnboardResponse(c: any, l: any | null, isIdempotentReplay = false) {
+    return {
+      customer: {
+        id: c.id || c.cust_id,
+        customerCode: c.customer_code,
+        fullName: c.full_name,
+        primaryPhone: c.primary_phone,
+        alternatePhone: c.alternate_phone,
+        addressLine1: c.address_line1,
+        addressLine2: c.address_line2 || null,
+        landmark: c.landmark,
+        city: c.city,
+        state: c.state,
+        pincode: c.pincode,
+        areaRoute: c.area_route,
+        photoUrl: c.photo_url,
+        isActive: Boolean(c.is_active),
+        createdAt: c.created_at,
+        updatedAt: c.updated_at,
+      },
+      loan: l ? {
+        id: l.id || l.loan_id,
+        loanAccountNo: l.loan_account_no,
+        customerId: l.customer_id || c.id || c.cust_id,
+        dealerId: l.dealer_id,
+        deviceBrand: l.device_brand || null,
+        deviceModel: l.device_model || null,
+        deviceName: l.device_name || (l.device_brand && l.device_model ? `${l.device_brand} ${l.device_model}` : (l.device_brand || l.device_model || null)),
+        imei1: l.imei1 || null,
+        imei2: l.imei2 || null,
+        deviceStatus: l.device_status || (l.device_brand || l.device_model ? 'ACTIVE' : null),
+        principalAmount: Number(l.principal_amount),
+        downPayment: Number(l.down_payment),
+        netDisbursedAmount: Number(l.net_disbursed_amount),
+        annualInterestRate: Number(l.annual_interest_rate),
+        interestCalcMethod: l.interest_calc_method,
+        tenureMonths: Number(l.tenure_months),
+        installmentFrequency: l.installment_frequency,
+        totalInstallments: Number(l.total_installments),
+        emiAmount: Number(l.emi_amount),
+        totalInterest: Number(l.total_interest),
+        totalPayable: Number(l.total_payable),
+        totalPaid: Number(l.total_paid),
+        outstandingBalance: Number(l.outstanding_balance),
+        disbursementDate: l.disbursement_date,
+        firstEmiDate: l.first_emi_date,
+        maturityDate: l.maturity_date,
+        status: l.status || l.loan_status,
+        createdAt: l.created_at,
+        updatedAt: l.updated_at || l.created_at,
+      } : null,
+      ...(isIdempotentReplay ? { isIdempotentReplay: true } : {}),
+    };
+  }
+
+  private static async fetchAndReplayIdempotentRecord(
+    cached: any,
+    data: OnboardCustomerInput,
+    phone: string,
+    idempotencyKey: string,
+    client?: any
+  ) {
+    CustomerService.validateIdempotencyPayload(cached, data, phone, idempotencyKey);
+
+    const queryFn = client ? (sql: string, params: any[]) => client.query(sql, params) : queryPostgres;
+
+    const custRes = await queryFn(
+      'SELECT * FROM customers WHERE id = $1 AND deleted_at IS NULL',
+      [cached.customerId]
+    );
+    if (custRes.rows.length === 0) {
+      return null;
+    }
+    const c = custRes.rows[0];
+    let l: any = null;
+    if (cached.loanId) {
+      const loanRes = await queryFn('SELECT * FROM loans WHERE id = $1', [cached.loanId]);
+      if (loanRes.rows.length > 0) {
+        l = loanRes.rows[0];
+      }
+    }
+    return CustomerService.buildOnboardResponse(c, l, true);
+  }
+
   /**
    * Atomic Customer + Loan Onboarding within a single database transaction.
    * If any step fails, the entire transaction rolls back cleanly, preventing partial customer or loan records.
@@ -447,7 +580,136 @@ export class CustomerService {
     data: OnboardCustomerInput,
     user: AuthenticatedUser
   ) {
+    const idempotencyKey = (data as any).idempotencyKey ? String((data as any).idempotencyKey).trim() : null;
+    const phone = data.customer.primaryPhone.trim();
+
+    // 1. Check Explicit Idempotency Key in PostgreSQL before starting transaction (fast cache path)
+    if (idempotencyKey) {
+      const existingKeyRes = await queryPostgres(
+        'SELECT value FROM system_settings WHERE key = $1',
+        [`idempotency:onboard:${idempotencyKey}`]
+      );
+      if (existingKeyRes.rows.length > 0) {
+        try {
+          const rawVal = existingKeyRes.rows[0].value;
+          const cached = typeof rawVal === 'string' ? JSON.parse(rawVal) : rawVal;
+          const replay = await CustomerService.fetchAndReplayIdempotentRecord(cached, data, phone, idempotencyKey);
+          if (replay) {
+            return replay;
+          }
+        } catch (err: any) {
+          if (err instanceof AppError) throw err;
+        }
+      }
+    }
+
+    // 2. Secondary Idempotency Guard: Natural duplicate detection across network timeouts (within 2-minute window)
+    // Only applies to unkeyed requests (when no explicit Idempotency-Key is provided).
+    // When an explicit Idempotency-Key is provided, distinct keys represent distinct financing requests and must not be falsely deduped.
+    if (!idempotencyKey) {
+      const recentCheck = await queryPostgres(
+        `SELECT c.id as cust_id, c.customer_code, c.full_name, c.primary_phone, c.address_line1,
+                c.alternate_phone, c.landmark, c.city, c.state, c.pincode, c.area_route, c.photo_url, c.is_active, c.created_at, c.updated_at,
+                l.id as loan_id, l.loan_account_no, l.dealer_id, l.device_brand, l.device_model, l.device_name,
+                l.imei1, l.imei2, l.device_status, l.principal_amount, l.down_payment, l.net_disbursed_amount,
+                l.annual_interest_rate, l.interest_calc_method, l.tenure_months, l.installment_frequency,
+                l.total_installments, l.emi_amount, l.total_interest, l.total_payable, l.total_paid,
+                l.outstanding_balance, l.disbursement_date, l.first_emi_date, l.maturity_date, l.status as loan_status
+         FROM customers c
+         LEFT JOIN loans l ON l.customer_id = c.id
+         WHERE c.primary_phone = $1
+           AND c.created_by = $2
+           AND c.created_at >= NOW() - INTERVAL '2 minutes'
+           AND c.deleted_at IS NULL
+         ORDER BY c.created_at DESC LIMIT 1`,
+        [phone, user.id]
+      );
+
+      if (recentCheck.rows.length > 0) {
+        const row = recentCheck.rows[0];
+        const nameMatches = row.full_name.trim().toLowerCase() === data.customer.fullName.trim().toLowerCase();
+        const imeiConflict = Boolean(data.loan?.imei1 && row.imei1 && data.loan.imei1.trim() !== row.imei1.trim());
+        const statusOk = !row.loan_status || !['REJECTED', 'CANCELLED', 'CLOSED'].includes(row.loan_status);
+        const dealerOk = !user.dealerId || !row.dealer_id || row.dealer_id === user.dealerId;
+        const loanMatches = !data.loan || (
+          row.loan_id &&
+          statusOk &&
+          dealerOk &&
+          !imeiConflict &&
+          Number(row.principal_amount) === Number(data.loan.principalAmount) &&
+          (data.loan.downPayment === undefined || Number(row.down_payment) === Number(data.loan.downPayment || 0)) &&
+          (data.loan.tenureMonths === undefined || Number(row.tenure_months) === Number(data.loan.tenureMonths))
+        );
+
+        if (nameMatches && loanMatches) {
+          return CustomerService.buildOnboardResponse(row, row.loan_id ? row : null, true);
+        }
+      }
+    }
+
     return await runPostgresTransaction(async (client) => {
+      // 0. Concurrency Synchronization: Transaction-scoped PostgreSQL advisory lock
+      // Serializes concurrent requests with the same idempotency key (or user + phone)
+      const lockKey = idempotencyKey ? `onboard:${idempotencyKey}` : `onboard:phone:${user.id}:${phone}`;
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [lockKey]);
+
+      // Double-check explicit idempotency key inside the lock
+      if (idempotencyKey) {
+        const inTxKeyRes = await client.query(
+          'SELECT value FROM system_settings WHERE key = $1',
+          [`idempotency:onboard:${idempotencyKey}`]
+        );
+        if (inTxKeyRes.rows.length > 0) {
+          const rawVal = inTxKeyRes.rows[0].value;
+          const cached = typeof rawVal === 'string' ? JSON.parse(rawVal) : rawVal;
+          const replay = await CustomerService.fetchAndReplayIdempotentRecord(cached, data, phone, idempotencyKey, client);
+          if (replay) {
+            return replay;
+          }
+        }
+      }
+
+      // Double-check secondary natural deduplication inside the lock for unkeyed requests
+      if (!idempotencyKey) {
+        const inTxRecentCheck = await client.query(
+          `SELECT c.id as cust_id, c.customer_code, c.full_name, c.primary_phone, c.address_line1,
+                  c.alternate_phone, c.landmark, c.city, c.state, c.pincode, c.area_route, c.photo_url, c.is_active, c.created_at, c.updated_at,
+                  l.id as loan_id, l.loan_account_no, l.dealer_id, l.device_brand, l.device_model, l.device_name,
+                  l.imei1, l.imei2, l.device_status, l.principal_amount, l.down_payment, l.net_disbursed_amount,
+                  l.annual_interest_rate, l.interest_calc_method, l.tenure_months, l.installment_frequency,
+                  l.total_installments, l.emi_amount, l.total_interest, l.total_payable, l.total_paid,
+                  l.outstanding_balance, l.disbursement_date, l.first_emi_date, l.maturity_date, l.status as loan_status
+           FROM customers c
+           LEFT JOIN loans l ON l.customer_id = c.id
+           WHERE c.primary_phone = $1
+             AND c.created_by = $2
+             AND c.created_at >= NOW() - INTERVAL '2 minutes'
+             AND c.deleted_at IS NULL
+           ORDER BY c.created_at DESC LIMIT 1`,
+          [phone, user.id]
+        );
+
+        if (inTxRecentCheck.rows.length > 0) {
+          const row = inTxRecentCheck.rows[0];
+          const nameMatches = row.full_name.trim().toLowerCase() === data.customer.fullName.trim().toLowerCase();
+          const imeiConflict = Boolean(data.loan?.imei1 && row.imei1 && data.loan.imei1.trim() !== row.imei1.trim());
+          const statusOk = !row.loan_status || !['REJECTED', 'CANCELLED', 'CLOSED'].includes(row.loan_status);
+          const dealerOk = !user.dealerId || !row.dealer_id || row.dealer_id === user.dealerId;
+          const loanMatches = !data.loan || (
+            row.loan_id &&
+            statusOk &&
+            dealerOk &&
+            !imeiConflict &&
+            Number(row.principal_amount) === Number(data.loan.principalAmount) &&
+            (data.loan.downPayment === undefined || Number(row.down_payment) === Number(data.loan.downPayment || 0)) &&
+            (data.loan.tenureMonths === undefined || Number(row.tenure_months) === Number(data.loan.tenureMonths))
+          );
+
+          if (nameMatches && loanMatches) {
+            return CustomerService.buildOnboardResponse(row, row.loan_id ? row : null, true);
+          }
+        }
+      }
       // 1. Create customer
       const customerId = uuidv4();
       // Generate unique customer code using max sequence to prevent unique constraint collisions
@@ -498,6 +760,36 @@ export class CustomerService {
         if (user.role === UserRole.DEALER) {
           if (!user.dealerId) throw new ForbiddenError('Dealer context missing');
           dealerId = user.dealerId;
+
+          // Enforce Dealer Interest Configuration (Requirements 2, 3, 4, 6):
+          // 1. Rate must be strictly 4%, 5%, or 6% per month
+          const rateNum = Number(data.loan.annualInterestRate);
+          if (!DEALER_ALLOWED_INTEREST_RATES.includes(rateNum as any)) {
+            throw new AppError(
+              `Dealer-originated onboarding only permits interest rates of 4%, 5%, or 6% per month. Received: ${data.loan.annualInterestRate}%`,
+              400
+            );
+          }
+
+          // 2. Repayment frequency must be MONTHLY only
+          const freq = data.loan.installmentFrequency || RepaymentFrequency.MONTHLY;
+          if (freq !== RepaymentFrequency.MONTHLY) {
+            throw new AppError(
+              `Dealer-originated onboarding only permits MONTHLY repayment frequency. Received: ${freq}`,
+              400
+            );
+          }
+          data.loan.installmentFrequency = RepaymentFrequency.MONTHLY;
+
+          // 3. Calculation method must be FLAT_RATE only
+          const method = data.loan.interestCalcMethod || InterestMethod.FLAT_RATE;
+          if (method !== InterestMethod.FLAT_RATE) {
+            throw new AppError(
+              `Dealer-originated onboarding only permits FLAT_RATE interest method. Received: ${method}`,
+              400
+            );
+          }
+          data.loan.interestCalcMethod = InterestMethod.FLAT_RATE;
         }
 
         if (dealerId) {
@@ -688,6 +980,31 @@ export class CustomerService {
         }
       }
 
+      if (idempotencyKey) {
+        await client.query(
+          `INSERT INTO system_settings (key, value, description, updated_by, updated_at)
+           VALUES ($1, $2, 'Onboarding idempotency record', $3, NOW())
+           ON CONFLICT (key) DO NOTHING`,
+          [
+            `idempotency:onboard:${idempotencyKey}`,
+            JSON.stringify({
+              customerId,
+              loanId: createdLoan?.id || null,
+              customerCode,
+              loanAccountNo: createdLoan?.loan_account_no || null,
+              primaryPhone: phone,
+              fullName: data.customer.fullName.trim().toLowerCase(),
+              principalAmount: data.loan ? Number(data.loan.principalAmount) : null,
+              downPayment: data.loan ? Number(data.loan.downPayment || 0) : null,
+              annualInterestRate: data.loan ? Number(data.loan.annualInterestRate) : null,
+              tenureMonths: data.loan ? Number(data.loan.tenureMonths) : null,
+              createdAt: new Date().toISOString(),
+            }),
+            user.id,
+          ]
+        );
+      }
+
       await AuditService.log({
         userId: user.id,
         action: 'CUSTOMER_ONBOARDED_ATOMIC',
@@ -698,60 +1015,11 @@ export class CustomerService {
           fullName: data.customer.fullName,
           hasLoan: Boolean(createdLoan),
           loanId: createdLoan?.id || null,
+          idempotencyKey,
         },
       });
 
-      return {
-        customer: {
-          id: createdCustomer.id,
-          customerCode: createdCustomer.customer_code,
-          fullName: createdCustomer.full_name,
-          primaryPhone: createdCustomer.primary_phone,
-          alternatePhone: createdCustomer.alternate_phone,
-          addressLine1: createdCustomer.address_line1,
-          addressLine2: createdCustomer.address_line2,
-          landmark: createdCustomer.landmark,
-          city: createdCustomer.city,
-          state: createdCustomer.state,
-          pincode: createdCustomer.pincode,
-          areaRoute: createdCustomer.area_route,
-          photoUrl: createdCustomer.photo_url,
-          isActive: Boolean(createdCustomer.is_active),
-          createdAt: createdCustomer.created_at,
-          updatedAt: createdCustomer.updated_at,
-        },
-        loan: createdLoan ? {
-          id: createdLoan.id,
-          loanAccountNo: createdLoan.loan_account_no,
-          customerId: createdLoan.customer_id,
-          dealerId: createdLoan.dealer_id,
-          deviceBrand: createdLoan.device_brand || null,
-          deviceModel: createdLoan.device_model || null,
-          deviceName: createdLoan.device_name || (createdLoan.device_brand && createdLoan.device_model ? `${createdLoan.device_brand} ${createdLoan.device_model}` : (createdLoan.device_brand || createdLoan.device_model || null)),
-          imei1: createdLoan.imei1 || null,
-          imei2: createdLoan.imei2 || null,
-          deviceStatus: createdLoan.device_status || (createdLoan.device_brand || createdLoan.device_model ? 'ACTIVE' : null),
-          principalAmount: Number(createdLoan.principal_amount),
-          downPayment: Number(createdLoan.down_payment),
-          netDisbursedAmount: Number(createdLoan.net_disbursed_amount),
-          annualInterestRate: Number(createdLoan.annual_interest_rate),
-          interestCalcMethod: createdLoan.interest_calc_method,
-          tenureMonths: Number(createdLoan.tenure_months),
-          installmentFrequency: createdLoan.installment_frequency,
-          totalInstallments: Number(createdLoan.total_installments),
-          emiAmount: Number(createdLoan.emi_amount),
-          totalInterest: Number(createdLoan.total_interest),
-          totalPayable: Number(createdLoan.total_payable),
-          totalPaid: Number(createdLoan.total_paid),
-          outstandingBalance: Number(createdLoan.outstanding_balance),
-          status: createdLoan.status,
-          disbursementDate: createdLoan.disbursement_date,
-          firstEmiDate: createdLoan.first_emi_date,
-          maturityDate: createdLoan.maturity_date,
-          createdAt: createdLoan.created_at,
-          updatedAt: createdLoan.updated_at,
-        } : null,
-      };
+      return CustomerService.buildOnboardResponse(createdCustomer, createdLoan, false);
     });
   }
 

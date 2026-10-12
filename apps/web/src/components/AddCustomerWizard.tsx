@@ -10,6 +10,7 @@ import {
   IDealer,
   UserRole,
   normalizeNumericLeadingZeros,
+  DEALER_ALLOWED_INTEREST_RATES,
 } from '@crm/shared';
 import { MediaUploader, MediaUploadResult } from './MediaUploader';
 import { DynamicAttachmentManager, AttachmentItem } from './DynamicAttachmentManager';
@@ -28,6 +29,7 @@ import {
   AlertCircle,
   Plus,
   Store,
+  RefreshCw,
 } from 'lucide-react';
 
 interface AddCustomerWizardProps {
@@ -123,7 +125,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
 
   // STEP 4: EMI / Finance Configuration
   const [downPayment, setDownPayment] = useState<number>(5000);
-  const [annualRate, setAnnualRate] = useState<number>(1.0);
+  const [annualRate, setAnnualRate] = useState<number>(isDealer ? 4 : 1.0);
   const [calcMethod, setCalcMethod] = useState<InterestMethod>(InterestMethod.FLAT_RATE);
   const [tenureMonths, setTenureMonths] = useState<number>(6);
   const [frequency, setFrequency] = useState<RepaymentFrequency>(RepaymentFrequency.MONTHLY);
@@ -136,11 +138,19 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
 
   // Final Success Summary State
   const [createdResult, setCreatedResult] = useState<{ customer: ICustomer; loan: ILoan } | null>(null);
+  const [photoUploadError, setPhotoUploadError] = useState<string | null>(null);
+  const [retryingPhoto, setRetryingPhoto] = useState(false);
+  const [photoUploadSuccess, setPhotoUploadSuccess] = useState(false);
+  const [idempotencyKey, setIdempotencyKey] = useState<string>(() => 'onb_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 9));
 
   const resetWizard = () => {
     setCurrentStep(1);
     setSubmitting(false);
     setErrorMsg(null);
+    setPhotoUploadError(null);
+    setRetryingPhoto(false);
+    setPhotoUploadSuccess(false);
+    setIdempotencyKey('onb_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 9));
     setCreatedResult(null);
     setPreviewSchedule(null);
     setSelectedDealerId(isDealer && currentUser?.dealerId ? currentUser.dealerId : '');
@@ -166,7 +176,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
     setInvoiceNumber('');
     setInvoiceDate(new Date().toISOString().split('T')[0]);
     setDownPayment(5000);
-    setAnnualRate(1.0);
+    setAnnualRate(isDealer ? 4 : 1.0);
     setCalcMethod(InterestMethod.FLAT_RATE);
     setTenureMonths(6);
     setFrequency(RepaymentFrequency.MONTHLY);
@@ -314,9 +324,54 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
     }
   };
 
+  const handleRetryPhotoUpload = async () => {
+    if (!createdResult?.customer?.id || !customerPhoto?.file) return;
+    setRetryingPhoto(true);
+    setPhotoUploadError(null);
+
+    try {
+      const photoDoc = await ApiClient.uploadKYCDocument({
+        customerId: createdResult.customer.id,
+        docType: KYCType.PHOTO,
+        docNumber: 'Customer Main Photo',
+        file: customerPhoto.file,
+      });
+      if (photoDoc?.id) {
+        const photoDownload = await ApiClient.getKYCDownloadUrl(photoDoc.id);
+        if (photoDownload?.downloadUrl) {
+          await ApiClient.updateCustomer(createdResult.customer.id, { photoUrl: photoDownload.downloadUrl });
+          setCreatedResult({
+            ...createdResult,
+            customer: {
+              ...createdResult.customer,
+              photoUrl: photoDownload.downloadUrl,
+            },
+          });
+          setPhotoUploadSuccess(true);
+        }
+      }
+    } catch (photoErr: any) {
+      console.warn('Customer photo storage upload retry error:', photoErr);
+      setPhotoUploadError(photoErr.message || 'Customer photo upload failed. Please try again.');
+    } finally {
+      setRetryingPhoto(false);
+    }
+  };
+
   const handleFinalSubmit = async () => {
+    // If customer and loan were already created in this wizard session,
+    // do NOT call onboardCustomer again to avoid duplicate records!
+    if (createdResult) {
+      if (customerPhoto?.file && (!createdResult.customer.photoUrl || photoUploadError)) {
+        await handleRetryPhotoUpload();
+      }
+      return;
+    }
+
     setSubmitting(true);
     setErrorMsg(null);
+    setPhotoUploadError(null);
+    setPhotoUploadSuccess(false);
 
     try {
       // 1. Atomic Customer + Loan Onboarding (all-or-nothing database transaction)
@@ -340,7 +395,9 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
           state: state.trim(),
           pincode: pincode.trim(),
           areaRoute: areaRoute.trim(),
-          photoUrl: customerPhoto?.previewUrl || undefined,
+          // Avoid sending multi-megabyte Base64 image in JSON body.
+          // Binary photo file is uploaded below via the secure KYC storage vault.
+          photoUrl: customerPhoto?.file ? undefined : (customerPhoto?.previewUrl || undefined),
         },
         loan: {
           principalAmount: Number(productPrice),
@@ -359,12 +416,36 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
           imei2: serialNumber.trim() || undefined,
           deviceStatus: 'ACTIVE',
         },
+        idempotencyKey,
       });
 
       const newCustomer = onboardResult.customer;
       const newLoan = onboardResult.loan || undefined;
 
-      // 2. Upload / Confirm KYC Documents for the newly created customer
+      // 2. Upload Customer Main Photo via secure KYC storage vault if attached
+      if (customerPhoto?.file) {
+        try {
+          const photoDoc = await ApiClient.uploadKYCDocument({
+            customerId: newCustomer.id,
+            docType: KYCType.PHOTO,
+            docNumber: 'Customer Main Photo',
+            file: customerPhoto.file,
+          });
+          if (photoDoc?.id) {
+            const photoDownload = await ApiClient.getKYCDownloadUrl(photoDoc.id);
+            if (photoDownload?.downloadUrl) {
+              await ApiClient.updateCustomer(newCustomer.id, { photoUrl: photoDownload.downloadUrl });
+              newCustomer.photoUrl = photoDownload.downloadUrl;
+              setPhotoUploadSuccess(true);
+            }
+          }
+        } catch (photoErr: any) {
+          console.warn('Customer photo storage upload note:', photoErr);
+          setPhotoUploadError(photoErr.message || 'Photo upload to secure vault failed. Customer profile was created.');
+        }
+      }
+
+      // 3. Upload / Confirm KYC Documents for the newly created customer
       for (const kyc of kycAttachments) {
         if (kyc.file) {
           try {
@@ -446,27 +527,90 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                 width: 56,
                 height: 56,
                 borderRadius: '50%',
-                background: 'var(--success-bg)',
-                border: '1px solid var(--success-border)',
+                background: photoUploadError ? 'rgba(234, 88, 12, 0.12)' : 'var(--success-bg)',
+                border: photoUploadError ? '1px solid rgba(234, 88, 12, 0.3)' : '1px solid var(--success-border)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: 'var(--success)',
+                color: photoUploadError ? '#ea580c' : 'var(--success)',
                 marginBottom: 16,
               }}
             >
-              <CheckCircle2 size={32} />
+              {photoUploadError ? <AlertCircle size={32} /> : <CheckCircle2 size={32} />}
             </div>
             <h3 style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-primary)' }}>
-              Borrower Onboarded Successfully!
+              {photoUploadError ? 'Borrower Created (Photo Upload Pending)' : 'Borrower Onboarded Successfully!'}
             </h3>
             <p style={{ fontSize: 13, color: 'var(--text-secondary)', maxWidth: 460, marginTop: 6 }}>
-              The customer profile, financed device record, and amortization schedule have been safely registered.
+              {photoUploadError
+                ? 'The customer profile and loan agreement were safely registered, but the customer live photo upload could not be completed.'
+                : 'The customer profile, financed device record, and amortization schedule have been safely registered.'}
             </p>
+
+            {/* Photo Upload Incomplete Banner & Retry Button */}
+            {photoUploadError && (
+              <div
+                style={{
+                  marginTop: 20,
+                  padding: 16,
+                  background: 'rgba(234, 88, 12, 0.08)',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid rgba(234, 88, 12, 0.3)',
+                  width: '100%',
+                  maxWidth: 460,
+                  textAlign: 'left',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#c2410c', fontWeight: 700, fontSize: 13 }}>
+                  <AlertCircle size={16} />
+                  <span>Photo Upload Incomplete</span>
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4, lineHeight: 1.4 }}>
+                  <span>Reason: </span>
+                  <span style={{ color: '#c2410c', fontWeight: 600 }}>{photoUploadError}</span>
+                </div>
+                <div style={{ marginTop: 12, display: 'flex', gap: 10 }}>
+                  <button
+                    type="button"
+                    onClick={handleRetryPhotoUpload}
+                    disabled={retryingPhoto}
+                    className="btn btn-primary btn-sm"
+                    style={{ background: '#ea580c', borderColor: '#c2410c', display: 'flex', alignItems: 'center', gap: 6 }}
+                  >
+                    <RefreshCw size={13} className={retryingPhoto ? 'spin' : ''} />
+                    <span>{retryingPhoto ? 'Retrying Photo Upload...' : 'Retry Photo Upload'}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {photoUploadSuccess && (
+              <div
+                style={{
+                  marginTop: 16,
+                  padding: '10px 16px',
+                  background: 'var(--success-bg)',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--success-border)',
+                  color: 'var(--success)',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  width: '100%',
+                  maxWidth: 460,
+                  textAlign: 'left',
+                }}
+              >
+                <CheckCircle2 size={16} />
+                <span>Customer live photo successfully uploaded to vault & linked to profile!</span>
+              </div>
+            )}
 
             <div
               style={{
-                marginTop: 24,
+                marginTop: 20,
                 padding: 16,
                 background: 'var(--bg-surface-secondary)',
                 borderRadius: 'var(--radius-md)',
@@ -520,6 +664,18 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
             )}
 
             <div style={{ marginTop: 24, display: 'flex', gap: 12 }}>
+              {photoUploadError && (
+                <button
+                  type="button"
+                  onClick={handleRetryPhotoUpload}
+                  disabled={retryingPhoto}
+                  className="btn btn-secondary btn-lg"
+                  style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                >
+                  <RefreshCw size={14} className={retryingPhoto ? 'spin' : ''} />
+                  <span>{retryingPhoto ? 'Retrying...' : 'Retry Photo Upload'}</span>
+                </button>
+              )}
               <button
                 onClick={() => {
                   onSuccess(createdResult.customer, createdResult.loan);
@@ -527,7 +683,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                 }}
                 className="btn btn-primary btn-lg"
               >
-                Done & View Directory
+                {photoUploadError ? 'Proceed to Directory Anyway' : 'Done & View Directory'}
               </button>
             </div>
           </div>
@@ -980,51 +1136,157 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                       </div>
                     </div>
 
-                    <div>
-                      <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
-                        Interest Rate (% per month)
-                      </label>
-                      <input
-                        type="number"
-                        step="0.1"
-                        className="form-input mono"
-                        value={annualRate}
-                        onChange={(e) => setAnnualRate(Number(e.target.value))}
-                        onBlur={(e) => setAnnualRate(Number(normalizeNumericLeadingZeros(e.target.value) || 0))}
-                      />
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-                        Monthly flat simple rate (e.g. 1.0% or 1.5% per month)
+                    {isDealer ? (
+                      <div
+                        style={{
+                          gridColumn: '1 / -1',
+                          background: 'var(--bg-surface-secondary)',
+                          padding: '16px',
+                          borderRadius: 'var(--radius-md)',
+                          border: '1px solid var(--border-subtle)',
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            gap: 8,
+                            marginBottom: 12,
+                          }}
+                        >
+                          <div>
+                            <label style={{ fontSize: 13, fontWeight: 700, display: 'block', color: 'var(--text-primary)' }}>
+                              Dealer Financing Rate (Monthly Flat Simple Interest) <span style={{ color: 'var(--danger)' }}>*</span>
+                            </label>
+                            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                              Select one of the three partner flat interest rates.
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                            <span className="badge badge-info" style={{ fontSize: 11, padding: '4px 8px' }}>
+                              Method: Flat Rate
+                            </span>
+                            <span className="badge badge-secondary" style={{ fontSize: 11, padding: '4px 8px' }}>
+                              Frequency: Monthly
+                            </span>
+                          </div>
+                        </div>
+
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
+                            gap: 12,
+                          }}
+                        >
+                          {DEALER_ALLOWED_INTEREST_RATES.map((rate) => {
+                            const isSelected = Number(annualRate) === rate;
+                            return (
+                              <button
+                                key={rate}
+                                type="button"
+                                onClick={() => setAnnualRate(rate)}
+                                style={{
+                                  padding: '14px 12px',
+                                  borderRadius: 'var(--radius-md)',
+                                  border: isSelected ? '2px solid var(--primary)' : '1px solid var(--border-default)',
+                                  background: isSelected ? 'rgba(59, 130, 246, 0.08)' : 'var(--bg-surface)',
+                                  cursor: 'pointer',
+                                  textAlign: 'center',
+                                  position: 'relative',
+                                  transition: 'all 0.15s ease',
+                                }}
+                              >
+                                {isSelected && (
+                                  <div
+                                    style={{
+                                      position: 'absolute',
+                                      top: 6,
+                                      right: 8,
+                                      width: 8,
+                                      height: 8,
+                                      borderRadius: '50%',
+                                      background: 'var(--primary)',
+                                    }}
+                                  />
+                                )}
+                                <div
+                                  className="mono"
+                                  style={{
+                                    fontSize: 22,
+                                    fontWeight: 800,
+                                    color: isSelected ? 'var(--primary)' : 'var(--text-primary)',
+                                    lineHeight: 1.2,
+                                  }}
+                                >
+                                  {rate}%
+                                </div>
+                                <div
+                                  style={{
+                                    fontSize: 11,
+                                    fontWeight: 600,
+                                    color: isSelected ? 'var(--primary)' : 'var(--text-secondary)',
+                                    marginTop: 4,
+                                  }}
+                                >
+                                  per month (flat)
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
+                    ) : (
+                      <>
+                        <div>
+                          <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                            Interest Rate (% per month)
+                          </label>
+                          <input
+                            type="number"
+                            step="0.1"
+                            className="form-input mono"
+                            value={annualRate}
+                            onChange={(e) => setAnnualRate(Number(e.target.value))}
+                            onBlur={(e) => setAnnualRate(Number(normalizeNumericLeadingZeros(e.target.value) || 0))}
+                          />
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                            Monthly flat simple rate (e.g. 1.0% or 1.5% per month)
+                          </div>
+                        </div>
 
-                    <div>
-                      <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
-                        Interest Method
-                      </label>
-                      <select
-                        className="form-select"
-                        value={calcMethod}
-                        onChange={(e) => setCalcMethod(e.target.value as InterestMethod)}
-                      >
-                        <option value={InterestMethod.FLAT_RATE}>Flat Rate</option>
-                        <option value={InterestMethod.REDUCING_BALANCE}>Reducing Balance</option>
-                      </select>
-                    </div>
+                        <div>
+                          <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                            Interest Method
+                          </label>
+                          <select
+                            className="form-select"
+                            value={calcMethod}
+                            onChange={(e) => setCalcMethod(e.target.value as InterestMethod)}
+                          >
+                            <option value={InterestMethod.FLAT_RATE}>Flat Rate</option>
+                            <option value={InterestMethod.REDUCING_BALANCE}>Reducing Balance</option>
+                          </select>
+                        </div>
 
-                    <div>
-                      <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
-                        Frequency
-                      </label>
-                      <select
-                        className="form-select"
-                        value={frequency}
-                        onChange={(e) => setFrequency(e.target.value as RepaymentFrequency)}
-                      >
-                        <option value={RepaymentFrequency.MONTHLY}>Monthly</option>
-                        <option value={RepaymentFrequency.WEEKLY}>Weekly</option>
-                        <option value={RepaymentFrequency.DAILY}>Daily</option>
-                      </select>
-                    </div>
+                        <div>
+                          <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                            Frequency
+                          </label>
+                          <select
+                            className="form-select"
+                            value={frequency}
+                            onChange={(e) => setFrequency(e.target.value as RepaymentFrequency)}
+                          >
+                            <option value={RepaymentFrequency.MONTHLY}>Monthly</option>
+                            <option value={RepaymentFrequency.WEEKLY}>Weekly</option>
+                            <option value={RepaymentFrequency.DAILY}>Daily</option>
+                          </select>
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>

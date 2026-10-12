@@ -51,7 +51,33 @@ export const EditCustomerModal: React.FC<EditCustomerModalProps> = ({
     setErrorMsg(null);
 
     try {
-      // 1. Update customer profile details
+      // 1. Upload new customer photo via KYC storage vault if provided
+      let finalPhotoUrl = customer.photoUrl || null;
+      if (mainPhoto?.file) {
+        try {
+          const photoDoc = await ApiClient.uploadKYCDocument({
+            customerId: customer.id,
+            docType: KYCType.PHOTO,
+            docNumber: 'Customer Main Photo',
+            file: mainPhoto.file,
+          });
+          if (photoDoc?.id) {
+            const photoDownload = await ApiClient.getKYCDownloadUrl(photoDoc.id);
+            if (photoDownload?.downloadUrl) {
+              finalPhotoUrl = photoDownload.downloadUrl;
+            }
+          }
+        } catch (photoErr: any) {
+          console.warn('Customer photo storage upload note:', photoErr);
+          throw new Error(
+            `Failed to upload customer photo: ${photoErr.message || 'Storage error'}. Existing photo was preserved. Please retry.`
+          );
+        }
+      } else if (mainPhoto?.previewUrl && !mainPhoto?.previewUrl.startsWith('data:')) {
+        finalPhotoUrl = mainPhoto.previewUrl;
+      }
+
+      // 2. Update customer profile details
       const updated = await ApiClient.updateCustomer(customer.id, {
         fullName: fullName.trim(),
         primaryPhone: primaryPhone.trim(),
@@ -63,7 +89,7 @@ export const EditCustomerModal: React.FC<EditCustomerModalProps> = ({
         state: state.trim(),
         pincode: pincode.trim(),
         areaRoute: areaRoute.trim(),
-        photoUrl: mainPhoto?.previewUrl || customer.photoUrl || null,
+        photoUrl: finalPhotoUrl,
       });
 
       // 2. Process any new KYC document uploads if provided
