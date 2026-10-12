@@ -46,6 +46,10 @@ export const EditCustomerModal: React.FC<EditCustomerModalProps> = ({
       setErrorMsg('Please complete all required fields.');
       return;
     }
+    if (addressLine1.trim().length < 5) {
+      setErrorMsg('Address line 1 must be at least 5 characters.');
+      return;
+    }
 
     setSaving(true);
     setErrorMsg(null);

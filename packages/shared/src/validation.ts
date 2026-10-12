@@ -60,7 +60,7 @@ export const updateDealerStatusSchema = z.object({
   status: z.nativeEnum(DealerStatus),
 });
 
-export const createCustomerSchema = z.object({
+export const customerBaseSchema = z.object({
   fullName: z.string().min(2, 'Full name must be at least 2 characters'),
   primaryPhone: z.string().regex(/^[0-9+()-\s]{10,15}$/, 'Invalid primary phone number'),
   alternatePhone: z.string().regex(/^[0-9+()-\s]{10,15}$/, 'Invalid alternate phone number').optional().nullable(),
@@ -74,7 +74,32 @@ export const createCustomerSchema = z.object({
   photoUrl: z.string().optional().nullable(),
 });
 
-export const updateCustomerSchema = createCustomerSchema.partial();
+function preprocessCustomerPayload(val: any) {
+  if (val && typeof val === 'object') {
+    const raw = { ...val };
+    if (!raw.addressLine1 && (raw.address_line1 || raw.address || raw.addressLine)) {
+      raw.addressLine1 = raw.address_line1 || raw.address || raw.addressLine;
+    }
+    if (typeof raw.addressLine1 === 'string') {
+      raw.addressLine1 = raw.addressLine1.trim();
+    }
+    if (typeof raw.fullName === 'string') raw.fullName = raw.fullName.trim();
+    if (typeof raw.primaryPhone === 'string') raw.primaryPhone = raw.primaryPhone.trim();
+    if (typeof raw.areaRoute === 'string') raw.areaRoute = raw.areaRoute.trim();
+    if (typeof raw.city === 'string') raw.city = raw.city.trim();
+    if (typeof raw.state === 'string') raw.state = raw.state.trim();
+    if (typeof raw.pincode === 'string') raw.pincode = raw.pincode.trim();
+    return raw;
+  }
+  return val;
+}
+
+export const createCustomerSchema = z.preprocess(preprocessCustomerPayload, customerBaseSchema);
+
+export const updateCustomerSchema = z.preprocess(
+  preprocessCustomerPayload,
+  customerBaseSchema.partial()
+);
 
 function isValidCalendarDate(dateStr: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false;
