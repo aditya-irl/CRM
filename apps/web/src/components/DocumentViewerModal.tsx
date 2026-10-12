@@ -13,7 +13,20 @@ import {
   ShieldCheck,
   Clock,
 } from 'lucide-react';
-import { ApiClient } from '../services/api';
+import { ApiClient, buildApiUrl } from '../services/api';
+
+function resolveDocumentUrl(rawUrl?: string | null): string | null {
+  if (!rawUrl) return null;
+  if (
+    rawUrl.startsWith('http://') ||
+    rawUrl.startsWith('https://') ||
+    rawUrl.startsWith('data:') ||
+    rawUrl.startsWith('blob:')
+  ) {
+    return rawUrl;
+  }
+  return buildApiUrl(rawUrl.replace(/^\/api\/v1/, ''));
+}
 
 export interface DocumentViewerModalProps {
   documentId?: string;
@@ -34,7 +47,7 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
   portalToken,
   onClose,
 }) => {
-  const [url, setUrl] = useState<string | null>(initialUrl || null);
+  const [url, setUrl] = useState<string | null>(() => resolveDocumentUrl(initialUrl));
   const [mimeType, setMimeType] = useState<string | undefined>(fileMimeType);
   const [loading, setLoading] = useState<boolean>(!initialUrl);
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +63,7 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
       const res = portalToken
         ? await ApiClient.getCustomerPortalKYCDownloadUrl(documentId, portalToken)
         : await ApiClient.getKYCDownloadUrl(documentId);
-      setUrl(res.downloadUrl);
+      setUrl(resolveDocumentUrl(res.downloadUrl));
       if (res.fileMimeType) {
         setMimeType(res.fileMimeType);
       }
@@ -100,11 +113,16 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
 
   const isImage =
     mimeLower.startsWith('image/') ||
+    mimeLower.includes('jpeg') ||
+    mimeLower.includes('jpg') ||
+    mimeLower.includes('png') ||
+    mimeLower.includes('webp') ||
     urlLower.includes('.jpg') ||
     urlLower.includes('.jpeg') ||
     urlLower.includes('.png') ||
     urlLower.includes('.webp') ||
-    urlLower.includes('.gif');
+    urlLower.includes('.gif') ||
+    (docType || '').toUpperCase() === 'PHOTO';
 
   const isPdf =
     mimeLower === 'application/pdf' ||

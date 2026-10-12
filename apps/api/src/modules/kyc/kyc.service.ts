@@ -246,7 +246,7 @@ export class KYCService {
       const dealerAccess = await queryPostgres(
         `SELECT id FROM loans WHERE dealer_id = $1 AND customer_id = $2
          UNION
-         SELECT id FROM customers WHERE id = $2 AND created_by = $3`,
+         SELECT id FROM customers WHERE id = $2 AND (created_by = $3 OR created_by IN (SELECT id FROM users WHERE dealer_id = $1))`,
         [user.dealerId, doc.customer_id, user.id]
       );
 
@@ -358,7 +358,7 @@ export class KYCService {
       const dealerAccess = await queryPostgres(
         `SELECT id FROM loans WHERE dealer_id = $1 AND customer_id = $2
          UNION
-         SELECT id FROM customers WHERE id = $2 AND created_by = $3`,
+         SELECT id FROM customers WHERE id = $2 AND (created_by = $3 OR created_by IN (SELECT id FROM users WHERE dealer_id = $1))`,
         [user.dealerId, doc.customer_id, user.id]
       );
 

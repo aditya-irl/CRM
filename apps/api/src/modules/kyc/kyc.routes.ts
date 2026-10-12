@@ -22,6 +22,8 @@ router.get('/local-vault', async (req: Request, res: Response, next: NextFunctio
       path.resolve(cwd, 'apps/api/data/storage_vault'),
       path.resolve(__dirname, '../../../../data/storage_vault'),
       path.resolve(__dirname, '../../../data/storage_vault'),
+      path.resolve(__dirname, '../../../../apps/api/data/storage_vault'),
+      path.resolve(__dirname, '../../../apps/api/data/storage_vault'),
     ];
 
     let safePath: string | null = null;
@@ -42,17 +44,20 @@ router.get('/local-vault', async (req: Request, res: Response, next: NextFunctio
 
     const ext = path.extname(safePath).toLowerCase();
     const queryMime = req.query.mimeType as string | undefined;
-    let mimeType = queryMime || 'application/octet-stream';
-    if (!queryMime) {
+    let mimeType = (queryMime || '').toLowerCase().trim();
+    if (!mimeType) {
       if (ext === '.pdf') mimeType = 'application/pdf';
       else if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg';
       else if (ext === '.png') mimeType = 'image/png';
       else if (ext === '.webp') mimeType = 'image/webp';
+      else mimeType = 'application/octet-stream';
+    } else if (mimeType === 'image/jpg') {
+      mimeType = 'image/jpeg';
     }
 
-    const safeInlineMimes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+    const safeInlineMimes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
     const isSafeInline = safeInlineMimes.includes(mimeType);
-    res.setHeader('Content-Type', isSafeInline ? mimeType : 'application/octet-stream');
+    res.setHeader('Content-Type', isSafeInline ? (mimeType === 'image/jpg' ? 'image/jpeg' : mimeType) : 'application/octet-stream');
     res.setHeader('Content-Disposition', isSafeInline ? 'inline' : 'attachment');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     const stream = fs.createReadStream(safePath);
@@ -166,10 +171,11 @@ router.get(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const result = await KYCService.streamKYCDocument(req.params.id, req.user!);
-      const safeInlineMimes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
-      const isSafeInline = safeInlineMimes.includes(result.mimeType);
+      const normMime = (result.mimeType || '').toLowerCase().trim();
+      const safeInlineMimes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+      const isSafeInline = safeInlineMimes.includes(normMime);
       const safeFilename = (result.docNumberMasked || result.docType || 'document').replace(/[^a-zA-Z0-9_\-\.]/g, '_');
-      res.setHeader('Content-Type', isSafeInline ? result.mimeType : 'application/octet-stream');
+      res.setHeader('Content-Type', isSafeInline ? (normMime === 'image/jpg' ? 'image/jpeg' : normMime) : 'application/octet-stream');
       res.setHeader('Content-Disposition', `${isSafeInline ? 'inline' : 'attachment'}; filename="${safeFilename}"`);
       res.setHeader('X-Content-Type-Options', 'nosniff');
       if (result.contentLength) {
