@@ -98,10 +98,6 @@ describe('Midnight Engine & Dealer Customer Approval Integration Tests', () => {
       await queryPostgres('DELETE FROM users WHERE id IN ($1, $2, $3, $4, $5)', [superAdminId, adminId, agentId, dealer1UserId, dealer2UserId]);
       await queryPostgres('DELETE FROM dealers WHERE id IN ($1, $2)', [dealer1Id, dealer2Id]);
     } catch {}
-
-    await closeAllQueues();
-    await closeRedisConnection();
-    await closePostgresPool();
   });
 
   // =========================================================================
@@ -205,7 +201,7 @@ describe('Midnight Engine & Dealer Customer Approval Integration Tests', () => {
           loan: {
             principalAmount: 25000,
             downPayment: 5000,
-            annualInterestRate: 1.5,
+            annualInterestRate: 4.0,
             interestCalcMethod: InterestMethod.FLAT_RATE,
             tenureMonths: 6,
             installmentFrequency: RepaymentFrequency.MONTHLY,
@@ -292,7 +288,7 @@ describe('Midnight Engine & Dealer Customer Approval Integration Tests', () => {
             dealerId: dealer2Id, // Attacking dealer passes Dealer 2's ID
             principalAmount: 15000,
             downPayment: 3000,
-            annualInterestRate: 1,
+            annualInterestRate: 4.0,
             interestCalcMethod: InterestMethod.FLAT_RATE,
             tenureMonths: 6,
             installmentFrequency: RepaymentFrequency.MONTHLY,
@@ -328,7 +324,7 @@ describe('Midnight Engine & Dealer Customer Approval Integration Tests', () => {
             dealerId: randomFakeDealer, // Inexistent dealer
             principalAmount: 20000,
             downPayment: 4000,
-            annualInterestRate: 1,
+            annualInterestRate: 4.0,
             interestCalcMethod: InterestMethod.FLAT_RATE,
             tenureMonths: 6,
             installmentFrequency: RepaymentFrequency.MONTHLY,
@@ -376,7 +372,7 @@ describe('Midnight Engine & Dealer Customer Approval Integration Tests', () => {
           loan: {
             principalAmount: 18000,
             downPayment: 2000,
-            annualInterestRate: 1.2,
+            annualInterestRate: 5.0,
             interestCalcMethod: InterestMethod.FLAT_RATE,
             tenureMonths: 6,
             installmentFrequency: RepaymentFrequency.MONTHLY,

@@ -195,8 +195,7 @@ describe('PHASE 4: Real Integration & Concurrency Test Suite (PostgreSQL Financi
   });
 
   afterAll(async () => {
-    await closePostgresPool();
-    await closeRedisConnection();
+    // Preserve shared pool singleton for subsequent test suites in worker
   });
 
   describe('1. Single EMI Full & Partial Payment Allocation', () => {
@@ -216,7 +215,7 @@ describe('PHASE 4: Real Integration & Concurrency Test Suite (PostgreSQL Financi
       expect(payRes.body.success).toBe(true);
       expect(payRes.body.data.receiptNumber).toMatch(/^RCP-\d+-\d+$/);
       expect(payRes.body.data.amountCollected).toBe(4000);
-      expect(payRes.body.data.remainingLoanOutstanding).toBe(59000); // 63000 - 4000
+      expect(payRes.body.data.remainingLoanOutstanding).toBe(92000); // 96000 - 4000
 
       // Verify EMI 1 state in PostgreSQL
       const emiRes = await queryPostgres(
@@ -225,13 +224,13 @@ describe('PHASE 4: Real Integration & Concurrency Test Suite (PostgreSQL Financi
       );
       const emi1 = emiRes.rows[0];
       expect(Number(emi1.paid_amount)).toBe(4000);
-      expect(Number(emi1.remaining_amount)).toBe(6500); // 10500 - 4000
+      expect(Number(emi1.remaining_amount)).toBe(12000); // 16000 - 4000
       expect(emi1.status).toBe('PARTIALLY_PAID');
 
       // Verify Loan state in PostgreSQL
       const loanRes = await queryPostgres('SELECT * FROM loans WHERE id = $1', [loan1Id]);
       expect(Number(loanRes.rows[0].total_paid)).toBe(4000);
-      expect(Number(loanRes.rows[0].outstanding_balance)).toBe(59000);
+      expect(Number(loanRes.rows[0].outstanding_balance)).toBe(92000);
     });
 
     it('processes remaining balance for EMI 1, transitioning status to PAID', async () => {
@@ -241,15 +240,15 @@ describe('PHASE 4: Real Integration & Concurrency Test Suite (PostgreSQL Financi
         .send({
           loanId: loan1Id,
           customerId: customer1Id,
-          amount: 6500.0,
+          amount: 12000.0,
           paymentMode: PaymentMode.UPI,
           referenceNumber: 'UPI-TXN-987654321',
           notes: 'Clearing remaining balance of EMI 1',
         });
 
       expect(payRes.status).toBe(201);
-      expect(payRes.body.data.amountCollected).toBe(6500);
-      expect(payRes.body.data.remainingLoanOutstanding).toBe(52500); // 59000 - 6500
+      expect(payRes.body.data.amountCollected).toBe(12000);
+      expect(payRes.body.data.remainingLoanOutstanding).toBe(80000); // 92000 - 12000
 
       // Verify EMI 1 in PostgreSQL
       const emiRes = await queryPostgres(
@@ -257,7 +256,7 @@ describe('PHASE 4: Real Integration & Concurrency Test Suite (PostgreSQL Financi
         [loan1Id]
       );
       const emi1 = emiRes.rows[0];
-      expect(Number(emi1.paid_amount)).toBe(10500);
+      expect(Number(emi1.paid_amount)).toBe(16000);
       expect(Number(emi1.remaining_amount)).toBe(0);
       expect(emi1.status).toBe('PAID');
     });
@@ -265,15 +264,15 @@ describe('PHASE 4: Real Integration & Concurrency Test Suite (PostgreSQL Financi
 
   describe('2. Multi-EMI Waterfall Allocation & Last-Cent Conservation', () => {
     it('allocates payment across multiple installments chronologically (EMI 2 & EMI 3)', async () => {
-      // EMI 2 is ₹10,500, EMI 3 is ₹10,500. We pay ₹15,000:
-      // Should fully pay EMI 2 (₹10,500) and partially pay EMI 3 (₹4,500).
+      // EMI 2 is ₹16,000, EMI 3 is ₹16,000. We pay ₹20,000:
+      // Should fully pay EMI 2 (₹16,000) and partially pay EMI 3 (₹4,000).
       const payRes = await request(app)
         .post('/api/v1/payments')
         .set('Authorization', `Bearer ${agent1Token}`)
         .send({
           loanId: loan1Id,
           customerId: customer1Id,
-          amount: 15000.0,
+          amount: 20000.0,
           paymentMode: PaymentMode.BANK_TRANSFER,
           referenceNumber: 'NEFT-20260615-112233',
         });
@@ -283,19 +282,19 @@ describe('PHASE 4: Real Integration & Concurrency Test Suite (PostgreSQL Financi
 
       const [alloc1, alloc2] = payRes.body.data.allocatedInstallments;
       expect(alloc1.installmentNumber).toBe(2);
-      expect(alloc1.allocatedAmount).toBe(10500);
+      expect(alloc1.allocatedAmount).toBe(16000);
       expect(alloc1.newStatus).toBe(EMIStatus.PAID);
 
       expect(alloc2.installmentNumber).toBe(3);
-      expect(alloc2.allocatedAmount).toBe(4500);
-      expect(alloc2.newPaidAmount).toBe(4500);
-      expect(alloc2.newRemainingAmount).toBe(6000); // 10500 - 4500
+      expect(alloc2.allocatedAmount).toBe(4000);
+      expect(alloc2.newPaidAmount).toBe(4000);
+      expect(alloc2.newRemainingAmount).toBe(12000); // 16000 - 4000
       expect(alloc2.newStatus).toBe(EMIStatus.PARTIALLY_PAID);
 
       // Verify Loan balance in PostgreSQL
       const loanRes = await queryPostgres('SELECT * FROM loans WHERE id = $1', [loan1Id]);
-      expect(Number(loanRes.rows[0].total_paid)).toBe(25500); // 4000 + 6500 + 15000
-      expect(Number(loanRes.rows[0].outstanding_balance)).toBe(37500); // 63000 - 25500
+      expect(Number(loanRes.rows[0].total_paid)).toBe(36000); // 4000 + 12000 + 20000
+      expect(Number(loanRes.rows[0].outstanding_balance)).toBe(60000); // 96000 - 36000
     });
   });
 
@@ -419,14 +418,14 @@ describe('PHASE 4: Real Integration & Concurrency Test Suite (PostgreSQL Financi
       expect(pay1Res.status).toBe(201);
       expect(pay2Res.status).toBe(201);
 
-      // Verify Loan 2 state in PostgreSQL: total_paid must be exactly 10,000, outstanding must be 21,500
+      // Verify Loan 2 state in PostgreSQL: total_paid must be exactly 10,000, outstanding must be 38,000
       const loanRes = await queryPostgres('SELECT * FROM loans WHERE id = $1', [loan2Id]);
       expect(Number(loanRes.rows[0].total_paid)).toBe(10000);
-      expect(Number(loanRes.rows[0].outstanding_balance)).toBe(21500);
+      expect(Number(loanRes.rows[0].outstanding_balance)).toBe(38000);
 
       // Verify EMI 1 & EMI 2 of Loan 2 in PostgreSQL:
-      // EMI 1 (expected ₹5,250) is fully paid (₹5,250, remaining 0, PAID)
-      // EMI 2 (expected ₹5,250) receives excess ₹4,750 (remaining ₹500, PARTIALLY_PAID)
+      // EMI 1 (expected ₹8,000) is fully paid (₹8,000, remaining 0, PAID)
+      // EMI 2 (expected ₹8,000) receives excess ₹2,000 (remaining ₹6,000, PARTIALLY_PAID)
       const emiRes = await queryPostgres(
         'SELECT * FROM emi_installments WHERE loan_id = $1 ORDER BY installment_number ASC',
         [loan2Id]
@@ -434,12 +433,12 @@ describe('PHASE 4: Real Integration & Concurrency Test Suite (PostgreSQL Financi
       const emi1 = emiRes.rows[0];
       const emi2 = emiRes.rows[1];
 
-      expect(Number(emi1.paid_amount)).toBe(5250);
+      expect(Number(emi1.paid_amount)).toBe(8000);
       expect(Number(emi1.remaining_amount)).toBe(0);
       expect(emi1.status).toBe('PAID');
 
-      expect(Number(emi2.paid_amount)).toBe(4750);
-      expect(Number(emi2.remaining_amount)).toBe(500);
+      expect(Number(emi2.paid_amount)).toBe(2000);
+      expect(Number(emi2.remaining_amount)).toBe(6000);
       expect(emi2.status).toBe('PARTIALLY_PAID');
     });
   });
@@ -708,11 +707,11 @@ describe('PHASE 4: Real Integration & Concurrency Test Suite (PostgreSQL Financi
       const loanRes = await queryPostgres('SELECT * FROM loans WHERE id = $1', [multiRevLoanId]);
       const loan = loanRes.rows[0];
       expect(Number(loan.total_paid)).toBe(10000);
-      expect(Number(loan.outstanding_balance)).toBe(53000); // 63000 - 10000
+      expect(Number(loan.outstanding_balance)).toBe(86000); // 96000 - 10000
 
       // Verify Installments:
-      // Active payment of ₹10,000 is cleanly waterfalled to EMI 1 (₹10,000 paid, ₹500 remaining, PARTIALLY_PAID)
-      // EMI 2 and EMI 3 are reset to ₹0 paid, ₹10,500 remaining
+      // Active payment of ₹10,000 is cleanly waterfalled to EMI 1 (₹10,000 paid, ₹6,000 remaining, PARTIALLY_PAID)
+      // EMI 2 and EMI 3 are reset to ₹0 paid, ₹16,000 remaining
       const instRes = await queryPostgres(
         'SELECT * FROM emi_installments WHERE loan_id = $1 ORDER BY installment_number ASC',
         [multiRevLoanId]
@@ -723,14 +722,14 @@ describe('PHASE 4: Real Integration & Concurrency Test Suite (PostgreSQL Financi
       const emi3 = instRes.rows[2];
 
       expect(Number(emi1.paid_amount)).toBe(10000);
-      expect(Number(emi1.remaining_amount)).toBe(500);
+      expect(Number(emi1.remaining_amount)).toBe(6000);
       expect(emi1.status).toBe('PARTIALLY_PAID');
 
       expect(Number(emi2.paid_amount)).toBe(0);
-      expect(Number(emi2.remaining_amount)).toBe(10500);
+      expect(Number(emi2.remaining_amount)).toBe(16000);
 
       expect(Number(emi3.paid_amount)).toBe(0);
-      expect(Number(emi3.remaining_amount)).toBe(10500);
+      expect(Number(emi3.remaining_amount)).toBe(16000);
 
       // Verify Invariants:
       const sumPaid = instRes.rows.reduce((sum, r) => sum + Number(r.paid_amount), 0);

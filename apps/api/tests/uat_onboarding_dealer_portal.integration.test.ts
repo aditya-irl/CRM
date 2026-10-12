@@ -214,9 +214,9 @@ describe('UAT Final Integration Tests: Onboarding, Dealer RLAC, and Customer Por
       expect(previewRes.status).toBe(200);
       expect(previewRes.body.data.netDisbursedAmount).toBe(100000);
       expect(previewRes.body.data.totalInstallments).toBe(12);
-      expect(previewRes.body.data.emiAmount).toBe(8791.59);
-      expect(Math.abs(previewRes.body.data.totalInterest - 5499.06)).toBeLessThanOrEqual(0.02);
-      expect(Math.abs(previewRes.body.data.totalPayable - 105499.06)).toBeLessThanOrEqual(0.02);
+      expect(previewRes.body.data.emiAmount).toBe(18333.33);
+      expect(previewRes.body.data.totalInterest).toBe(120000);
+      expect(previewRes.body.data.totalPayable).toBe(220000);
 
       // Persisted Onboarding verification
       const onboardRes = await request(app)
@@ -247,15 +247,15 @@ describe('UAT Final Integration Tests: Onboarding, Dealer RLAC, and Customer Por
       const loan = onboardRes.body.data.loan;
       expect(loan.netDisbursedAmount).toBe(100000);
       expect(loan.totalInstallments).toBe(12);
-      expect(loan.emiAmount).toBe(8791.59);
+      expect(loan.emiAmount).toBe(18333.33);
 
       // Verify persisted emi_installments in PostgreSQL: exactly 12 records
       const emiDb = await queryPostgres('SELECT * FROM emi_installments WHERE loan_id = $1 ORDER BY installment_number ASC', [loan.id]);
       expect(emiDb.rows.length).toBe(12);
-      expect(Number(emiDb.rows[0].expected_amount)).toBe(8791.59);
+      expect(Number(emiDb.rows[0].expected_amount)).toBe(18333.33);
     });
 
-    test('1.4 CASE 2 — FLAT RATE: Retail ₹120,000, Down Payment ₹20,000 (Net Financed ₹100,000), 10% p.a., 12 Months -> exactly 12 installments, Total Interest = ₹10,000, EMI ≈ ₹9,166.67', async () => {
+    test('1.4 CASE 2 — FLAT RATE: Retail ₹120,000, Down Payment ₹20,000 (Net Financed ₹100,000), 10% monthly flat, 12 Months -> exactly 12 installments, Total Interest = ₹120,000, EMI ≈ ₹18,333.33', async () => {
       // Direct API preview verification
       const previewRes = await request(app)
         .post('/api/v1/loans/calculate-preview')
@@ -273,9 +273,9 @@ describe('UAT Final Integration Tests: Onboarding, Dealer RLAC, and Customer Por
       expect(previewRes.status).toBe(200);
       expect(previewRes.body.data.netDisbursedAmount).toBe(100000);
       expect(previewRes.body.data.totalInstallments).toBe(12);
-      expect(previewRes.body.data.totalInterest).toBe(10000);
-      expect(previewRes.body.data.totalPayable).toBe(110000);
-      expect(previewRes.body.data.emiAmount).toBe(9166.67);
+      expect(previewRes.body.data.totalInterest).toBe(120000);
+      expect(previewRes.body.data.totalPayable).toBe(220000);
+      expect(previewRes.body.data.emiAmount).toBe(18333.33);
 
       // Persisted Onboarding verification
       const onboardRes = await request(app)
@@ -306,9 +306,9 @@ describe('UAT Final Integration Tests: Onboarding, Dealer RLAC, and Customer Por
       const loan = onboardRes.body.data.loan;
       expect(loan.netDisbursedAmount).toBe(100000);
       expect(loan.totalInstallments).toBe(12);
-      expect(loan.totalInterest).toBe(10000);
-      expect(loan.totalPayable).toBe(110000);
-      expect(loan.emiAmount).toBe(9166.67);
+      expect(loan.totalInterest).toBe(120000);
+      expect(loan.totalPayable).toBe(220000);
+      expect(loan.emiAmount).toBe(18333.33);
 
       // Verify persisted emi_installments in PostgreSQL: exactly 12 records
       const emiDb = await queryPostgres('SELECT * FROM emi_installments WHERE loan_id = $1 ORDER BY installment_number ASC', [loan.id]);
@@ -357,6 +357,37 @@ describe('UAT Final Integration Tests: Onboarding, Dealer RLAC, and Customer Por
   // TASK 2: DEALER → CUSTOMER RLAC IDOR ISOLATION
   // ===========================================================================
   describe('Task 2: Dealer Customer Onboarding & Strict RLAC Isolation', () => {
+    test('2.0 Dealer loan onboarding explicitly REJECTS unsupported rate 15% (must only permit 4%, 5%, 6% monthly flat)', async () => {
+      const rejectedPayload = {
+        customer: {
+          fullName: 'Unsupported Rate Borrower',
+          primaryPhone: `+9195${Date.now().toString().slice(-8)}`,
+          addressLine1: 'Shop Lane 5',
+          city: 'Bengaluru',
+          state: 'Karnataka',
+          pincode: '560001',
+          areaRoute: 'ROUTE-CENTRAL',
+        },
+        loan: {
+          principalAmount: 25000,
+          downPayment: 3000,
+          annualInterestRate: 15.0,
+          interestCalcMethod: InterestMethod.FLAT_RATE,
+          tenureMonths: 6,
+          installmentFrequency: RepaymentFrequency.MONTHLY,
+          disbursementDate: '2026-09-15',
+        },
+      };
+
+      const res = await request(app)
+        .post('/api/v1/customers/onboard')
+        .set('Authorization', `Bearer ${dealerAToken}`)
+        .send(rejectedPayload);
+
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+    });
+
     test('2.1 Dealer A onboards customer; backend forces dealerId to Dealer A (ignoring spoofed dealerId)', async () => {
       const spoofedPayload = {
         customer: {
@@ -371,7 +402,7 @@ describe('UAT Final Integration Tests: Onboarding, Dealer RLAC, and Customer Por
         loan: {
           principalAmount: 25000,
           downPayment: 3000,
-          annualInterestRate: 15.0,
+          annualInterestRate: 4.0,
           interestCalcMethod: InterestMethod.FLAT_RATE,
           tenureMonths: 6,
           installmentFrequency: RepaymentFrequency.MONTHLY,
@@ -461,6 +492,17 @@ describe('UAT Final Integration Tests: Onboarding, Dealer RLAC, and Customer Por
     let portalUrl: string;
 
     test('3.1 Admin generates secure opaque portal token for Dealer A loan', async () => {
+      // Admin approves and disburses Dealer A's loan so EMIs and repayment schedule are active
+      await request(app)
+        .post(`/api/v1/loans/${dealerALoanId}/approve`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ notes: 'UAT Dealer loan approval' });
+
+      await request(app)
+        .post(`/api/v1/loans/${dealerALoanId}/disburse`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ disbursementDate: '2026-09-15' });
+
       const res = await request(app)
         .post(`/api/v1/portal/loans/${dealerALoanId}/link`)
         .set('Authorization', `Bearer ${adminToken}`);

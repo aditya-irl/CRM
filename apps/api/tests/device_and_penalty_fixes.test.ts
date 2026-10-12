@@ -85,14 +85,41 @@ describe('Integration Tests: Device Brand/Model Preservation and Authoritative P
     await queryPostgres("UPDATE dealers SET status = 'INACTIVE' WHERE id = $1", [dealerId]);
 
     await closeAllQueues();
-    await closeRedisConnection();
-    await closePostgresPool();
   });
 
   // =========================================================================
   // ISSUE 1: DEVICE BRAND & MODEL PRESERVATION
   // =========================================================================
   describe('Issue 1: Preserve Dealer-Originated Device Brand and Model', () => {
+    it('0. Dealer onboarding with unsupported rate (14%) or non-flat method is explicitly rejected', async () => {
+      const rejectRes = await request(app)
+        .post('/api/v1/customers/onboard')
+        .set('Authorization', `Bearer ${dealerToken}`)
+        .send({
+          customer: {
+            fullName: `Reject Customer ${runId}`,
+            primaryPhone: `+9199${numId}99`,
+            addressLine1: '12 1st Main Road',
+            city: 'Bengaluru',
+            state: 'Karnataka',
+            pincode: '560038',
+            areaRoute: 'Bangalore-East',
+          },
+          loan: {
+            principalAmount: 30000,
+            downPayment: 8000,
+            annualInterestRate: 14,
+            interestCalcMethod: InterestMethod.REDUCING_BALANCE,
+            tenureMonths: 6,
+            installmentFrequency: RepaymentFrequency.MONTHLY,
+            disbursementDate: '2026-09-01',
+            firstEmiDate: '2026-10-01',
+          },
+        });
+      expect(rejectRes.status).toBe(400);
+      expect(rejectRes.body.error.message).toContain('Dealer-originated onboarding only permits interest rates of 4%, 5%, or 6% per month');
+    });
+
     it('1. Dealer onboards customer with Samsung Galaxy A55 5G -> preserves brand & model in returned loan and database', async () => {
       const res = await request(app)
         .post('/api/v1/customers/onboard')
@@ -111,8 +138,8 @@ describe('Integration Tests: Device Brand/Model Preservation and Authoritative P
           loan: {
             principalAmount: 30000,
             downPayment: 8000,
-            annualInterestRate: 14,
-            interestCalcMethod: InterestMethod.REDUCING_BALANCE,
+            annualInterestRate: 4,
+            interestCalcMethod: InterestMethod.FLAT_RATE,
             tenureMonths: 6,
             installmentFrequency: RepaymentFrequency.MONTHLY,
             disbursementDate: '2026-09-01',

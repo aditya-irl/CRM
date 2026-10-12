@@ -92,10 +92,6 @@ describe('Dealer Loan Approval, Monthly Flat Simple Interest & Dealer Financing 
       await queryPostgres('DELETE FROM dealers WHERE id = $1', [dealerId]);
       await queryPostgres('DELETE FROM customers WHERE id = $1', [customerId]);
     } catch {}
-
-    await closePostgresPool();
-    await closeRedisConnection();
-    await closeAllQueues();
   });
 
   // ============================================================
@@ -198,7 +194,7 @@ describe('Dealer Loan Approval, Monthly Flat Simple Interest & Dealer Financing 
           customerId,
           principalAmount: 10000,
           downPayment: 4000,
-          annualInterestRate: 1,
+          annualInterestRate: 4.0,
           interestCalcMethod: InterestMethod.FLAT_RATE,
           tenureMonths: 6,
           installmentFrequency: RepaymentFrequency.MONTHLY,
@@ -210,9 +206,9 @@ describe('Dealer Loan Approval, Monthly Flat Simple Interest & Dealer Financing 
       expect(origRes.body.data.status).toBe(LoanStatus.PENDING_APPROVAL);
       expect(origRes.body.data.dealerId).toBe(dealerId);
       expect(origRes.body.data.netDisbursedAmount).toBe(6000);
-      expect(origRes.body.data.totalInterest).toBe(360);
-      expect(origRes.body.data.totalPayable).toBe(6360);
-      expect(origRes.body.data.emiAmount).toBe(1060);
+      expect(origRes.body.data.totalInterest).toBe(1440);
+      expect(origRes.body.data.totalPayable).toBe(7440);
+      expect(origRes.body.data.emiAmount).toBe(1240);
 
       pendingLoanId = origRes.body.data.id;
     });
@@ -250,7 +246,7 @@ describe('Dealer Loan Approval, Monthly Flat Simple Interest & Dealer Financing 
       expect(found.dealerId).toBe(dealerId);
       expect(found.customerName).toContain('Borrower');
       expect(found.netDisbursedAmount).toBe(6000);
-      expect(found.emiAmount).toBe(1060);
+      expect(found.emiAmount).toBe(1240);
     });
 
     test('Super Admin approves loan -> status becomes APPROVED and installments generated', async () => {
@@ -283,7 +279,7 @@ describe('Dealer Loan Approval, Monthly Flat Simple Interest & Dealer Financing 
           customerId,
           principalAmount: 15000,
           downPayment: 3000,
-          annualInterestRate: 1.5,
+          annualInterestRate: 5.0,
           interestCalcMethod: InterestMethod.FLAT_RATE,
           tenureMonths: 6,
           installmentFrequency: RepaymentFrequency.MONTHLY,
