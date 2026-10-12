@@ -40,7 +40,7 @@ describe('Dealer Payment Approval, Address Validation, and System Integrations',
 
     await queryPostgres(
       `INSERT INTO dealers (id, dealer_code, store_name, owner_name, phone, area_city, address, status, created_at, updated_at)
-       VALUES 
+       VALUES
          ($1, $2, 'Premier Mobiles', 'Owner One', $3, 'Delhi', 'Shop 101, Lajpat Nagar', 'ACTIVE', NOW(), NOW()),
          ($4, $5, 'Apex Electronics', 'Owner Two', $6, 'Noida', 'Shop 202, Sector 18', 'ACTIVE', NOW(), NOW())`,
       [
@@ -58,7 +58,7 @@ describe('Dealer Payment Approval, Address Validation, and System Integrations',
 
     await queryPostgres(
       `INSERT INTO users (id, email, phone, password_hash, full_name, role, dealer_id, status, created_at, updated_at)
-       VALUES 
+       VALUES
          ($1, $2, $3, $4, 'Super Admin User', 'SUPER_ADMIN', NULL, 'ACTIVE', NOW(), NOW()),
          ($5, $6, $7, $4, 'Admin Manager', 'ADMIN', NULL, 'ACTIVE', NOW(), NOW()),
          ($8, $9, $10, $4, 'Dealer One User', 'DEALER', $11, 'ACTIVE', NOW(), NOW()),
