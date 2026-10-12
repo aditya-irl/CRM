@@ -700,6 +700,19 @@ export class ApiClient {
     });
   }
 
+  public static async approvePayment(id: string) {
+    return this.request<any>(`/payments/${id}/approve`, {
+      method: 'POST',
+    });
+  }
+
+  public static async rejectPayment(id: string, reason: string) {
+    return this.request<any>(`/payments/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
   public static async listPayments(
     filterOrSearch?: string | {
       search?: string;

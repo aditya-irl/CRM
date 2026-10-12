@@ -14,6 +14,7 @@ import {
   SYSTEM_SETTING_KEYS,
   UserRole,
   CollectionSource,
+  NotificationType,
   IPaymentsSummary,
   IPaymentDetail,
   PaymentPreviewQuery,
@@ -370,6 +371,9 @@ export class PaymentService {
         const receiptNumber = `RCP-${datePrefix}-${seqNumber}`;
         const paymentId = uuidv4();
 
+        const isDealer = user.role === UserRole.DEALER;
+        const initialStatus = isDealer ? PaymentStatus.PENDING_VERIFICATION : PaymentStatus.SUCCESS;
+
         // 8. Insert Payment Record
         const insertSql = `
           INSERT INTO payments (
@@ -377,11 +381,11 @@ export class PaymentService {
             collection_source, dealer_id, agent_id,
             reference_number, collected_by_agent_id, payment_timestamp, status, notes,
             is_reversal, idempotency_key, created_at, updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), 'SUCCESS', $14, FALSE, $15, NOW(), NOW())
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), $14, $15, FALSE, $16, NOW(), NOW())
           RETURNING id, receipt_number, payment_timestamp
         `;
 
-        const primaryEmiId = allocation.allocatedPayments[0]?.emiId || null;
+        const primaryEmiId = isDealer ? (data.emiId || null) : (allocation.allocatedPayments[0]?.emiId || null);
         await client.query(insertSql, [
           paymentId,
           receiptNumber,
@@ -389,16 +393,100 @@ export class PaymentService {
           primaryEmiId,
           data.customerId,
           totalPaymentCollected.toNumber(),
-          allocation.totalAllocatedToPenalty,
+          isDealer ? (hasManualPenalty ? penaltyAmount.toNumber() : 0) : allocation.totalAllocatedToPenalty,
           data.paymentMode,
           source,
           finalDealerId,
           finalAgentId,
           data.referenceNumber || null,
           user.id,
+          initialStatus,
           data.notes || null,
           data.idempotencyKey || null,
         ]);
+
+        if (isDealer) {
+          // Notify finance company administrators of pending approval request
+          const adminUsers = await client.query(
+            `SELECT id FROM users WHERE role IN ('SUPER_ADMIN', 'ADMIN') AND status = 'ACTIVE'`
+          );
+          for (const adm of adminUsers.rows) {
+            await client.query(
+              `INSERT INTO notifications (
+                id, recipient_user_id, channel, type, title, body, status, scheduled_for, metadata, created_at
+              ) VALUES ($1, $2, 'IN_APP', $3, $4, $5, 'PENDING', NOW(), $6, NOW())`,
+              [
+                uuidv4(),
+                adm.id,
+                NotificationType.DEALER_APPROVAL_REQUIRED,
+                'Dealer Payment Collection Approval Required',
+                `Partner store collection of ₹${totalPaymentCollected.toNumber()} for Loan ${loan.loan_account_no} awaiting admin approval.`,
+                JSON.stringify({
+                  paymentId,
+                  receiptNumber,
+                  loanId: loan.id,
+                  loanAccountNo: loan.loan_account_no,
+                  dealerId: finalDealerId,
+                  customerId: data.customerId,
+                  amount: totalPaymentCollected.toNumber(),
+                }),
+              ]
+            );
+          }
+
+          // Immutable Audit Record
+          await AuditService.logWithClient(client, {
+            userId: user.id,
+            action: 'PAYMENT_RECORDED_PENDING_APPROVAL',
+            entity: 'Payment',
+            entityId: paymentId,
+            newState: {
+              receiptNumber,
+              loanId: loan.id,
+              loanAccountNo: loan.loan_account_no,
+              customerId: data.customerId,
+              amount: totalPaymentCollected.toNumber(),
+              paymentMode: data.paymentMode,
+              collectionSource: source,
+              dealerId: finalDealerId,
+              status: PaymentStatus.PENDING_VERIFICATION,
+            },
+          });
+
+          return {
+            id: paymentId,
+            paymentId,
+            receiptNumber,
+            loanId: loan.id,
+            loanAccountNo: loan.loan_account_no,
+            customerId: data.customerId,
+            amount: totalPaymentCollected.toNumber(),
+            amountCollected: totalPaymentCollected.toNumber(),
+            paymentAmount: paymentAmount.toNumber(),
+            penaltyAmount: hasManualPenalty ? penaltyAmount.toNumber() : 0,
+            paymentMode: data.paymentMode,
+            collectionSource: source,
+            dealerId: finalDealerId,
+            agentId: null,
+            referenceNumber: data.referenceNumber || null,
+            paymentTimestamp: now.toISOString(),
+            status: PaymentStatus.PENDING_VERIFICATION,
+            allocatedInstallments: [],
+            remainingLoanOutstanding: Number(loan.outstanding_balance),
+            loanStatus: loan.status,
+            customer: {
+              id: data.customerId,
+              name: loan.customer_name,
+              code: loan.customer_code,
+            },
+            loan: {
+              id: loan.id,
+              accountNo: loan.loan_account_no,
+              remainingOutstanding: Number(loan.outstanding_balance),
+            },
+            isIdempotentReplay: false,
+          };
+        }
 
         // 9. Update each allocated installment and penalties
         for (const alloc of allocation.allocatedPayments) {
@@ -500,6 +588,7 @@ export class PaymentService {
           paymentAmount: paymentAmount.toNumber(),
           penaltyAmount: allocation.totalAllocatedToPenalty,
           paymentMode: data.paymentMode,
+          status: PaymentStatus.SUCCESS,
           collectionSource: source,
           dealerId: finalDealerId,
           agentId: finalAgentId,
@@ -564,6 +653,335 @@ export class PaymentService {
   }
 
   /**
+   * Admin Payment Approval Workflow:
+   * Approves dealer-recorded collections in PENDING_VERIFICATION status.
+   * Runs atomic deterministic waterfall allocation, updates loan and installment balances,
+   * transitions payment to SUCCESS, and records immutable audit log.
+   * Prevents dealers from approving their own records, and is idempotent against concurrent/duplicate requests.
+   */
+  public static async approvePayment(paymentId: string, user: AuthenticatedUser) {
+    if (user.role !== UserRole.SUPER_ADMIN && user.role !== UserRole.ADMIN && user.role !== UserRole.BRANCH_MANAGER) {
+      throw new ForbiddenError('Dealers and unauthorized users cannot approve payments');
+    }
+
+    const businessToday = getBusinessDate(undefined, 'Asia/Kolkata');
+
+    const result = await runPostgresTransaction(async (client) => {
+      // 1. Fetch and Lock Payment Record
+      const payRes = await client.query(
+        `SELECT * FROM payments WHERE id = $1 FOR UPDATE`,
+        [paymentId]
+      );
+
+      if (payRes.rows.length === 0) {
+        throw new NotFoundError('Payment not found');
+      }
+
+      const payment = payRes.rows[0];
+
+      // Idempotency check: if already approved, return existing receipt safely without double-allocating
+      if (payment.status === PaymentStatus.SUCCESS) {
+        return { isIdempotentReplay: true, paymentId };
+      }
+
+      if (payment.status === PaymentStatus.REJECTED) {
+        throw new AppError('Payment has been rejected and cannot be approved', 400);
+      }
+
+      if (payment.status === PaymentStatus.REVERSED || payment.is_reversal) {
+        throw new AppError('Payment has been reversed and cannot be approved', 400);
+      }
+
+      if (payment.status !== PaymentStatus.PENDING_VERIFICATION) {
+        throw new AppError(`Cannot approve payment with current status: ${payment.status}`, 400);
+      }
+
+      // 2. Fetch and Lock Loan (prevent concurrent payment race conditions)
+      const loanRes = await client.query(
+        `SELECT id, customer_id, dealer_id, loan_account_no, outstanding_balance, total_paid,
+                total_payable, status, assigned_agent_id
+         FROM loans
+         WHERE id = $1
+         FOR UPDATE`,
+        [payment.loan_id]
+      );
+
+      if (loanRes.rows.length === 0) {
+        throw new NotFoundError('Associated loan account not found');
+      }
+
+      const loan = loanRes.rows[0];
+
+      if (loan.status !== LoanStatus.ACTIVE) {
+        throw new AppError(`Loan is not in an active status for payment allocation (current status: ${loan.status})`);
+      }
+
+      // 3. Lock and Fetch all Unpaid Installments for this Loan
+      const installmentsRes = await client.query(
+        `SELECT id, installment_number, due_date, principal_component, interest_component,
+                expected_amount, paid_amount, remaining_amount, penalty_amount, status
+         FROM emi_installments
+         WHERE loan_id = $1 AND status != 'PAID'
+         ORDER BY installment_number ASC
+         FOR UPDATE`,
+        [payment.loan_id]
+      );
+
+      const loanOutstanding = new Decimal(loan.outstanding_balance);
+      const totalPaymentCollected = new Decimal(payment.amount);
+      const penaltyAmount = new Decimal(payment.penalty_amount || 0);
+
+      // Validate payment amount does not exceed loan outstanding plus penalties
+      const totalExistingPenalties = installmentsRes.rows.reduce(
+        (sum: Decimal, r: any) => sum.plus(new Decimal(r.penalty_amount || 0)),
+        new Decimal(0)
+      );
+      const maxAllowed = loanOutstanding.plus(totalExistingPenalties);
+      if (totalPaymentCollected.greaterThan(maxAllowed)) {
+        throw new AppError(
+          `Payment amount ₹${payment.amount} exceeds outstanding loan balance ₹${loan.outstanding_balance}`
+        );
+      }
+
+      let targetInstForPenalty: any = null;
+      if (payment.emi_id) {
+        targetInstForPenalty = installmentsRes.rows.find((r) => r.id === payment.emi_id) || null;
+      }
+      if (!targetInstForPenalty && installmentsRes.rows.length > 0) {
+        targetInstForPenalty = installmentsRes.rows.find((r) =>
+          r.status === 'OVERDUE' ||
+          r.status === 'DUE_TODAY' ||
+          Number(r.penalty_amount || 0) > 0 ||
+          Number(r.remaining_amount || 0) > 0
+        ) || installmentsRes.rows[0];
+      }
+
+      if (penaltyAmount.greaterThan(0) && targetInstForPenalty) {
+        const penaltyId = uuidv4();
+        await client.query(
+          `INSERT INTO emi_penalties (
+            id, emi_installment_id, loan_id, amount, paid_amount, status, reason,
+            created_by, created_at, updated_at
+          ) VALUES ($1, $2, $3, $4, 0, 'ACTIVE', $5, $6, NOW(), NOW())`,
+          [
+            penaltyId,
+            targetInstForPenalty.id,
+            loan.id,
+            penaltyAmount.toNumber(),
+            'Late payment penalty assessed during collection',
+            user.id,
+          ]
+        );
+        targetInstForPenalty.penalty_amount = penaltyAmount.toNumber();
+      }
+
+      const unpaidInstallments = installmentsRes.rows.map((r) => ({
+        id: r.id,
+        installmentNumber: Number(r.installment_number),
+        dueDate: getBusinessDate(r.due_date, 'Asia/Kolkata'),
+        expectedAmount: Number(r.expected_amount),
+        paidAmount: Number(r.paid_amount),
+        remainingAmount: Number(r.remaining_amount),
+        penaltyAmount: (targetInstForPenalty && r.id === targetInstForPenalty.id && penaltyAmount.greaterThan(0))
+          ? penaltyAmount.toNumber()
+          : Number(r.penalty_amount || 0),
+        status: r.status,
+      }));
+
+      // 4. Run Deterministic Waterfall Allocation
+      const allocation = allocatePaymentWaterfall(
+        totalPaymentCollected.toNumber(),
+        unpaidInstallments,
+        loan.outstanding_balance,
+        businessToday
+      );
+
+      // 5. Update each allocated installment and penalties
+      for (const alloc of allocation.allocatedPayments) {
+        await client.query(
+          `UPDATE emi_installments
+           SET paid_amount = $1, remaining_amount = $2, penalty_amount = $3, status = $4,
+               last_payment_date = $5, updated_at = NOW()
+           WHERE id = $6`,
+          [
+            alloc.newPaidAmount,
+            alloc.newRemainingAmount,
+            alloc.remainingPenalty,
+            alloc.newStatus,
+            businessToday,
+            alloc.emiId,
+          ]
+        );
+
+        if (alloc.allocatedToPenalty > 0) {
+          let remPenaltyToApply = new Decimal(alloc.allocatedToPenalty);
+          const pensRes = await client.query(
+            `SELECT id, amount, paid_amount, status
+             FROM emi_penalties
+             WHERE emi_installment_id = $1 AND status = 'ACTIVE'
+             ORDER BY created_at ASC
+             FOR UPDATE`,
+            [alloc.emiId]
+          );
+
+          for (const pen of pensRes.rows) {
+            if (remPenaltyToApply.lessThanOrEqualTo(0)) break;
+            const pAmt = new Decimal(pen.amount);
+            const pPaid = new Decimal(pen.paid_amount || 0);
+            const pUnpaid = pAmt.minus(pPaid);
+            if (pUnpaid.lessThanOrEqualTo(0)) continue;
+
+            const applyAmt = Decimal.min(remPenaltyToApply, pUnpaid);
+            const newPaid = pPaid.plus(applyAmt);
+            const newStatus = newPaid.greaterThanOrEqualTo(pAmt) ? 'PAID' : 'ACTIVE';
+
+            await client.query(
+              `UPDATE emi_penalties
+               SET paid_amount = $1, status = $2, updated_at = NOW()
+               WHERE id = $3`,
+              [newPaid.toNumber(), newStatus, pen.id]
+            );
+
+            remPenaltyToApply = remPenaltyToApply.minus(applyAmt);
+          }
+        }
+      }
+
+      // 6. Update Loan Balances
+      const newTotalPaid = new Decimal(loan.total_paid).plus(totalPaymentCollected).toNumber();
+      const newOutstanding = Decimal.max(0, loanOutstanding.minus(allocation.totalAllocatedToPrincipalInterest)).toDecimalPlaces(2, Decimal.ROUND_HALF_EVEN).toNumber();
+      const newLoanStatus = newOutstanding <= 0 ? LoanStatus.CLOSED : loan.status;
+
+      await client.query(
+        `UPDATE loans
+         SET total_paid = $1, outstanding_balance = $2, status = $3, updated_at = NOW()
+         WHERE id = $4`,
+        [newTotalPaid, newOutstanding, newLoanStatus, loan.id]
+      );
+
+      // 7. Update Payment Record to SUCCESS
+      const primaryEmiId = allocation.allocatedPayments[0]?.emiId || payment.emi_id || null;
+      await client.query(
+        `UPDATE payments
+         SET status = 'SUCCESS', emi_id = $1, updated_at = NOW()
+         WHERE id = $2`,
+        [primaryEmiId, paymentId]
+      );
+
+      // 8. Immutable Audit Trail
+      await AuditService.logWithClient(client, {
+        userId: user.id,
+        action: 'PAYMENT_APPROVED',
+        entity: 'Payment',
+        entityId: paymentId,
+        previousState: { status: PaymentStatus.PENDING_VERIFICATION },
+        newState: {
+          status: PaymentStatus.SUCCESS,
+          receiptNumber: payment.receipt_number,
+          loanId: loan.id,
+          loanAccountNo: loan.loan_account_no,
+          customerId: payment.customer_id,
+          amount: totalPaymentCollected.toNumber(),
+          approvedBy: user.id,
+          approvedAt: new Date().toISOString(),
+          newOutstanding,
+          newLoanStatus,
+        },
+      });
+
+      return { isIdempotentReplay: false, paymentId };
+    });
+
+    return await this.getReceipt(paymentId, user);
+  }
+
+  /**
+   * Admin Payment Rejection Workflow:
+   * Rejects dealer-recorded payment collection in PENDING_VERIFICATION status.
+   * Zero financial changes to loan or installments.
+   * Idempotent and logged to immutable audit trail.
+   */
+  public static async rejectPayment(paymentId: string, reason: string, user: AuthenticatedUser) {
+    if (user.role !== UserRole.SUPER_ADMIN && user.role !== UserRole.ADMIN && user.role !== UserRole.BRANCH_MANAGER) {
+      throw new ForbiddenError('Dealers and unauthorized users cannot reject payments');
+    }
+
+    if (!reason || !reason.trim()) {
+      throw new AppError('Rejection reason is required', 400);
+    }
+
+    const result = await runPostgresTransaction(async (client) => {
+      // 1. Fetch and Lock Payment Record
+      const payRes = await client.query(
+        `SELECT * FROM payments WHERE id = $1 FOR UPDATE`,
+        [paymentId]
+      );
+
+      if (payRes.rows.length === 0) {
+        throw new NotFoundError('Payment not found');
+      }
+
+      const payment = payRes.rows[0];
+
+      // Idempotency: if already rejected, return cleanly
+      if (payment.status === PaymentStatus.REJECTED) {
+        return {
+          id: payment.id,
+          receiptNumber: payment.receipt_number,
+          status: PaymentStatus.REJECTED,
+          reversalReason: payment.reversal_reason,
+          isIdempotentReplay: true,
+        };
+      }
+
+      if (payment.status === PaymentStatus.SUCCESS) {
+        throw new AppError('Payment has already been approved and allocated; use reversal workflow instead', 400);
+      }
+
+      if (payment.status === PaymentStatus.REVERSED || payment.is_reversal) {
+        throw new AppError('Payment has already been reversed', 400);
+      }
+
+      // 2. Mark Payment as REJECTED without modifying loan or installments
+      await client.query(
+        `UPDATE payments
+         SET status = 'REJECTED',
+             reversal_reason = $1,
+             notes = CASE WHEN notes IS NULL OR notes = '' THEN $2 ELSE notes || ' | ' || $2 END,
+             updated_at = NOW()
+         WHERE id = $3`,
+        [reason.trim(), `Rejected: ${reason.trim()}`, paymentId]
+      );
+
+      // 3. Immutable Audit Trail
+      await AuditService.logWithClient(client, {
+        userId: user.id,
+        action: 'PAYMENT_REJECTED',
+        entity: 'Payment',
+        entityId: paymentId,
+        previousState: { status: payment.status },
+        newState: {
+          status: PaymentStatus.REJECTED,
+          receiptNumber: payment.receipt_number,
+          reason: reason.trim(),
+          rejectedBy: user.id,
+          rejectedAt: new Date().toISOString(),
+        },
+      });
+
+      return {
+        id: payment.id,
+        receiptNumber: payment.receipt_number,
+        status: PaymentStatus.REJECTED,
+        reversalReason: reason.trim(),
+        isIdempotentReplay: false,
+      };
+    });
+
+    return result;
+  }
+
+  /**
    * Non-destructive payment reversal with PostgreSQL transaction atomicity,
    * restoring affected EMI installments and loan outstanding balances accurately
    * through active payment ledger re-reconciliation.
@@ -590,6 +1008,10 @@ export class PaymentService {
 
       if (payment.status === PaymentStatus.REVERSED || payment.is_reversal) {
         throw new AppError('This payment is already reversed');
+      }
+
+      if (payment.status !== PaymentStatus.SUCCESS) {
+        throw new AppError(`Cannot reverse a payment that is not completed (current status: ${payment.status})`, 400);
       }
 
       // 2. Fetch and Lock Loan
@@ -1340,17 +1762,37 @@ export class PaymentService {
         timestamp: p.payment_timestamp,
         description: `Payment of ₹${Number(p.amount).toLocaleString('en-IN')} recorded via ${p.payment_mode} (${p.collection_source})`,
       },
-      {
+    ];
+
+    if (p.status === 'PENDING_VERIFICATION') {
+      timeline.push({
+        event: 'PAYMENT_PENDING_APPROVAL',
+        timestamp: p.created_at || p.payment_timestamp,
+        description: 'Partner store collection awaiting Admin verification & approval',
+      });
+      timeline.push({
+        event: 'ACKNOWLEDGMENT_ISSUED',
+        timestamp: p.payment_timestamp,
+        description: `Acknowledgment reference ${p.receipt_number} issued`,
+      });
+    } else if (p.status === 'REJECTED') {
+      timeline.push({
+        event: 'PAYMENT_REJECTED',
+        timestamp: p.updated_at || p.payment_timestamp,
+        description: `Payment rejected: ${p.reversal_reason || 'Administrative rejection'}`,
+      });
+    } else {
+      timeline.push({
         event: 'WATERFALL_ALLOCATED',
         timestamp: p.payment_timestamp,
         description: `Allocated across ${allocations.length > 0 ? allocations.length : 1} installment(s) per waterfall hierarchy`,
-      },
-      {
+      });
+      timeline.push({
         event: 'RECEIPT_GENERATED',
         timestamp: p.payment_timestamp,
         description: `Official receipt ${p.receipt_number} generated`,
-      },
-    ];
+      });
+    }
 
     if (isReversed) {
       timeline.push({

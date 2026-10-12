@@ -327,8 +327,32 @@ describe('Customer Financing, Device Registry, and Dealer EMI Payment Integratio
       expect(res.body.data.amountCollected).toBe(paymentAmount);
       expect(res.body.data.collectionSource).toBe(CollectionSource.DEALER);
       expect(res.body.data.dealerId).toBe(dealerAId);
+      expect(res.body.data.status).toBe('PENDING_VERIFICATION');
 
-      // Verify loan outstanding decreased
+      const paymentId = res.body.data.paymentId || res.body.data.id;
+
+      // Dealer cannot approve their own payment -> 403 Forbidden
+      const selfApproveRes = await request(app)
+        .post(`/api/v1/payments/${paymentId}/approve`)
+        .set('Authorization', `Bearer ${dealerAToken}`)
+        .send();
+      expect(selfApproveRes.status).toBe(403);
+
+      // Verify before approval: financial balances have NOT changed
+      const loanBeforeRes = await request(app)
+        .get(`/api/v1/loans/${loanDealerAId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(Number(loanBeforeRes.body.data.total_paid || loanBeforeRes.body.data.totalPaid)).toBe(0);
+
+      // Admin approves the payment
+      const approveRes = await request(app)
+        .post(`/api/v1/payments/${paymentId}/approve`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send();
+      expect(approveRes.status).toBe(200);
+      expect(approveRes.body.data.status).toBe('SUCCESS');
+
+      // Verify loan outstanding decreased after Admin approval
       const loanRes = await request(app)
         .get(`/api/v1/loans/${loanDealerAId}`)
         .set('Authorization', `Bearer ${adminToken}`);

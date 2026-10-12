@@ -80,6 +80,12 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({ user }) => {
   const [reversalReason, setReversalReason] = useState('');
   const [submittingReversal, setSubmittingReversal] = useState(false);
 
+  // Approval / Rejection State
+  const [selectedPaymentForRejection, setSelectedPaymentForRejection] = useState<IPaymentDetail | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [submittingRejection, setSubmittingRejection] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
   // Record Payment Modal State
   const [showRecordPaymentModal, setShowRecordPaymentModal] = useState(false);
 
@@ -225,7 +231,44 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({ user }) => {
     }
   };
 
-  const isAdmin = user.role === UserRole.SUPER_ADMIN || user.role === UserRole.ADMIN;
+  const handleApprovePayment = async (paymentId: string) => {
+    if (!confirm('Approve this dealer-recorded collection and allocate it to the customer loan?')) return;
+    setActionLoading(paymentId);
+    try {
+      await ApiClient.approvePayment(paymentId);
+      await loadData(page);
+      await loadSummary();
+      alert('Payment approved and allocated successfully.');
+    } catch (err: any) {
+      alert(err.message || 'Failed to approve payment');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleConfirmRejection = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPaymentForRejection) return;
+    if (!rejectionReason.trim()) {
+      alert('Please provide a reason for rejecting the payment collection.');
+      return;
+    }
+    setSubmittingRejection(true);
+    try {
+      await ApiClient.rejectPayment(selectedPaymentForRejection.id, rejectionReason.trim());
+      setSelectedPaymentForRejection(null);
+      setRejectionReason('');
+      await loadData(page);
+      await loadSummary();
+      alert('Payment collection rejected.');
+    } catch (err: any) {
+      alert(err.message || 'Failed to reject payment');
+    } finally {
+      setSubmittingRejection(false);
+    }
+  };
+
+  const isAdmin = user.role === UserRole.SUPER_ADMIN || user.role === UserRole.ADMIN || user.role === UserRole.BRANCH_MANAGER;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -436,8 +479,10 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({ user }) => {
               style={{ width: '100%', fontSize: 12 }}
             >
               <option value="ALL">All Statuses</option>
+              <option value="PENDING_VERIFICATION">Pending Approval</option>
               <option value="SUCCESS">Completed (Success)</option>
               <option value="REVERSED">Reversed</option>
+              <option value="REJECTED">Rejected</option>
             </select>
           </div>
 
@@ -580,12 +625,49 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({ user }) => {
                       <span className="badge badge-upcoming">{p.paymentMode}</span>
                     </td>
                     <td>
-                      <span className={`badge ${isReversed ? 'badge-overdue' : 'badge-paid'}`}>
-                        {isReversed ? 'REVERSED' : 'COMPLETED'}
-                      </span>
+                      {p.status === 'PENDING_VERIFICATION' ? (
+                        <span className="badge badge-warning" style={{ fontWeight: 700 }}>
+                          PENDING APPROVAL
+                        </span>
+                      ) : p.status === 'REJECTED' ? (
+                        <span className="badge badge-overdue" style={{ fontWeight: 700 }}>
+                          REJECTED
+                        </span>
+                      ) : (
+                        <span className={`badge ${isReversed ? 'badge-overdue' : 'badge-paid'}`}>
+                          {isReversed ? 'REVERSED' : 'COMPLETED'}
+                        </span>
+                      )}
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: 6 }}>
+                        {isAdmin && p.status === 'PENDING_VERIFICATION' && (
+                          <>
+                            <button
+                              onClick={() => handleApprovePayment(p.id)}
+                              disabled={actionLoading === p.id}
+                              className="btn btn-primary btn-sm"
+                              title="Approve Payment"
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                            >
+                              <CheckCircle2 size={12} />
+                              <span>Approve</span>
+                            </button>
+                            <button
+                              onClick={() => {
+                                setSelectedPaymentForRejection(p);
+                                setRejectionReason('');
+                              }}
+                              disabled={actionLoading === p.id}
+                              className="btn btn-danger btn-sm"
+                              title="Reject Payment"
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                            >
+                              <X size={12} />
+                              <span>Reject</span>
+                            </button>
+                          </>
+                        )}
                         <button
                           onClick={() => handleOpenReceipt(p.id)}
                           className="btn btn-secondary btn-sm"
@@ -602,7 +684,7 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({ user }) => {
                           <Eye size={12} />
                           <span>Details</span>
                         </button>
-                        {isAdmin && !isReversed && (
+                        {isAdmin && !isReversed && p.status === 'SUCCESS' && (
                           <button
                             onClick={() => {
                               setSelectedPaymentForReversal(p);
@@ -1006,6 +1088,63 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({ user }) => {
                 </button>
                 <button type="submit" disabled={submittingReversal} className="btn btn-danger">
                   {submittingReversal ? 'Reversing...' : 'Authorize Reversal'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Admin Payment Rejection */}
+      {selectedPaymentForRejection && (
+        <div className="modal-overlay" style={{ background: 'rgba(0, 0, 0, 0.7)' }}>
+          <div
+            className="modal-content"
+            style={{
+              maxWidth: 480,
+              padding: 24,
+              borderRadius: 'var(--radius-lg)',
+              border: '1px solid var(--border-subtle)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <AlertTriangle size={20} color="var(--danger)" />
+                <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>Reject Dealer Payment Collection</h3>
+              </div>
+              <button
+                onClick={() => setSelectedPaymentForRejection(null)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14 }}>
+              Reject payment of <strong>{formatINR(selectedPaymentForRejection.amount)}</strong> recorded by partner store <strong>{selectedPaymentForRejection.dealerStoreName || 'Dealer'}</strong> for Loan <strong>{selectedPaymentForRejection.loanAccountNo}</strong>. Financial balances will remain untouched.
+            </p>
+
+            <form onSubmit={handleConfirmRejection} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                  Rejection Reason <span style={{ color: 'var(--danger)' }}>*</span>
+                </label>
+                <textarea
+                  className="form-textarea"
+                  rows={3}
+                  placeholder="e.g. Discrepancy in customer physical receipt; cash collection not verified by branch manager..."
+                  value={rejectionReason}
+                  onChange={(e) => setRejectionReason(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                <button type="button" onClick={() => setSelectedPaymentForRejection(null)} className="btn btn-secondary">
+                  Cancel
+                </button>
+                <button type="submit" disabled={submittingRejection} className="btn btn-danger">
+                  {submittingRejection ? 'Rejecting...' : 'Confirm Rejection'}
                 </button>
               </div>
             </form>

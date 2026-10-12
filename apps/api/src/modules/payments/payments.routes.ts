@@ -64,6 +64,41 @@ router.get('/receipt/:id', async (req: Request, res: Response, next: NextFunctio
 });
 
 router.post(
+  '/:id/approve',
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await PaymentService.approvePayment(req.params.id, req.user!);
+      return res.json({
+        success: true,
+        data: result,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+router.post(
+  '/:id/reject',
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const reason = req.body?.reason || 'Payment rejected by administrator';
+      const result = await PaymentService.rejectPayment(req.params.id, reason, req.user!);
+      return res.json({
+        success: true,
+        data: result,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+router.post(
   '/:id/reverse',
   requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN),
   validateBody(reversePaymentSchema),
