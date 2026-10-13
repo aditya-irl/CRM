@@ -25,6 +25,7 @@ const AddCustomerWizard = lazy(() => import('./components/AddCustomerWizard').th
 const CustomerPortalView = lazy(() => import('./views/CustomerPortalView').then((m) => ({ default: m.CustomerPortalView })));
 const AgentDashboardView = lazy(() => import('./views/AgentDashboardView').then((m) => ({ default: m.AgentDashboardView })));
 const AgentsView = lazy(() => import('./views/AgentsView').then((m) => ({ default: m.AgentsView })));
+const DealerPayablesView = lazy(() => import('./views/DealerPayablesView').then((m) => ({ default: m.DealerPayablesView })));
 
 const ViewFallback: React.FC = () => (
   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 320, color: 'var(--text-muted)' }}>
@@ -52,6 +53,7 @@ export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
   const [selectedDealerIdForCollections, setSelectedDealerIdForCollections] = useState<string | null>(null);
   const [selectedDealerIdForSettlements, setSelectedDealerIdForSettlements] = useState<string | null>(null);
+  const [selectedDealerIdForPayables, setSelectedDealerIdForPayables] = useState<string | null>(null);
   const [selectedAgentIdForCollections, setSelectedAgentIdForCollections] = useState<string | null>(null);
   const [showAddCustomerWizard, setShowAddCustomerWizard] = useState(false);
   const [customersRefreshTrigger, setCustomersRefreshTrigger] = useState(0);
@@ -107,6 +109,11 @@ export const App: React.FC = () => {
     setActiveTab('dealer-settlements');
   };
 
+  const handleNavigateToDealerPayables = (dealerId?: string) => {
+    setSelectedDealerIdForPayables(dealerId || null);
+    setActiveTab('dealer-payables');
+  };
+
   const handleNavigateToAgentCollections = (agentId?: string) => {
     setSelectedAgentIdForCollections(agentId || null);
     setActiveTab('agent-collections');
@@ -146,7 +153,7 @@ export const App: React.FC = () => {
     // If dealer attempts to access unauthorized admin view, redirect to store dashboard
     if (
       isDealer &&
-      !['dashboard', 'customers', 'devices', 'dealer-collections', 'dealer-settlements'].includes(activeTab)
+      !['dashboard', 'customers', 'devices', 'loans', 'dealer-payables', 'dealer-collections', 'dealer-settlements'].includes(activeTab)
     ) {
       return <DealerDashboardView onNavigateToTab={(t) => setActiveTab(t as NavTab)} />;
     }
@@ -175,10 +182,18 @@ export const App: React.FC = () => {
           <DealersView
             onNavigateToCollections={handleNavigateToDealerCollections}
             onNavigateToSettlements={handleNavigateToDealerSettlements}
+            onNavigateToPayables={handleNavigateToDealerPayables}
           />
         );
       case 'agents':
         return <AgentsView />;
+      case 'dealer-payables':
+        return (
+          <DealerPayablesView
+            initialDealerId={isDealer ? (user.dealerId || undefined) : selectedDealerIdForPayables}
+            onNavigateToDealers={() => setActiveTab('dealers')}
+          />
+        );
       case 'dealer-collections':
         return (
           <DealerCollectionsView

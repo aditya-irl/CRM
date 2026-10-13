@@ -18,6 +18,7 @@ import {
   SettlementStatus,
   SettlementPaymentMethod,
   PenaltyStatus,
+  DealerPayableStatus,
 } from './enums';
 
 export interface IDealer {
@@ -48,6 +49,8 @@ export interface IDealerDashboardMetrics {
   metrics: {
     totalCustomers: number;
     activeLoans: number;
+    approvedLoans?: number;
+    pendingLoans?: number;
     closedLoans: number;
     totalFinancedAmount: number;
     totalOutstandingBalance: number;
@@ -62,10 +65,15 @@ export interface IDealerDashboardMetrics {
     customerCode: string;
     primaryPhone: string;
     principalAmount: number;
+    downPayment?: number;
+    netDisbursedAmount?: number;
+    tenureMonths?: number;
     emiAmount: number;
     outstandingBalance: number;
     status: string;
     disbursementDate: string;
+    rejectionReason?: string | null;
+    createdAt?: string;
     deviceBrand?: string | null;
     deviceModel?: string | null;
     deviceName?: string | null;
@@ -1117,5 +1125,117 @@ export interface IPaymentPreview {
   };
 }
 
+export interface IDealerPayableDealerBreakdown {
+  dealerId: string;
+  storeName: string;
+  dealerCode: string;
+  ownerName: string;
+  phone: string;
+  areaCity: string;
+  status: DealerStatus;
+  eligibleLoansCount: number;
+  totalPayable: number;
+  alreadyPaid: number;
+  remainingPayable: number;
+  payoutStatus: DealerPayableStatus;
+  lastPaymentDate: string | null;
+}
 
+export interface IDealerPayableSummary {
+  totalPayable: number;
+  totalPaid: number;
+  remainingPayable: number;
+  dealersCount: number;
+  dealers: IDealerPayableDealerBreakdown[];
+}
 
+export interface IDealerPayableEligibleLoan {
+  loanId: string;
+  loanAccountNo: string;
+  customerId: string;
+  customerName: string;
+  customerCode: string;
+  deviceBrand?: string | null;
+  deviceModel?: string | null;
+  deviceName?: string | null;
+  disbursementDate: string;
+  principalAmount: number;
+  downPayment: number;
+  netDisbursedAmount: number;
+  amountAllocated: number;
+  remainingPayable: number;
+  payoutStatus: DealerPayableStatus;
+}
+
+export interface IDealerPayablePayment {
+  id: string;
+  payoutNumber: string;
+  dealerId: string;
+  dealerStoreName?: string;
+  dealerCode?: string;
+  ownerName?: string;
+  phone?: string;
+  amount: number;
+  paymentDate: string;
+  paymentMethod: string;
+  referenceNumber?: string | null;
+  notes?: string | null;
+  status: string;
+  isReversal: boolean;
+  reversalReason?: string | null;
+  reversedAt?: string | null;
+  createdBy?: string;
+  createdByName?: string;
+  createdAt: string;
+  updatedAt: string;
+  allocationsCount?: number;
+}
+
+export interface IDealerPayablesLedgerResponse {
+  summary: IDealerPayableSummary;
+  records: IDealerPayablePayment[];
+  page: number;
+  limit: number;
+  totalCount: number;
+  totalPages: number;
+}
+
+export interface IDealerSettlementCollectionItem {
+  id: string;
+  receiptNumber: string;
+  loanId: string;
+  loanAccountNo: string;
+  customerId: string;
+  customerName: string;
+  customerCode: string;
+  customerPhone: string;
+  dealerId: string;
+  dealerStoreName: string;
+  dealerCode: string;
+  amount: number;
+  paymentMode: string;
+  paymentTimestamp: string;
+  status: string;
+  approvedBy: string | null;
+  approvedByName: string | null;
+  approvedAt: string | null;
+  amountSettled: number;
+  remainingUnsettled: number;
+  settlementStatus: 'UNSETTLED' | 'PARTIALLY_SETTLED' | 'SETTLED' | 'NOT_APPLICABLE';
+}
+
+export interface IDealerSettlementCollectionsResponse {
+  summary: {
+    pendingApprovalCount: number;
+    pendingApprovalAmount: number;
+    approvedCount: number;
+    totalCollectedAmount: number;
+    totalSettledAmount: number;
+    outstandingSettlementAmount: number;
+  };
+  records: IDealerSettlementCollectionItem[];
+  totalCount: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}

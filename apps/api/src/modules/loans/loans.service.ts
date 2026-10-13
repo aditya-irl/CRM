@@ -615,6 +615,27 @@ export class LoanService {
           ]);
         }
       }
+
+      if (loan.dealer_id) {
+        const dealerUsers = await client.query(
+          "SELECT id FROM users WHERE dealer_id = $1 AND status = 'ACTIVE'",
+          [loan.dealer_id]
+        );
+        for (const dUser of dealerUsers.rows) {
+          await client.query(
+            `INSERT INTO notifications (
+              id, recipient_user_id, channel, type, title, body, status, scheduled_for, metadata, created_at
+            ) VALUES ($1, $2, 'IN_APP', 'LOAN_APPROVED', $3, $4, 'PENDING', NOW(), $5, NOW())`,
+            [
+              uuidv4(),
+              dUser.id,
+              `Loan Application Approved: ${loan.loan_account_no}`,
+              `Loan application ${loan.loan_account_no} has been approved by administration. Ready for delivery and disbursement.`,
+              JSON.stringify({ loanId: id, loanAccountNo: loan.loan_account_no, status: LoanStatus.APPROVED }),
+            ]
+          );
+        }
+      }
     });
 
     // Sync to SQLite
@@ -667,6 +688,27 @@ export class LoanService {
       'UPDATE loans SET status = $1, rejection_reason = $2, updated_at = NOW() WHERE id = $3',
       [LoanStatus.REJECTED, data.reason, id]
     );
+
+    if (loan.dealer_id) {
+      const dealerUsers = await queryPostgres(
+        "SELECT id FROM users WHERE dealer_id = $1 AND status = 'ACTIVE'",
+        [loan.dealer_id]
+      );
+      for (const dUser of dealerUsers.rows) {
+        await queryPostgres(
+          `INSERT INTO notifications (
+            id, recipient_user_id, channel, type, title, body, status, scheduled_for, metadata, created_at
+          ) VALUES ($1, $2, 'IN_APP', 'LOAN_REJECTED', $3, $4, 'PENDING', NOW(), $5, NOW())`,
+          [
+            uuidv4(),
+            dUser.id,
+            `Loan Application Rejected: ${loan.loan_account_no}`,
+            `Loan application ${loan.loan_account_no} was rejected. Reason: ${data.reason}`,
+            JSON.stringify({ loanId: id, loanAccountNo: loan.loan_account_no, status: LoanStatus.REJECTED, reason: data.reason }),
+          ]
+        );
+      }
+    }
 
     // Sync to SQLite
     try {
@@ -875,6 +917,27 @@ export class LoanService {
             emi.remainingAmount,
             emi.status,
           ]);
+        }
+      }
+
+      if (loan.dealer_id) {
+        const dealerUsers = await client.query(
+          "SELECT id FROM users WHERE dealer_id = $1 AND status = 'ACTIVE'",
+          [loan.dealer_id]
+        );
+        for (const dUser of dealerUsers.rows) {
+          await client.query(
+            `INSERT INTO notifications (
+              id, recipient_user_id, channel, type, title, body, status, scheduled_for, metadata, created_at
+            ) VALUES ($1, $2, 'IN_APP', 'LOAN_DISBURSED', $3, $4, 'PENDING', NOW(), $5, NOW())`,
+            [
+              uuidv4(),
+              dUser.id,
+              `Loan Disbursed & Activated: ${loan.loan_account_no}`,
+              `Loan application ${loan.loan_account_no} has been disbursed and activated. Product payout of ₹${loan.net_disbursed_amount} is now eligible for company settlement.`,
+              JSON.stringify({ loanId: id, loanAccountNo: loan.loan_account_no, status: LoanStatus.ACTIVE, netDisbursedAmount: Number(loan.net_disbursed_amount) }),
+            ]
+          );
         }
       }
     });

@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
 import { queryPostgres } from '../../database/postgres';
 import { KYCType, KYCStatus, UserRole, maskAadhaar, maskPan } from '@crm/shared';
-import { AppError, NotFoundError, ForbiddenError, ValidationError } from '../../middlewares/error.middleware';
+import { AppError, NotFoundError, ForbiddenError, UnauthorizedError, ValidationError } from '../../middlewares/error.middleware';
 import { AuthenticatedUser } from '../../middlewares/auth.middleware';
 import { getStorageProvider, MAX_KYC_URL_EXPIRY_SECONDS } from '../../core/storage';
 import { AuditService } from '../audit/audit.service';
@@ -144,6 +144,19 @@ export class KYCService {
       }
     }
 
+    const storage = getStorageProvider();
+    let fileExists = false;
+    try {
+      fileExists = await storage.exists(data.storageKey);
+    } catch (storageErr: any) {
+      console.error(`[KYC Confirm Storage Error] Storage check failed for key ${data.storageKey}:`, storageErr?.message || storageErr);
+      throw new AppError('Storage service temporarily unavailable. Please retry confirmation shortly.', 503, 'STORAGE_PROVIDER_ERROR');
+    }
+
+    if (!fileExists) {
+      throw new ValidationError('Uploaded document file not found in storage vault. Please ensure file upload completed successfully before confirming.');
+    }
+
     const docId = uuidv4();
     let maskedNumber: string | null = null;
     let numberHash: string | null = null;
@@ -203,13 +216,149 @@ export class KYCService {
   }
 
   /**
-   * Generate short-lived (max 300s) pre-signed download URL.
-   * Allowed for Super Admin, Admin, Branch Manager, Dealer (for own customer/loans),
-   * and Collection Agent (for assigned customer/loans).
+   * Direct authenticated upload through API server.
+   * Eliminates browser CORS issues with private buckets while enforcing full RLAC,
+   * validation, hashing, storage, and audit logging.
    */
-  public static async generatePresignedDownloadUrl(docId: string, user: AuthenticatedUser) {
+  public static async directUploadKYCDocument(
+    data: {
+      customerId: string;
+      docType: KYCType;
+      docNumber?: string | null;
+      fileName: string;
+      mimeType: string;
+      fileBuffer: Buffer;
+    },
+    user: AuthenticatedUser
+  ) {
+    if (!ALLOWED_MIME_TYPES.includes(data.mimeType)) {
+      throw new ValidationError(`Invalid file type ${data.mimeType}. Only JPEG, PNG, WEBP, or PDF are permitted.`);
+    }
+
+    const fileSizeBytes = data.fileBuffer.length;
+    if (fileSizeBytes <= 0 || fileSizeBytes > MAX_FILE_SIZE) {
+      throw new ValidationError('File size must be greater than 0 and less than or equal to 10 MB.');
+    }
+
+    const custRes = await queryPostgres(
+      'SELECT id, area_route FROM customers WHERE id = $1 AND deleted_at IS NULL',
+      [data.customerId]
+    );
+    if (custRes.rows.length === 0) {
+      throw new NotFoundError('Customer not found');
+    }
+
+    const customer = custRes.rows[0];
+
+    // RLAC: Agents can only upload for assigned customers
+    if (user.role === UserRole.COLLECTION_AGENT) {
+      const assignmentRes = await queryPostgres(
+        `SELECT id FROM collection_assignments
+         WHERE agent_id = $1 AND (customer_id = $2 OR area_route = $3)
+           AND is_active = TRUE AND (effective_to IS NULL OR effective_to >= CURRENT_DATE)`,
+        [user.id, customer.id, customer.area_route]
+      );
+      if (assignmentRes.rows.length === 0) {
+        throw new ForbiddenError('You are not authorized to upload KYC documents for this customer');
+      }
+    } else if (user.role === UserRole.DEALER) {
+      if (!user.dealerId) {
+        throw new ForbiddenError('Dealer context missing');
+      }
+      const dealerAccess = await queryPostgres(
+        `SELECT id FROM loans WHERE dealer_id = $1 AND customer_id = $2
+         UNION
+         SELECT id FROM customers WHERE id = $2 AND created_by = $3`,
+        [user.dealerId, customer.id, user.id]
+      );
+      if (dealerAccess.rows.length === 0) {
+        throw new ForbiddenError('You are not authorized to upload KYC documents for this customer');
+      }
+    }
+
+    const fileExt = data.fileName.split('.').pop()?.toLowerCase() || 'bin';
+    const storageKey = `kyc/${data.customerId}/${uuidv4()}.${fileExt}`;
+
+    const storage = getStorageProvider();
+    await storage.upload({
+      key: storageKey,
+      body: data.fileBuffer,
+      mimeType: data.mimeType,
+      isPrivate: true,
+    });
+
+    const docId = uuidv4();
+    let maskedNumber: string | null = null;
+    let numberHash: string | null = null;
+
+    if (data.docNumber) {
+      const raw = data.docNumber.trim();
+      if (data.docType === KYCType.AADHAAR) {
+        maskedNumber = maskAadhaar(raw);
+      } else if (data.docType === KYCType.PAN) {
+        maskedNumber = maskPan(raw);
+      } else {
+        maskedNumber = raw.length > 6 ? `${raw.slice(0, 3)}****${raw.slice(-3)}` : '******';
+      }
+
+      numberHash = crypto.createHash('sha256').update(raw.toUpperCase()).digest('hex');
+    }
+
+    const sql = `
+      INSERT INTO kyc_documents (
+        id, customer_id, doc_type, doc_number_masked, doc_number_hash,
+        storage_key, file_mime_type, file_size_bytes, status, verified_by,
+        verified_at, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'VERIFIED', $9, NOW(), NOW())
+      RETURNING *
+    `;
+
+    const result = await queryPostgres(sql, [
+      docId,
+      data.customerId,
+      data.docType,
+      maskedNumber,
+      numberHash,
+      storageKey,
+      data.mimeType,
+      fileSizeBytes,
+      user.id,
+    ]);
+
+    const created = result.rows[0];
+
+    await AuditService.log({
+      userId: user.id,
+      action: 'KYC_DOCUMENT_UPLOADED',
+      entity: 'KYCDocument',
+      entityId: docId,
+      newState: { customerId: data.customerId, docType: data.docType, maskedNumber },
+    });
+
+    return {
+      id: created.id,
+      customerId: created.customer_id,
+      docType: created.doc_type,
+      docNumberMasked: created.doc_number_masked,
+      status: created.status as KYCStatus,
+      createdAt: created.created_at,
+    };
+  }
+
+  /**
+   * Centralized document access verification enforcing RBAC, dealer store ownership,
+   * collection agent assignment, and branch manager isolation.
+   */
+  public static async verifyDocumentAccess(docId: string, user: AuthenticatedUser) {
+    if (!docId) {
+      throw new NotFoundError('KYC document not found');
+    }
+
     const docRes = await queryPostgres(
-      'SELECT * FROM kyc_documents WHERE id = $1',
+      `SELECT d.*, c.created_by AS customer_created_by, c.area_route AS customer_area_route
+       FROM kyc_documents d
+       JOIN customers c ON d.customer_id = c.id
+       WHERE d.id = $1 AND c.deleted_at IS NULL`,
       [docId]
     );
 
@@ -219,30 +368,52 @@ export class KYCService {
 
     const doc = docRes.rows[0];
 
-    // Server-side RLAC for Collection Agents: strictly verify assigned customer / loan
-    if (user.role === UserRole.COLLECTION_AGENT) {
-      const agentAccess = await queryPostgres(
-        `SELECT id FROM collection_assignments
-         WHERE agent_id = $1 AND (customer_id = $2 OR area_route = (SELECT area_route FROM customers WHERE id = $2))
-           AND is_active = TRUE AND (effective_to IS NULL OR effective_to >= CURRENT_DATE)
-         UNION
-         SELECT id FROM loans
-         WHERE assigned_agent_id = $1 AND customer_id = $2`,
-        [user.id, doc.customer_id]
-      );
-      if (agentAccess.rows.length === 0) {
-        throw new ForbiddenError('You are not authorized to view KYC documents for this unassigned customer');
-      }
+    // Ensure the authenticated user exists and is active in the database
+    const userRes = await queryPostgres(
+      'SELECT id, status, deleted_at FROM users WHERE id = $1',
+      [user.id]
+    );
+    const dbUser = userRes.rows[0];
+    if (!dbUser || dbUser.deleted_at || dbUser.status !== 'ACTIVE') {
+      throw new UnauthorizedError('User account is inactive, deleted, or no longer exists');
     }
 
-    // Server-side RLAC for Dealers: strictly verify dealer ownership of customer / loan
+    // Super Admin and Admin have global cross-organization access
+    if (user.role === UserRole.SUPER_ADMIN || user.role === UserRole.ADMIN) {
+      return doc;
+    }
+
+    // Branch Manager access control: verify branch scoping if branch is assigned
+    if (user.role === UserRole.BRANCH_MANAGER) {
+      if (user.assignedBranch) {
+        const branchRes = await queryPostgres(
+          `SELECT DISTINCT u.assigned_branch
+           FROM (
+             SELECT created_by AS user_id FROM customers WHERE id = $1 AND deleted_at IS NULL
+             UNION
+             SELECT created_by AS user_id FROM loans WHERE customer_id = $1
+             UNION
+             SELECT assigned_agent_id AS user_id FROM loans WHERE customer_id = $1 AND assigned_agent_id IS NOT NULL
+           ) affiliations
+           JOIN users u ON affiliations.user_id = u.id
+           WHERE u.assigned_branch IS NOT NULL`,
+          [doc.customer_id]
+        );
+
+        const affiliatedBranches = branchRes.rows.map((r: any) => r.assigned_branch);
+        if (affiliatedBranches.length > 0 && !affiliatedBranches.includes(user.assignedBranch)) {
+          throw new ForbiddenError('You are not authorized to access KYC documents outside your assigned branch');
+        }
+      }
+      return doc;
+    }
+
+    // Dealer access control: strictly verify dealer ownership of customer / loan
     if (user.role === UserRole.DEALER) {
       if (!user.dealerId) {
         throw new ForbiddenError('Dealer context missing');
       }
 
-      // Check canonical DB relationships:
-      // Dealer can only access KYC for customers they have financed loans for or created
       const dealerAccess = await queryPostgres(
         `SELECT id FROM loans WHERE dealer_id = $1 AND customer_id = $2
          UNION
@@ -253,7 +424,37 @@ export class KYCService {
       if (dealerAccess.rows.length === 0) {
         throw new ForbiddenError('You are not authorized to access KYC documents for this customer');
       }
+      return doc;
     }
+
+    // Collection Agent access control: strictly verify assigned customer / loan
+    if (user.role === UserRole.COLLECTION_AGENT) {
+      const agentAccess = await queryPostgres(
+        `SELECT id FROM collection_assignments
+         WHERE agent_id = $1 AND (customer_id = $2 OR area_route = (SELECT area_route FROM customers WHERE id = $2))
+           AND is_active = TRUE AND (effective_to IS NULL OR effective_to >= CURRENT_DATE)
+         UNION
+         SELECT id FROM loans
+         WHERE assigned_agent_id = $1 AND customer_id = $2`,
+        [user.id, doc.customer_id]
+      );
+
+      if (agentAccess.rows.length === 0) {
+        throw new ForbiddenError('You are not authorized to view KYC documents for this unassigned customer');
+      }
+      return doc;
+    }
+
+    throw new ForbiddenError('You do not have permission to view this KYC document');
+  }
+
+  /**
+   * Generate short-lived (max 300s) pre-signed download URL.
+   * Allowed for Super Admin, Admin, Branch Manager, Dealer (for own customer/loans),
+   * and Collection Agent (for assigned customer/loans).
+   */
+  public static async generatePresignedDownloadUrl(docId: string, user: AuthenticatedUser) {
+    const doc = await this.verifyDocumentAccess(docId, user);
 
     if (!doc.storage_key) {
       throw new NotFoundError('KYC document has no storage reference');
@@ -322,50 +523,7 @@ export class KYCService {
    * Authenticated direct streaming for KYC document view or download.
    */
   public static async streamKYCDocument(docId: string, user: AuthenticatedUser) {
-    const docRes = await queryPostgres(
-      'SELECT * FROM kyc_documents WHERE id = $1',
-      [docId]
-    );
-
-    if (docRes.rows.length === 0) {
-      throw new NotFoundError('KYC document not found');
-    }
-
-    const doc = docRes.rows[0];
-
-    // Server-side RLAC for Collection Agents
-    if (user.role === UserRole.COLLECTION_AGENT) {
-      const agentAccess = await queryPostgres(
-        `SELECT id FROM collection_assignments
-         WHERE agent_id = $1 AND (customer_id = $2 OR area_route = (SELECT area_route FROM customers WHERE id = $2))
-           AND is_active = TRUE AND (effective_to IS NULL OR effective_to >= CURRENT_DATE)
-         UNION
-         SELECT id FROM loans
-         WHERE assigned_agent_id = $1 AND customer_id = $2`,
-        [user.id, doc.customer_id]
-      );
-      if (agentAccess.rows.length === 0) {
-        throw new ForbiddenError('You are not authorized to view KYC documents for this unassigned customer');
-      }
-    }
-
-    // Server-side RLAC for Dealers
-    if (user.role === UserRole.DEALER) {
-      if (!user.dealerId) {
-        throw new ForbiddenError('Dealer context missing');
-      }
-
-      const dealerAccess = await queryPostgres(
-        `SELECT id FROM loans WHERE dealer_id = $1 AND customer_id = $2
-         UNION
-         SELECT id FROM customers WHERE id = $2 AND (created_by = $3 OR created_by IN (SELECT id FROM users WHERE dealer_id = $1))`,
-        [user.dealerId, doc.customer_id, user.id]
-      );
-
-      if (dealerAccess.rows.length === 0) {
-        throw new ForbiddenError('You are not authorized to access KYC documents for this customer');
-      }
-    }
+    const doc = await this.verifyDocumentAccess(docId, user);
 
     if (!doc.storage_key) {
       throw new NotFoundError('KYC document has no storage reference');

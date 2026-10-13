@@ -586,7 +586,14 @@ export const LoansView: React.FC<LoansViewProps> = ({
         >
           All Loans ({loans.length})
         </button>
-        {(currentUser?.role === UserRole.SUPER_ADMIN || currentUser?.role === UserRole.ADMIN || currentUser?.role === UserRole.BRANCH_MANAGER) && (
+        {currentUser?.role === UserRole.DEALER ? (
+          <button
+            onClick={() => setActiveStatusTab('PENDING_APPROVAL')}
+            className={`btn btn-sm ${activeStatusTab === 'PENDING_APPROVAL' ? 'btn-primary' : 'btn-secondary'}`}
+          >
+            Pending Review ({loans.filter((l) => (l.status || (l as any).status) === 'PENDING_APPROVAL').length})
+          </button>
+        ) : (currentUser?.role === UserRole.SUPER_ADMIN || currentUser?.role === UserRole.ADMIN || currentUser?.role === UserRole.BRANCH_MANAGER) ? (
           <button
             onClick={() => setActiveStatusTab('PENDING_APPROVAL')}
             className={`btn btn-sm ${activeStatusTab === 'PENDING_APPROVAL' ? 'btn-primary' : 'btn-secondary'}`}
@@ -594,7 +601,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
           >
             Pending Approvals {pendingApprovalsList.length > 0 && <span className="badge badge-warning" style={{ marginLeft: 6 }}>{pendingApprovalsList.length}</span>}
           </button>
-        )}
+        ) : null}
         <button
           onClick={() => setActiveStatusTab('APPROVED')}
           className={`btn btn-sm ${activeStatusTab === 'APPROVED' ? 'btn-primary' : 'btn-secondary'}`}
@@ -623,7 +630,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
 
       {/* Loans Table */}
       <div className="table-container">
-        {activeStatusTab === 'PENDING_APPROVAL' ? (
+        {activeStatusTab === 'PENDING_APPROVAL' && currentUser?.role !== UserRole.DEALER ? (
           <table className="crm-table">
             <thead>
               <tr>

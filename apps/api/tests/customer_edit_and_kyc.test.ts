@@ -127,6 +127,12 @@ describe('Customer Data, Manual Route & Dynamic KYC Integration Tests', () => {
       });
     expect(presigned1.status).toBe(200);
 
+    await getStorageProvider().upload({
+      key: presigned1.body.data.storageKey,
+      body: Buffer.from('mock-aadhaar-content'),
+      mimeType: 'image/jpeg',
+    });
+
     const confirm1 = await request(app)
       .post('/api/v1/kyc/confirm')
       .set('Authorization', `Bearer ${adminToken}`)
@@ -152,6 +158,13 @@ describe('Customer Data, Manual Route & Dynamic KYC Integration Tests', () => {
         mimeType: 'image/jpeg',
         fileSizeBytes: 85000,
       });
+
+    await getStorageProvider().upload({
+      key: presigned2.body.data.storageKey,
+      body: Buffer.from('mock-pan-content'),
+      mimeType: 'image/jpeg',
+    });
+
     const confirm2 = await request(app)
       .post('/api/v1/kyc/confirm')
       .set('Authorization', `Bearer ${adminToken}`)
@@ -217,6 +230,9 @@ describe('Customer Data, Manual Route & Dynamic KYC Integration Tests', () => {
     expect(checkDoc2.rows.length).toBe(1);
 
     deleteSpy.mockRestore();
+
+    // Delete storage object to simulate orphaned record where file is missing from vault
+    await storage.delete(presigned2.body.data.storageKey);
 
     // Test idempotent deletion: storage object is already missing
     expect(await storage.exists(presigned2.body.data.storageKey)).toBe(false);

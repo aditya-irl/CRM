@@ -16,6 +16,9 @@ import {
   MessageCircle,
   HelpCircle,
   Eye,
+  PhoneCall,
+  X,
+  Languages,
 } from 'lucide-react';
 import { BrandLogo } from '../components/BrandLogo';
 import { DocumentViewerModal } from '../components/DocumentViewerModal';
@@ -42,6 +45,61 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
     docType: string;
     fileMimeType?: string;
   } | null>(null);
+
+  // Language selection (English / Hindi)
+  const [lang, setLang] = useState<'en' | 'hi'>(() => {
+    try {
+      const saved = localStorage.getItem('crm_portal_lang');
+      return saved === 'hi' ? 'hi' : 'en';
+    } catch {
+      return 'en';
+    }
+  });
+
+  const handleSetLang = (newLang: 'en' | 'hi') => {
+    setLang(newLang);
+    try {
+      localStorage.setItem('crm_portal_lang', newLang);
+    } catch {}
+  };
+
+  const [showContactModal, setShowContactModal] = useState<boolean>(false);
+
+  const overdueCopy = {
+    en: {
+      title: 'EMI Payment Reminder',
+      body: 'Your EMI appears to be overdue. Please review your outstanding amount and pay any due EMI and applicable penalty promptly. Continued non-payment may lead to legal action as permitted by applicable law and may adversely affect your credit score, subject to applicable credit reporting rules. If you need assistance, please contact us.',
+      overdueDueLabel: 'Overdue Amount',
+      penaltyLabel: 'Applicable Late Penalty',
+      totalDueLabel: 'Total Overdue Balance',
+      contactBtn: 'Contact Now',
+      whatsappBtn: 'Pay via WhatsApp',
+    },
+    hi: {
+      title: 'EMI भुगतान रिमाइंडर',
+      body: 'आपकी EMI बकाया है? कृपया पेनल्टी से बचने के लिए अपनी बाकी EMI का भुगतान जल्द करें। लगातार भुगतान न करने पर कानून के अनुसार कानूनी कार्रवाई हो सकती है और आपके क्रेडिट स्कोर पर बुरा असर पड़ सकता है। सहायता के लिए अभी संपर्क करें।',
+      overdueDueLabel: 'बकाया राशि',
+      penaltyLabel: 'लागू पेनल्टी',
+      totalDueLabel: 'कुल देय राशि',
+      contactBtn: 'अभी संपर्क करें',
+      whatsappBtn: 'व्हाट्सएप से भुगतान करें',
+    },
+  };
+
+  const handleContactNow = () => {
+    if (!data) return;
+    const supportPhone = ((import.meta as any).env?.VITE_FINANCE_WHATSAPP_NUMBER as string | undefined) || '';
+    if (supportPhone && supportPhone.trim().length >= 10) {
+      const cleanPhone = supportPhone.replace(/\D/g, '');
+      const msg = lang === 'hi'
+        ? `नमस्ते, मैं अपने ऋण खाता संख्या ${data.loanAccountNo} के संबंध में संपर्क कर रहा हूँ। कृपया बकाया भुगतान में सहायता करें।`
+        : `Hello Shubh Pvt Ltd Finance Support, I am contacting regarding my loan account ${data.loanAccountNo}. Please provide payment assistance.`;
+      const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
+      window.open(waUrl, '_blank', 'noopener,noreferrer');
+    } else {
+      setShowContactModal(true);
+    }
+  };
 
   const fetchKycDocuments = useCallback(async () => {
     if (!token || !token.trim()) return;
@@ -183,18 +241,66 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
           </span>
         </div>
 
-        {data && (
-          <button
-            onClick={() => fetchPortalData(true)}
-            disabled={refreshing}
-            className="btn btn-secondary btn-sm"
-            title="Refresh latest status"
-            style={{ gap: 6 }}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              background: 'var(--bg-app)',
+              padding: '2px 4px',
+              borderRadius: 20,
+              border: '1px solid var(--border-subtle)',
+            }}
           >
-            <RefreshCw size={13} className={refreshing ? 'spin' : ''} />
-            <span>Refresh</span>
-          </button>
-        )}
+            <button
+              type="button"
+              onClick={() => handleSetLang('en')}
+              style={{
+                padding: '4px 10px',
+                fontSize: 11,
+                fontWeight: 700,
+                borderRadius: 14,
+                border: 'none',
+                background: lang === 'en' ? 'var(--primary)' : 'transparent',
+                color: lang === 'en' ? '#ffffff' : 'var(--text-secondary)',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              EN
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSetLang('hi')}
+              style={{
+                padding: '4px 10px',
+                fontSize: 11,
+                fontWeight: 700,
+                borderRadius: 14,
+                border: 'none',
+                background: lang === 'hi' ? 'var(--primary)' : 'transparent',
+                color: lang === 'hi' ? '#ffffff' : 'var(--text-secondary)',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              हिंदी
+            </button>
+          </div>
+
+          {data && (
+            <button
+              onClick={() => fetchPortalData(true)}
+              disabled={refreshing}
+              className="btn btn-secondary btn-sm"
+              title="Refresh latest status"
+              style={{ gap: 6 }}
+            >
+              <RefreshCw size={13} className={refreshing ? 'spin' : ''} />
+              <span>{lang === 'hi' ? 'ताज़ा करें' : 'Refresh'}</span>
+            </button>
+          )}
+        </div>
       </header>
 
       {/* ─── Main Container ──────────────────────────────────────────────── */}
@@ -274,11 +380,186 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
         )}
 
         {/* Loaded Customer Loan Content */}
-        {!loading && !error && data && (
-          <>
-            {/* ─── Hero Overview Card ────────────────────────────────────── */}
-            <div
-              className="crm-card"
+        {!loading && !error && data && (() => {
+          const overdueList = data.installments?.filter((i) => i.status === 'OVERDUE' || (i.daysOverdue !== undefined && i.daysOverdue > 0)) || [];
+          const hasOverdue = Boolean(
+            (data.overdueInstallments !== undefined && data.overdueInstallments > 0) ||
+            overdueList.length > 0
+          );
+          const totalOverdueEmiAmount = overdueList.reduce(
+            (sum, i) => sum + (i.remainingAmount !== undefined ? i.remainingAmount : i.expectedAmount),
+            0
+          );
+          const totalPenaltyAmount = data.totalPenaltyAmount || 0;
+
+          return (
+            <>
+              {/* ─── Bilingual Overdue Payment Warning Banner (Requirement F) ─── */}
+              {hasOverdue && (
+                <div
+                  role="alert"
+                  aria-live="polite"
+                  style={{
+                    background: '#fffbeb',
+                    border: '1px solid #fde68a',
+                    borderRadius: 'var(--radius-lg, 12px)',
+                    padding: '20px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 16,
+                    boxShadow: '0 4px 14px rgba(217, 119, 6, 0.08)',
+                    borderLeft: '5px solid #d97706',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div
+                        style={{
+                          width: 42,
+                          height: 42,
+                          borderRadius: '50%',
+                          background: '#fef3c7',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: '#d97706',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <AlertCircle size={24} />
+                      </div>
+                      <div>
+                        <h3 style={{ fontSize: 18, fontWeight: 800, color: '#92400e', margin: 0 }}>
+                          {overdueCopy[lang].title}
+                        </h3>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: '#b45309' }}>
+                          {data.loanAccountNo} • Alpha Mobile Gallery (Shubh Pvt Ltd)
+                        </span>
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        background: '#ffffff',
+                        padding: '3px 6px',
+                        borderRadius: 20,
+                        border: '1px solid #fde68a',
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => handleSetLang('en')}
+                        style={{
+                          padding: '3px 10px',
+                          fontSize: 12,
+                          fontWeight: 700,
+                          borderRadius: 14,
+                          border: 'none',
+                          background: lang === 'en' ? '#d97706' : 'transparent',
+                          color: lang === 'en' ? '#ffffff' : '#78350f',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        English
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSetLang('hi')}
+                        style={{
+                          padding: '3px 10px',
+                          fontSize: 12,
+                          fontWeight: 700,
+                          borderRadius: 14,
+                          border: 'none',
+                          background: lang === 'hi' ? '#d97706' : 'transparent',
+                          color: lang === 'hi' ? '#ffffff' : '#78350f',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        हिंदी
+                      </button>
+                    </div>
+                  </div>
+
+                  <p
+                    style={{
+                      fontSize: 14,
+                      color: '#78350f',
+                      lineHeight: 1.6,
+                      margin: 0,
+                      fontWeight: 500,
+                    }}
+                  >
+                    {overdueCopy[lang].body}
+                  </p>
+
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: 12,
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      background: '#ffffff',
+                      padding: '14px 18px',
+                      borderRadius: 'var(--radius-md, 8px)',
+                      border: '1px solid #fef3c7',
+                    }}
+                  >
+                    <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: '#92400e', textTransform: 'uppercase' }}>
+                          {overdueCopy[lang].overdueDueLabel}
+                        </div>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: '#b45309' }}>
+                          {formatINR(totalOverdueEmiAmount)}
+                        </div>
+                      </div>
+
+                      {totalPenaltyAmount > 0 && (
+                        <div style={{ borderLeft: '1px solid #fde68a', paddingLeft: 16 }}>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: '#b91c1c', textTransform: 'uppercase' }}>
+                            {overdueCopy[lang].penaltyLabel}
+                          </div>
+                          <div style={{ fontSize: 18, fontWeight: 800, color: '#dc2626' }}>
+                            {formatINR(totalPenaltyAmount)}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleContactNow}
+                      className="btn btn-primary"
+                      style={{
+                        background: '#d97706',
+                        borderColor: '#b45309',
+                        color: '#ffffff',
+                        fontWeight: 700,
+                        fontSize: 14,
+                        padding: '10px 20px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        boxShadow: '0 2px 4px rgba(217, 119, 6, 0.2)',
+                      }}
+                    >
+                      <PhoneCall size={16} />
+                      <span>{overdueCopy[lang].contactBtn}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ─── Hero Overview Card ────────────────────────────────────── */}
+              <div
+                className="crm-card"
               style={{
                 padding: 24,
                 background: '#ffffff',
@@ -974,8 +1255,96 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
               <div>Alpha Mobile Gallery • Shubh Pvt Ltd • Regulated Lending & Collection CRM</div>
             </div>
           </>
-        )}
+        );
+      })()}
       </main>
+
+      {/* Contact Support Modal */}
+      {showContactModal && (
+        <div
+          className="modal-overlay"
+          style={{ zIndex: 3000, background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(3px)' }}
+          onClick={() => setShowContactModal(false)}
+        >
+          <div
+            className="modal-content"
+            style={{
+              maxWidth: 480,
+              padding: 24,
+              borderRadius: 12,
+              background: '#ffffff',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div
+                  style={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: '50%',
+                    background: '#eff6ff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--primary)',
+                  }}
+                >
+                  <HelpCircle size={22} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
+                    {lang === 'hi' ? 'सहायता संपर्क जानकारी' : 'Support Contact Information'}
+                  </h3>
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                    Alpha Mobile Gallery • Shubh Pvt Ltd
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowContactModal(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                title="Close"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text-secondary)', marginBottom: 20 }}>
+              {lang === 'hi' ? (
+                <>
+                  <p style={{ margin: '0 0 10px 0' }}>
+                    समर्थन संपर्क विवरण वर्तमान में प्रशासन द्वारा अद्यतन किए जा रहे हैं।
+                  </p>
+                  <p style={{ margin: 0 }}>
+                    बकाया EMI भुगतान अथवा रसीद सहायता के लिए कृपया अपनी निकटतम <strong>अल्फा मोबाइल गैलरी</strong> शाखा पर संपर्क करें अथवा अपने ऋण अनुबंध दस्तावेज में दिए गए शाखा पते पर संपर्क करें।
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p style={{ margin: '0 0 10px 0' }}>
+                    Support contact details are currently being updated by the administration.
+                  </p>
+                  <p style={{ margin: 0 }}>
+                    For immediate assistance regarding your overdue EMI payment or receipt confirmation, please visit your nearest <strong>Alpha Mobile Gallery</strong> store or refer to the branch contact information in your physical loan agreement.
+                  </p>
+                </>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setShowContactModal(false)}
+                className="btn btn-primary btn-sm"
+              >
+                {lang === 'hi' ? 'समझ गया' : 'Understood'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Customer Portal Secure KYC Document Viewer Modal */}
       {viewingKycDoc && (

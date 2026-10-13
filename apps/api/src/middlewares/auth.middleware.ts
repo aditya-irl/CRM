@@ -34,21 +34,106 @@ declare global {
 }
 
 export async function authenticate(req: Request, _res: Response, next: NextFunction) {
+  let token: string | undefined;
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return next(new UnauthorizedError('Missing or malformed Authorization header'));
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
   }
 
-  const token = authHeader.split(' ')[1];
-  let payload: { id: string };
+  if (!token) {
+    return next(new UnauthorizedError('Missing or malformed Authorization header'));
+  }
+  let payload: any;
   try {
-    payload = jwt.verify(token, JWT_SECRET) as { id: string };
+    payload = jwt.verify(token, JWT_SECRET);
   } catch (err) {
     return next(new UnauthorizedError('Invalid or expired token'));
   }
 
+  // Scoped KYC_VIEW tokens cannot be used to authenticate standard API routes
+  if (payload.type === 'KYC_VIEW') {
+    return next(new UnauthorizedError('Scoped media view tokens cannot authorize general API endpoints'));
+  }
+
   try {
     // Verify user exists and is ACTIVE in PostgreSQL database
+    const userResult = await queryPostgres<{
+      id: string;
+      email: string;
+      full_name: string;
+      role: UserRole;
+      status: string;
+      assigned_branch?: string | null;
+      dealer_id?: string | null;
+      deleted_at?: string | null;
+    }>(
+      'SELECT id, email, full_name, role, status, assigned_branch, dealer_id, deleted_at FROM users WHERE id = $1',
+      [payload.id]
+    );
+
+    const user = userResult.rows[0];
+
+    if (!user || user.deleted_at || user.status !== 'ACTIVE') {
+      return next(new UnauthorizedError('User account is inactive, deleted, or no longer exists'));
+    }
+
+    req.user = {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      fullName: user.full_name,
+      assignedBranch: user.assigned_branch,
+      dealerId: user.dealer_id || null,
+    };
+    next();
+  } catch (dbErr) {
+    return next(dbErr);
+  }
+}
+
+/**
+ * Specialized authentication middleware for direct media/document streaming routes (e.g. /kyc/:id/view).
+ * Supports Bearer Authorization header as well as query parameter tokens for browser <img>/<iframe/ tags.
+ * Validates that scoped document view tokens (KYC_VIEW) are only valid for the requested document id.
+ */
+export async function authenticateMediaView(req: Request, _res: Response, next: NextFunction) {
+  let token: string | undefined;
+  let isQueryToken = false;
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  } else if (req.query && typeof req.query.token === 'string') {
+    token = req.query.token;
+    isQueryToken = true;
+  }
+
+  if (!token) {
+    return next(new UnauthorizedError('Missing or malformed Authorization header or token query parameter'));
+  }
+
+  let payload: any;
+  try {
+    payload = jwt.verify(token, JWT_SECRET);
+  } catch (err) {
+    return next(new UnauthorizedError('Invalid or expired token'));
+  }
+
+  // If token is provided via query parameter, it MUST be a scoped KYC_VIEW token bound to this exact document
+  if (isQueryToken) {
+    if (payload.type !== 'KYC_VIEW') {
+      return next(new UnauthorizedError('Query token must be a scoped KYC_VIEW token'));
+    }
+    if (!payload.docId || payload.docId !== req.params.id) {
+      return next(new ForbiddenError('Document view token is not valid for this document'));
+    }
+  } else {
+    // If Bearer token is a KYC_VIEW token, enforce that it matches the requested document
+    if (payload.type === 'KYC_VIEW' && payload.docId && payload.docId !== req.params.id) {
+      return next(new ForbiddenError('Document view token is not valid for this document'));
+    }
+  }
+
+  try {
     const userResult = await queryPostgres<{
       id: string;
       email: string;

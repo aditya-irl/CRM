@@ -46,11 +46,13 @@ const formatDate = (dateStr?: string) => {
 interface DealersViewProps {
   onNavigateToCollections?: (dealerId: string) => void;
   onNavigateToSettlements?: (dealerId: string) => void;
+  onNavigateToPayables?: (dealerId: string) => void;
 }
 
 export const DealersView: React.FC<DealersViewProps> = ({
   onNavigateToCollections,
   onNavigateToSettlements,
+  onNavigateToPayables,
 }) => {
   const [dealers, setDealers] = useState<IDealer[]>([]);
   const [loading, setLoading] = useState(true);

@@ -19,6 +19,7 @@ import auditRoutes from './modules/audit/audit.routes';
 import dealerRoutes from './modules/dealers/dealers.routes';
 import dealerCollectionsRoutes from './modules/dealer-collections/dealer-collections.routes';
 import dealerSettlementsRoutes from './modules/dealer-settlements/dealer-settlements.routes';
+import dealerPayablesRoutes from './modules/dealer-payables/dealer-payables.routes';
 import agentCollectionsRoutes from './modules/agent-collections/agent-collections.routes';
 import directCollectionsRoutes from './modules/direct-collections/direct-collections.routes';
 import portalRoutes from './modules/portal/portal.routes';
@@ -75,6 +76,25 @@ app.use(helmet());
 app.use(cors(buildCorsOptions()));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+/**
+ * Sanitizes URLs for application logging by redacting sensitive query parameters
+ * (such as view tokens, portal tokens, passwords, and secrets).
+ */
+export function sanitizeUrlForLogging(rawUrl?: string | null): string {
+  if (!rawUrl) return '';
+  return rawUrl
+    .replace(/([?&](?:token|access_token|portal_token|cpt|secret|key|password)=)[^&#\s]*/gi, '$1[REDACTED]')
+    .replace(/(cpt_[a-zA-Z0-9_-]{10,})/gi, '[REDACTED_PORTAL_TOKEN]');
+}
+
+// Override Morgan standard tokens to eliminate token leakage in application logs
+morgan.token('url', (req: any) => sanitizeUrlForLogging(req.originalUrl || req.url));
+morgan.token('referrer', (req: any) => {
+  const ref = req.headers ? (req.headers['referer'] || req.headers['referrer']) : undefined;
+  return typeof ref === 'string' ? sanitizeUrlForLogging(ref) : '-';
+});
+
 app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 // Health Check
@@ -88,6 +108,7 @@ app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/dealers', dealerRoutes);
 app.use('/api/v1/dealer-collections', dealerCollectionsRoutes);
 app.use('/api/v1/dealer-settlements', dealerSettlementsRoutes);
+app.use('/api/v1/dealer-payables', dealerPayablesRoutes);
 app.use('/api/v1/agent-collections', agentCollectionsRoutes);
 app.use('/api/v1/direct-collections', directCollectionsRoutes);
 app.use('/api/v1/customers', customerRoutes);

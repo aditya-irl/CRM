@@ -225,7 +225,9 @@ export const DealerDashboardView: React.FC<DealerDashboardViewProps> = ({ onNavi
             </div>
           </div>
           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
-            {data?.metrics.closedLoans || 0} loans closed/repaid
+            {data?.metrics.approvedLoans ? `${data.metrics.approvedLoans} approved • ` : ''}
+            {data?.metrics.pendingLoans ? `${data.metrics.pendingLoans} pending review • ` : ''}
+            {data?.metrics.closedLoans || 0} closed
           </div>
         </div>
 
@@ -400,6 +402,14 @@ export const DealerDashboardView: React.FC<DealerDashboardViewProps> = ({ onNavi
 
           {onNavigateToTab && (
             <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={() => onNavigateToTab('loans')}
+                className="btn btn-secondary btn-sm"
+                style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+              >
+                <span>View All Store Loans</span>
+                <ArrowUpRight size={13} />
+              </button>
               <button
                 onClick={() => onNavigateToTab('customers')}
                 className="btn btn-secondary btn-sm"

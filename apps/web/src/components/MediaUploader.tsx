@@ -173,6 +173,7 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
               <img
                 src={preview}
                 alt="Upload preview"
+                referrerPolicy="no-referrer"
                 style={{ width: 48, height: 48, borderRadius: 'var(--radius-sm)', objectFit: 'cover', border: '1px solid var(--border-subtle)' }}
               />
             ) : (

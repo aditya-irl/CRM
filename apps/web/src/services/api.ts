@@ -16,6 +16,12 @@ import {
   IDealerSettlementsLedgerResponse,
   IDealerSettlement,
   IDealerUnsettledCollection,
+  IDealerSettlementCollectionItem,
+  IDealerSettlementCollectionsResponse,
+  IDealerPayableSummary,
+  IDealerPayableEligibleLoan,
+  IDealerPayablePayment,
+  IDealerPayablesLedgerResponse,
   IAgentCollectionSummary,
   IAgentCollectionLedgerResponse,
   IDirectCollectionSummary,
@@ -813,6 +819,14 @@ export class ApiClient {
     return { ...res, downloadUrl: url };
   }
 
+  public static async getKYCViewToken(docId: string) {
+    return this.request<{
+      token: string;
+      expiresIn: number;
+      viewUrl: string;
+    }>(`/kyc/${docId}/view-token`);
+  }
+
   public static async getKYCDocuments(customerId: string) {
     return this.request<any[]>(`/kyc/customer/${customerId}`);
   }
@@ -837,6 +851,47 @@ export class ApiClient {
    * 2. PUT file binary data to storage (S3 presigned PUT or local API receiver).
    * 3. Confirm document metadata with backend.
    */
+  private static fileToBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        const base64 = result.includes(',') ? result.split(',')[1] : result;
+        resolve(base64);
+      };
+      reader.onerror = (err) => reject(err);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  /**
+   * Direct server-side KYC upload (bypasses browser CORS issues with private S3/B2 buckets).
+   */
+  public static async directUploadKYCDocument(data: {
+    customerId: string;
+    docType: string;
+    file: File;
+    docNumber?: string | null;
+  }) {
+    const fileBase64 = await this.fileToBase64(data.file);
+    const mimeType = data.file.type || 'application/octet-stream';
+    const res = await this.request<{
+      success: boolean;
+      data: any;
+    }>('/kyc/direct-upload', {
+      method: 'POST',
+      body: JSON.stringify({
+        customerId: data.customerId,
+        docType: data.docType,
+        docNumber: data.docNumber || null,
+        fileName: data.file.name,
+        mimeType,
+        fileBase64,
+      }),
+    });
+    return res.data;
+  }
+
   public static async uploadKYCDocument(data: {
     customerId: string;
     docType: string;
@@ -844,45 +899,69 @@ export class ApiClient {
     docNumber?: string | null;
   }) {
     const mimeType = data.file.type || 'application/octet-stream';
-    const initRes = await this.initKYCUpload({
-      customerId: data.customerId,
-      docType: data.docType,
-      fileName: data.file.name,
-      mimeType,
-      fileSizeBytes: data.file.size,
-    });
+
+    // 1. Attempt presigned PUT upload
+    let initRes: any = null;
+    try {
+      initRes = await this.initKYCUpload({
+        customerId: data.customerId,
+        docType: data.docType,
+        fileName: data.file.name,
+        mimeType,
+        fileSizeBytes: data.file.size,
+      });
+    } catch (initErr) {
+      console.warn('[KYC Upload] Presigned initialization failed, falling back to direct server upload:', initErr);
+      return this.directUploadKYCDocument(data);
+    }
 
     let uploadUrl = initRes.uploadUrl;
     if (uploadUrl.startsWith('/')) {
       uploadUrl = buildApiUrl(uploadUrl.replace(/^\/api\/v1/, ''));
     }
 
-    const headers: Record<string, string> = {
-      'Content-Type': mimeType,
-    };
-    if (uploadUrl.includes('/api/v1/')) {
-      const token = this.getToken();
-      if (token) headers['Authorization'] = `Bearer ${token}`;
+    let putSucceeded = false;
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': mimeType,
+      };
+      if (uploadUrl.includes('/api/v1/')) {
+        const token = this.getToken();
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const uploadRes = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers,
+        body: data.file,
+      });
+
+      if (uploadRes.ok) {
+        putSucceeded = true;
+      } else {
+        console.warn(`[KYC Upload] Presigned PUT returned HTTP ${uploadRes.status}, falling back to direct server upload.`);
+      }
+    } catch (putErr) {
+      console.warn('[KYC Upload] Browser presigned PUT failed (CORS/network), falling back to direct server upload:', putErr);
     }
 
-    const uploadRes = await fetch(uploadUrl, {
-      method: 'PUT',
-      headers,
-      body: data.file,
-    });
-
-    if (!uploadRes.ok) {
-      throw new Error(`Failed to upload document file: HTTP ${uploadRes.status}`);
+    if (putSucceeded) {
+      try {
+        return await this.confirmKYC({
+          customerId: data.customerId,
+          docType: data.docType,
+          docNumber: data.docNumber || null,
+          storageKey: initRes.storageKey,
+          fileMimeType: mimeType,
+          fileSizeBytes: data.file.size,
+        });
+      } catch (confirmErr) {
+        console.warn('[KYC Upload] Confirmation failed, falling back to direct server upload:', confirmErr);
+      }
     }
 
-    return this.confirmKYC({
-      customerId: data.customerId,
-      docType: data.docType,
-      docNumber: data.docNumber || null,
-      storageKey: initRes.storageKey,
-      fileMimeType: mimeType,
-      fileSizeBytes: data.file.size,
-    });
+    // 2. Direct server upload fallback (ensures file is safely stored in S3/B2)
+    return this.directUploadKYCDocument(data);
   }
 
   public static async deleteKYCDocument(docId: string) {
@@ -1145,6 +1224,89 @@ export class ApiClient {
 
   public static async reverseDealerSettlement(id: string, reason: string) {
     return this.request<IDealerSettlement>(`/dealer-settlements/${id}/reverse`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  public static async getDealerSettlementCollections(paramsQuery: {
+    dealerId?: string;
+    branchId?: string;
+    approvalStatus?: string;
+    settlementStatus?: string;
+    search?: string;
+    startDate?: string;
+    endDate?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const params = new URLSearchParams();
+    if (paramsQuery.dealerId) params.append('dealerId', paramsQuery.dealerId);
+    if (paramsQuery.branchId) params.append('branchId', paramsQuery.branchId);
+    if (paramsQuery.approvalStatus) params.append('approvalStatus', paramsQuery.approvalStatus);
+    if (paramsQuery.settlementStatus) params.append('settlementStatus', paramsQuery.settlementStatus);
+    if (paramsQuery.search) params.append('search', paramsQuery.search);
+    if (paramsQuery.startDate) params.append('startDate', paramsQuery.startDate);
+    if (paramsQuery.endDate) params.append('endDate', paramsQuery.endDate);
+    if (paramsQuery.page) params.append('page', paramsQuery.page.toString());
+    if (paramsQuery.limit) params.append('limit', paramsQuery.limit.toString());
+    return this.request<IDealerSettlementCollectionsResponse>(`/dealer-settlements/collections?${params.toString()}`);
+  }
+
+  // Dealer Payables (Company pays Dealer for financed products)
+  public static async getDealerPayablesSummary(paramsQuery: {
+    dealerId?: string;
+    branchId?: string;
+  } = {}) {
+    const params = new URLSearchParams();
+    if (paramsQuery.dealerId) params.append('dealerId', paramsQuery.dealerId);
+    if (paramsQuery.branchId) params.append('branchId', paramsQuery.branchId);
+    return this.request<IDealerPayableSummary>(`/dealer-payables/summary?${params.toString()}`);
+  }
+
+  public static async getEligibleLoansForDealerPayable(dealerId: string) {
+    return this.request<IDealerPayableEligibleLoan[]>(`/dealer-payables/dealers/${dealerId}/eligible-loans`);
+  }
+
+  public static async getDealerPayablePayments(paramsQuery: {
+    dealerId?: string;
+    branchId?: string;
+    status?: string;
+    search?: string;
+    startDate?: string;
+    endDate?: string;
+    page?: number;
+    limit?: number;
+  } = {}) {
+    const params = new URLSearchParams();
+    if (paramsQuery.dealerId) params.append('dealerId', paramsQuery.dealerId);
+    if (paramsQuery.branchId) params.append('branchId', paramsQuery.branchId);
+    if (paramsQuery.status) params.append('status', paramsQuery.status);
+    if (paramsQuery.search) params.append('search', paramsQuery.search);
+    if (paramsQuery.startDate) params.append('startDate', paramsQuery.startDate);
+    if (paramsQuery.endDate) params.append('endDate', paramsQuery.endDate);
+    if (paramsQuery.page) params.append('page', paramsQuery.page.toString());
+    if (paramsQuery.limit) params.append('limit', paramsQuery.limit.toString());
+    return this.request<IDealerPayablesLedgerResponse>(`/dealer-payables?${params.toString()}`);
+  }
+
+  public static async recordDealerPayablePayment(data: {
+    dealerId: string;
+    amount: number;
+    paymentDate: string;
+    paymentMethod: string;
+    referenceNumber?: string | null;
+    notes?: string | null;
+    allocations?: Array<{ loanId: string; amountAllocated: number }>;
+  }) {
+    return this.request<IDealerPayablePayment>('/dealer-payables', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  public static async reverseDealerPayablePayment(id: string, reason: string) {
+    return this.request<IDealerPayablePayment>(`/dealer-payables/${id}/reverse`, {
       method: 'POST',
       body: JSON.stringify({ reason }),
     });

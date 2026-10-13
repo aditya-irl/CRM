@@ -1,8 +1,9 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import fs from 'fs';
 import path from 'path';
+import jwt from 'jsonwebtoken';
 import { KYCService } from './kyc.service';
-import { authenticate, requireRole } from '../../middlewares/auth.middleware';
+import { authenticate, requireRole, authenticateMediaView, JWT_SECRET } from '../../middlewares/auth.middleware';
 import { validateBody } from '../../middlewares/validate.middleware';
 import { kycUploadInitSchema, kycConfirmSchema, UserRole } from '@crm/shared';
 
@@ -100,7 +101,61 @@ router.put('/local-vault', async (req: Request, res: Response, next: NextFunctio
   }
 });
 
+// Authenticated document streaming for inline viewing or download (supports Bearer and scoped media query tokens)
+router.get(
+  '/:id/view',
+  authenticateMediaView,
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER, UserRole.DEALER),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await KYCService.streamKYCDocument(req.params.id, req.user!);
+      const normMime = (result.mimeType || '').toLowerCase().trim();
+      const safeInlineMimes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+      const isSafeInline = safeInlineMimes.includes(normMime);
+      const safeFilename = (result.docNumberMasked || result.docType || 'document').replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+      res.setHeader('Content-Type', isSafeInline ? (normMime === 'image/jpg' ? 'image/jpeg' : normMime) : 'application/octet-stream');
+      res.setHeader('Content-Disposition', `${isSafeInline ? 'inline' : 'attachment'}; filename="${safeFilename}"`);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      if (result.contentLength) {
+        res.setHeader('Content-Length', result.contentLength);
+      }
+      return (result.stream as any).pipe(res);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// All subsequent routes strictly require standard Bearer Authorization header
 router.use(authenticate);
+
+// Generate short-lived (300s) scoped document view token for browser <img>/<iframe/ tags
+router.get(
+  '/:id/view-token',
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER, UserRole.DEALER),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await KYCService.verifyDocumentAccess(req.params.id, req.user!);
+
+      const viewToken = jwt.sign(
+        { id: req.user!.id, docId: req.params.id, type: 'KYC_VIEW' },
+        JWT_SECRET,
+        { expiresIn: '300s' }
+      );
+      return res.json({
+        success: true,
+        data: {
+          token: viewToken,
+          expiresIn: 300,
+          viewUrl: `/api/v1/kyc/${encodeURIComponent(req.params.id)}/view?token=${encodeURIComponent(viewToken)}`,
+        },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 
 // Generate pre-signed upload URL (Admin, Branch Manager, or assigned Collection Agent)
 router.post(
@@ -146,6 +201,41 @@ router.post(
   }
 );
 
+// Direct authenticated KYC upload endpoint (bypasses browser CORS issues with third-party S3 buckets)
+router.post(
+  '/direct-upload',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { customerId, docType, docNumber, fileName, mimeType, fileBase64 } = req.body;
+      if (!customerId || !docType || !fileName || !fileBase64) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'BAD_REQUEST', message: 'Missing required upload parameters (customerId, docType, fileName, fileBase64)' },
+        });
+      }
+      const fileBuffer = Buffer.from(fileBase64, 'base64');
+      const result = await KYCService.directUploadKYCDocument(
+        {
+          customerId,
+          docType,
+          docNumber: docNumber || null,
+          fileName,
+          mimeType: mimeType || 'application/octet-stream',
+          fileBuffer,
+        },
+        req.user!
+      );
+      return res.status(201).json({
+        success: true,
+        data: result,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 // Generate pre-signed download URL (Super Admin, Admin, Branch Manager, or Dealer)
 router.get(
   '/:id/presigned-download',
@@ -164,29 +254,7 @@ router.get(
   }
 );
 
-// Authenticated document streaming for inline viewing or download
-router.get(
-  '/:id/view',
-  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER, UserRole.DEALER),
-  async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const result = await KYCService.streamKYCDocument(req.params.id, req.user!);
-      const normMime = (result.mimeType || '').toLowerCase().trim();
-      const safeInlineMimes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-      const isSafeInline = safeInlineMimes.includes(normMime);
-      const safeFilename = (result.docNumberMasked || result.docType || 'document').replace(/[^a-zA-Z0-9_\-\.]/g, '_');
-      res.setHeader('Content-Type', isSafeInline ? (normMime === 'image/jpg' ? 'image/jpeg' : normMime) : 'application/octet-stream');
-      res.setHeader('Content-Disposition', `${isSafeInline ? 'inline' : 'attachment'}; filename="${safeFilename}"`);
-      res.setHeader('X-Content-Type-Options', 'nosniff');
-      if (result.contentLength) {
-        res.setHeader('Content-Length', result.contentLength);
-      }
-      return (result.stream as any).pipe(res);
-    } catch (err) {
-      next(err);
-    }
-  }
-);
+
 
 // List KYC documents for a customer (Masked for collection agents)
 router.get(

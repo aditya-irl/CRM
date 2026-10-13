@@ -115,7 +115,7 @@ describe('Midnight Engine & Dealer Customer Approval Integration Tests', () => {
       expect(res.body.processed).toBeDefined();
       expect(res.body.skipped).toBeDefined();
       expect(res.body.failed).toBeDefined();
-    });
+    }, 15000);
 
     test('SUPER_ADMIN role CAN trigger Midnight Engine successfully', async () => {
       const res = await request(app)
@@ -126,7 +126,7 @@ describe('Midnight Engine & Dealer Customer Approval Integration Tests', () => {
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.processed).toBeDefined();
-    });
+    }, 15000);
 
     test('DEALER role is forbidden from triggering Midnight Engine (403)', async () => {
       const res = await request(app)

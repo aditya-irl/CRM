@@ -699,6 +699,8 @@ export class DealerService {
       `SELECT
         (SELECT COUNT(DISTINCT customer_id) FROM loans WHERE dealer_id = $1) as total_customers,
         (SELECT COUNT(*) FROM loans WHERE dealer_id = $1 AND status = 'ACTIVE') as active_loans,
+        (SELECT COUNT(*) FROM loans WHERE dealer_id = $1 AND status = 'APPROVED') as approved_loans,
+        (SELECT COUNT(*) FROM loans WHERE dealer_id = $1 AND status = 'PENDING_APPROVAL') as pending_loans,
         (SELECT COUNT(*) FROM loans WHERE dealer_id = $1 AND status = 'CLOSED') as closed_loans,
         (SELECT COALESCE(SUM(principal_amount), 0) FROM loans WHERE dealer_id = $1) as total_financed_amount,
         (SELECT COALESCE(SUM(outstanding_balance), 0) FROM loans WHERE dealer_id = $1 AND status = 'ACTIVE') as total_outstanding_balance,
@@ -713,17 +715,18 @@ export class DealerService {
     const totalSettled = Number(m.total_settled_amount || 0);
     const unsettledCollection = Math.max(0, totalCollected - totalSettled);
 
-    // Recent loans (10)
+    // Recent loans (15)
     const loansRes = await queryPostgres(
-      `SELECT l.id, l.loan_account_no, l.principal_amount, l.emi_amount,
-              l.outstanding_balance, l.status, l.disbursement_date,
+      `SELECT l.id, l.loan_account_no, l.principal_amount, l.down_payment, l.net_disbursed_amount,
+              l.tenure_months, l.emi_amount, l.outstanding_balance, l.status, l.disbursement_date,
+              l.rejection_reason, l.created_at,
               l.device_brand, l.device_model, l.device_name, l.imei1,
               c.full_name as customer_name, c.customer_code, c.primary_phone
        FROM loans l
        JOIN customers c ON l.customer_id = c.id
        WHERE l.dealer_id = $1
        ORDER BY l.created_at DESC
-       LIMIT 10`,
+       LIMIT 15`,
       [targetDealerId]
     );
 
@@ -774,6 +777,8 @@ export class DealerService {
       metrics: {
         totalCustomers: Number(m.total_customers || 0),
         activeLoans: Number(m.active_loans || 0),
+        approvedLoans: Number(m.approved_loans || 0),
+        pendingLoans: Number(m.pending_loans || 0),
         closedLoans: Number(m.closed_loans || 0),
         totalFinancedAmount: Number(m.total_financed_amount || 0),
         totalOutstandingBalance: Number(m.total_outstanding_balance || 0),
@@ -792,10 +797,15 @@ export class DealerService {
         deviceName: l.device_name || (l.device_brand && l.device_model ? `${l.device_brand} ${l.device_model}` : (l.device_brand || l.device_model || null)),
         imei1: l.imei1 || null,
         principalAmount: Number(l.principal_amount),
+        downPayment: Number(l.down_payment || 0),
+        netDisbursedAmount: Number(l.net_disbursed_amount || 0),
+        tenureMonths: Number(l.tenure_months || 0),
         emiAmount: Number(l.emi_amount),
         outstandingBalance: Number(l.outstanding_balance),
         status: l.status,
         disbursementDate: l.disbursement_date,
+        rejectionReason: l.rejection_reason || null,
+        createdAt: l.created_at,
       })),
       recentCollections: collectionsRes.rows.map((c: any) => ({
         id: c.id,

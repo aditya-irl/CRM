@@ -210,4 +210,86 @@ describe('Customer Payment Portal Frontend Tests', () => {
       expect(ApiClient.getToken()).toBeNull();
     });
   });
+
+  describe('6. Bilingual EMI Overdue Announcement Verification', () => {
+    const overduePortalData: ICustomerPortalLoanData = {
+      ...samplePortalData,
+      overdueInstallments: 2,
+      totalPenaltyAmount: 500,
+      installments: [
+        {
+          installmentNumber: 1,
+          dueDate: '2026-08-10',
+          expectedAmount: 4500,
+          paidAmount: 0,
+          remainingAmount: 4500,
+          penaltyAmount: 250,
+          daysOverdue: 60,
+          status: 'OVERDUE',
+        },
+        {
+          installmentNumber: 2,
+          dueDate: '2026-09-10',
+          expectedAmount: 4500,
+          paidAmount: 0,
+          remainingAmount: 4500,
+          penaltyAmount: 250,
+          daysOverdue: 30,
+          status: 'OVERDUE',
+        },
+      ],
+    };
+
+    test('renders exact Hindi announcement when Hindi language is selected', () => {
+      mockLocalStorage.setItem('crm_portal_lang', 'hi');
+
+      const html = renderToString(
+        <CustomerPortalView token="cpt_valid_token_123" initialData={overduePortalData} />
+      );
+
+      // Verify exact Hindi headline and announcement body
+      expect(html).toContain('EMI भुगतान रिमाइंडर');
+      expect(html).toContain(
+        'आपकी EMI बकाया है? कृपया पेनल्टी से बचने के लिए अपनी बाकी EMI का भुगतान जल्द करें। लगातार भुगतान न करने पर कानून के अनुसार कानूनी कार्रवाई हो सकती है और आपके क्रेडिट स्कोर पर बुरा असर पड़ सकता है। सहायता के लिए अभी संपर्क करें।'
+      );
+      expect(html).toContain('बकाया राशि');
+      expect(html).toContain('लागू पेनल्टी');
+      expect(html).toContain('अभी संपर्क करें');
+    });
+
+    test('renders exact English announcement when English is selected', () => {
+      mockLocalStorage.setItem('crm_portal_lang', 'en');
+
+      const html = renderToString(
+        <CustomerPortalView token="cpt_valid_token_123" initialData={overduePortalData} />
+      );
+
+      expect(html).toContain('EMI Payment Reminder');
+      expect(html).toContain(
+        'Your EMI appears to be overdue. Please review your outstanding amount and pay any due EMI and applicable penalty promptly.'
+      );
+      expect(html).toContain('Overdue Amount');
+      expect(html).toContain('Applicable Late Penalty');
+      expect(html).toContain('Contact Now');
+    });
+
+    test('overdue announcement is suppressed when loan has no overdue installments', () => {
+      mockLocalStorage.setItem('crm_portal_lang', 'hi');
+
+      const htmlCleanHi = renderToString(
+        <CustomerPortalView token="cpt_valid_token_123" initialData={samplePortalData} />
+      );
+
+      expect(htmlCleanHi).not.toContain('EMI भुगतान रिमाइंडर');
+      expect(htmlCleanHi).not.toContain('आपकी EMI बकाया है?');
+
+      mockLocalStorage.setItem('crm_portal_lang', 'en');
+      const htmlCleanEn = renderToString(
+        <CustomerPortalView token="cpt_valid_token_123" initialData={samplePortalData} />
+      );
+
+      expect(htmlCleanEn).not.toContain('EMI Payment Reminder');
+      expect(htmlCleanEn).not.toContain('Your EMI appears to be overdue.');
+    });
+  });
 });

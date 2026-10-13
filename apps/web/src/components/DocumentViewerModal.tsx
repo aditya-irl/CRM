@@ -54,6 +54,7 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
   const [zoom, setZoom] = useState<number>(1);
   const [rotation, setRotation] = useState<number>(0);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [triedFallbackStream, setTriedFallbackStream] = useState<boolean>(false);
 
   const fetchDocumentUrl = async () => {
     if (!documentId) return;
@@ -354,6 +355,7 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
                   <img
                     src={url}
                     alt={title}
+                    referrerPolicy="no-referrer"
                     style={{
                       maxWidth: zoom <= 1 ? '100%' : 'none',
                       maxHeight: zoom <= 1 ? '100%' : 'none',
@@ -364,10 +366,25 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
                       boxShadow: '0 10px 25px rgba(0, 0, 0, 0.5)',
                       objectFit: 'contain',
                     }}
-                    onError={() => {
-                      setError(
-                        'Failed to render image from secure storage. The file may be missing from the vault or corrupted.'
-                      );
+                    onError={async () => {
+                      if (!triedFallbackStream && documentId) {
+                        setTriedFallbackStream(true);
+                        if (portalToken) {
+                          const streamUrl = buildApiUrl(`/portal/kyc/${encodeURIComponent(documentId)}/view?token=${encodeURIComponent(portalToken)}`);
+                          setUrl(streamUrl);
+                        } else {
+                          try {
+                            const res = await ApiClient.getKYCViewToken(documentId);
+                            setUrl(buildApiUrl(res.viewUrl.replace(/^\/api\/v1/, '')));
+                          } catch {
+                            setError('Unable to obtain a secure view token for this document.');
+                          }
+                        }
+                      } else {
+                        setError(
+                          'Failed to render image from secure storage. The file may be missing from the vault or corrupted.'
+                        );
+                      }
                     }}
                   />
                 </div>
@@ -376,6 +393,7 @@ export const DocumentViewerModal: React.FC<DocumentViewerModalProps> = ({
                   <iframe
                     src={url}
                     title={title}
+                    referrerPolicy="no-referrer"
                     style={{ width: '100%', height: '100%', border: 'none' }}
                   />
                   <div

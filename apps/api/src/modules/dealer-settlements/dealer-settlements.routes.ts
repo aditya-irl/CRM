@@ -40,6 +40,29 @@ router.get(
 );
 
 /**
+ * GET /api/v1/dealer-settlements/collections
+ * Retrieve dealer collections ledger with approval and settlement statuses
+ */
+router.get(
+  '/collections',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await DealerSettlementsService.getDealerCollectionsList(
+        req.query as any,
+        req.user!
+      );
+      return res.json({
+        success: true,
+        data: result,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
  * GET /api/v1/dealer-settlements/dealers/:id/unsettled-collections
  * Retrieve eligible unsettled / partially settled collection receipts for a dealer
  */

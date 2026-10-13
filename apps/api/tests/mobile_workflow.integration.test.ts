@@ -3,6 +3,7 @@ import app from '../src/app';
 import { queryPostgres, closePostgresPool } from '../src/database/postgres';
 import { closeRedisConnection } from '../src/core/redis';
 import { closeAllQueues } from '../src/core/queue';
+import { getStorageProvider } from '../src/core/storage';
 import {
   UserRole,
   LoanStatus,
@@ -480,6 +481,13 @@ describe('TASK 10: Mobile App & Recovery Agent Workflow Finalization Tests', () 
     expect(presignRes.body.data.storageKey).toBeDefined();
 
     const { storageKey, fileMimeType, fileSizeBytes } = presignRes.body.data;
+
+    // Simulate mobile client uploading binary bytes to storage vault
+    await getStorageProvider().upload({
+      key: storageKey,
+      body: Buffer.from('mock-camera-capture-content'),
+      mimeType: fileMimeType || 'image/jpeg',
+    });
 
     // B. Confirm Upload
     const confirmRes = await request(app)

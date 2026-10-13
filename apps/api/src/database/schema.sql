@@ -182,6 +182,8 @@ CREATE TABLE IF NOT EXISTS payments (
     reversed_payment_id TEXT REFERENCES payments(id),
     reversal_reason TEXT,
     idempotency_key TEXT UNIQUE,
+    approved_by TEXT REFERENCES users(id),
+    approved_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -313,4 +315,36 @@ CREATE INDEX IF NOT EXISTS idx_portal_tokens_hash ON customer_portal_tokens(toke
 CREATE INDEX IF NOT EXISTS idx_portal_tokens_loan ON customer_portal_tokens(loan_id);
 CREATE INDEX IF NOT EXISTS idx_portal_tokens_customer ON customer_portal_tokens(customer_id);
 CREATE INDEX IF NOT EXISTS idx_portal_tokens_active ON customer_portal_tokens(is_active);
+
+CREATE TABLE IF NOT EXISTS dealer_payable_payments (
+    id TEXT PRIMARY KEY,
+    payout_number TEXT UNIQUE NOT NULL,
+    dealer_id TEXT NOT NULL REFERENCES dealers(id) ON DELETE RESTRICT,
+    amount REAL NOT NULL CHECK (amount > 0),
+    payment_date TEXT NOT NULL,
+    payment_method TEXT NOT NULL,
+    reference_number TEXT,
+    notes TEXT,
+    status TEXT NOT NULL DEFAULT 'COMPLETED',
+    is_reversal INTEGER NOT NULL DEFAULT 0,
+    reversal_reason TEXT,
+    reversed_at TEXT,
+    created_by TEXT REFERENCES users(id) ON DELETE RESTRICT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dealer_payable_payments_dealer_id ON dealer_payable_payments(dealer_id);
+CREATE INDEX IF NOT EXISTS idx_dealer_payable_payments_date ON dealer_payable_payments(payment_date);
+CREATE INDEX IF NOT EXISTS idx_dealer_payable_payments_status ON dealer_payable_payments(status);
+
+CREATE TABLE IF NOT EXISTS dealer_payable_allocations (
+    id TEXT PRIMARY KEY,
+    payout_id TEXT NOT NULL REFERENCES dealer_payable_payments(id) ON DELETE CASCADE,
+    loan_id TEXT NOT NULL REFERENCES loans(id) ON DELETE RESTRICT,
+    amount_allocated REAL NOT NULL CHECK (amount_allocated > 0),
+    created_at TEXT NOT NULL,
+    UNIQUE(payout_id, loan_id)
+);
+CREATE INDEX IF NOT EXISTS idx_dealer_payable_allocations_payout ON dealer_payable_allocations(payout_id);
+CREATE INDEX IF NOT EXISTS idx_dealer_payable_allocations_loan ON dealer_payable_allocations(loan_id);
 

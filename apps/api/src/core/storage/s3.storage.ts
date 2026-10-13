@@ -13,21 +13,42 @@ export class S3StorageProvider implements StorageProvider {
   private client: S3Client;
   private bucket: string;
 
-  constructor() {
-    this.bucket = env.AWS_S3_BUCKET;
+  constructor(customConfig?: { bucket?: string; region?: string; endpoint?: string }) {
+    this.bucket = customConfig?.bucket || process.env.AWS_S3_BUCKET || env.AWS_S3_BUCKET;
 
-    const config: any = {
-      region: env.AWS_REGION,
-    };
+    let region = customConfig?.region || process.env.AWS_REGION || env.AWS_REGION;
+    let endpoint = (customConfig?.endpoint || process.env.AWS_S3_ENDPOINT || env.AWS_S3_ENDPOINT)?.trim();
 
-    if (env.AWS_S3_ENDPOINT) {
-      config.endpoint = env.AWS_S3_ENDPOINT;
+    if (endpoint) {
+      // Ensure endpoint has protocol
+      if (!/^https?:\/\//i.test(endpoint)) {
+        endpoint = `https://${endpoint}`;
+      }
+
+      // Auto-detect region for Backblaze B2 endpoints (e.g. s3.us-east-005.backblazeb2.com -> us-east-005)
+      // if region was left at default 'ap-south-1' or not explicitly set
+      const b2Match = endpoint.match(/s3\.([a-z0-9\-]+)\.backblazeb2\.com/i);
+      if (b2Match && (!process.env.AWS_REGION || region === 'ap-south-1')) {
+        region = b2Match[1];
+      }
     }
 
-    if (env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY) {
+    const config: any = {
+      region,
+      // For custom endpoints like Backblaze B2 or MinIO, forcePathStyle: true avoids DNS delays and SSL wildcard cert issues
+      forcePathStyle: Boolean(endpoint),
+    };
+
+    if (endpoint) {
+      config.endpoint = endpoint;
+    }
+
+    const accessKeyId = process.env.AWS_ACCESS_KEY_ID || env.AWS_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY || env.AWS_SECRET_ACCESS_KEY;
+    if (accessKeyId && secretAccessKey) {
       config.credentials = {
-        accessKeyId: env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+        accessKeyId,
+        secretAccessKey,
       };
     }
 

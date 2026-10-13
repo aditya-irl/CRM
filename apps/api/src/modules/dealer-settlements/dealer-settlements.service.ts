@@ -10,6 +10,8 @@ import {
   IDealerSettlementsSummary,
   IDealerUnsettledCollection,
   IDealerSettlementsLedgerResponse,
+  IDealerSettlementCollectionItem,
+  IDealerSettlementCollectionsResponse,
   getBusinessDate,
 } from '@crm/shared';
 import { AppError, ForbiddenError, NotFoundError, BadRequestError } from '../../middlewares/error.middleware';
@@ -637,13 +639,21 @@ export class DealerSettlementsService {
         }
       }
 
-      // 7. Generate sequential settlement number (STL-YYYY-XXXXXX)
+      // 7. Generate sequential settlement number (STL-YYYY-XXXXXX) using advisory lock + MAX sequence
       const currentYear = new Date(payload.settlementDate || Date.now()).getFullYear();
+      try {
+        await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`dealer_settlement_seq_${currentYear}`]);
+      } catch {
+        // Graceful fallback for SQLite test environments
+      }
+
       const seqRes = await client.query(
-        `SELECT COUNT(*)::int as cnt FROM dealer_settlements WHERE EXTRACT(YEAR FROM settlement_date) = $1`,
-        [currentYear]
+        `SELECT COALESCE(MAX(CAST(SPLIT_PART(settlement_number, '-', 3) AS INTEGER)), 1000) as max_seq
+         FROM dealer_settlements
+         WHERE settlement_number LIKE $1`,
+        [`STL-${currentYear}-%`]
       );
-      const nextSeq = (Number(seqRes.rows[0]?.cnt || 0) + 1).toString().padStart(6, '0');
+      const nextSeq = (parseInt(seqRes.rows[0]?.max_seq || '1000', 10) + 1).toString().padStart(6, '0');
       const settlementNumber = `STL-${currentYear}-${nextSeq}`;
 
       const settlementId = uuidv4();
@@ -809,5 +819,228 @@ export class DealerSettlementsService {
         updatedAt: new Date().toISOString(),
       };
     });
+  }
+
+  /**
+   * Retrieve dealer collections ledger with approval status, approved by, and settlement reconciliation.
+   */
+  public static async getDealerCollectionsList(
+    filters: {
+      dealerId?: string;
+      collectionStatus?: string;
+      settlementStatus?: string;
+      startDate?: string;
+      endDate?: string;
+      search?: string;
+      page?: number;
+      limit?: number;
+    },
+    user: AuthenticatedUser
+  ): Promise<IDealerSettlementCollectionsResponse> {
+    this.checkAccess(user);
+
+    if (user.role === UserRole.DEALER) {
+      if (!user.dealerId) throw new ForbiddenError('Dealer context missing');
+      filters.dealerId = user.dealerId;
+    }
+
+    const page = Math.max(1, Number(filters.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(filters.limit) || 25));
+    const offset = (page - 1) * limit;
+
+    // 1. Calculate Summary Metrics
+    let summarySql = `
+      SELECT
+        COUNT(CASE WHEN p.status = 'PENDING_VERIFICATION' THEN 1 END)::int as pending_count,
+        COALESCE(SUM(CASE WHEN p.status = 'PENDING_VERIFICATION' THEN p.amount ELSE 0 END), 0)::numeric as pending_amount,
+        COUNT(CASE WHEN p.status = 'SUCCESS' AND p.is_reversal = FALSE THEN 1 END)::int as approved_count,
+        COALESCE(SUM(CASE WHEN p.status = 'SUCCESS' AND p.is_reversal = FALSE THEN p.amount ELSE 0 END), 0)::numeric as total_collected,
+        COALESCE((
+          SELECT SUM(ds.amount)
+          FROM dealer_settlements ds
+          WHERE ds.status = 'COMPLETED' ${filters.dealerId ? 'AND ds.dealer_id = $1' : ''}
+        ), 0)::numeric as total_settled
+      FROM payments p
+      WHERE p.collection_source = 'DEALER'
+    `;
+    const summaryParams: any[] = [];
+    if (filters.dealerId) {
+      summarySql += ` AND p.dealer_id = $1`;
+      summaryParams.push(filters.dealerId);
+    }
+
+    const summaryRes = await queryPostgres(summarySql, summaryParams);
+    const sRow = summaryRes.rows[0];
+    const pendingApprovalCount = Number(sRow?.pending_count || 0);
+    const pendingApprovalAmount = Number(sRow?.pending_amount || 0);
+    const approvedCount = Number(sRow?.approved_count || 0);
+    const totalCollectedAmount = Number(sRow?.total_collected || 0);
+    const totalSettledAmount = Number(sRow?.total_settled || 0);
+    const diff = new Decimal(totalCollectedAmount).minus(totalSettledAmount);
+    const outstandingSettlementAmount = diff.isNegative() ? 0 : diff.toNumber();
+
+    // 2. Build Query Filters for Collections
+    const whereClauses: string[] = [`p.collection_source = 'DEALER'`];
+    const queryParams: any[] = [];
+    let pIdx = 1;
+
+    if (filters.dealerId) {
+      whereClauses.push(`p.dealer_id = $${pIdx++}`);
+      queryParams.push(filters.dealerId);
+    }
+
+    if (filters.collectionStatus && filters.collectionStatus !== 'ALL') {
+      whereClauses.push(`p.status = $${pIdx++}`);
+      queryParams.push(filters.collectionStatus);
+    }
+
+    if (filters.startDate && filters.endDate) {
+      whereClauses.push(`DATE(p.payment_timestamp AT TIME ZONE 'Asia/Kolkata') BETWEEN $${pIdx++}::date AND $${pIdx++}::date`);
+      queryParams.push(filters.startDate, filters.endDate);
+    } else if (filters.startDate) {
+      whereClauses.push(`DATE(p.payment_timestamp AT TIME ZONE 'Asia/Kolkata') >= $${pIdx++}::date`);
+      queryParams.push(filters.startDate);
+    } else if (filters.endDate) {
+      whereClauses.push(`DATE(p.payment_timestamp AT TIME ZONE 'Asia/Kolkata') <= $${pIdx++}::date`);
+      queryParams.push(filters.endDate);
+    }
+
+    if (filters.search) {
+      whereClauses.push(`(
+        p.receipt_number ILIKE $${pIdx}
+        OR l.loan_account_no ILIKE $${pIdx}
+        OR c.full_name ILIKE $${pIdx}
+        OR c.customer_code ILIKE $${pIdx}
+        OR d.store_name ILIKE $${pIdx}
+        OR d.dealer_code ILIKE $${pIdx}
+      )`);
+      queryParams.push(`%${filters.search}%`);
+      pIdx++;
+    }
+
+    const whereSql = `WHERE ${whereClauses.join(' AND ')}`;
+
+    // Query collections with amount settled
+    const baseQuery = `
+      SELECT
+        p.id,
+        p.receipt_number,
+        p.amount::numeric,
+        p.payment_mode,
+        p.payment_timestamp,
+        p.status,
+        p.is_reversal,
+        p.approved_by,
+        u_app.full_name as approved_by_name,
+        p.approved_at,
+        l.id as loan_id,
+        l.loan_account_no,
+        c.id as customer_id,
+        c.full_name as customer_name,
+        c.customer_code,
+        c.primary_phone as customer_phone,
+        d.id as dealer_id,
+        d.store_name as dealer_store_name,
+        d.dealer_code,
+        COALESCE((
+          SELECT SUM(dsa.amount_allocated)
+          FROM dealer_settlement_allocations dsa
+          JOIN dealer_settlements ds ON dsa.settlement_id = ds.id
+          WHERE dsa.payment_id = p.id AND ds.status = 'COMPLETED'
+        ), 0)::numeric as amount_settled
+      FROM payments p
+      JOIN loans l ON p.loan_id = l.id
+      JOIN customers c ON p.customer_id = c.id
+      JOIN dealers d ON p.dealer_id = d.id
+      LEFT JOIN users u_app ON p.approved_by = u_app.id
+      ${whereSql}
+    `;
+
+    // Filter by settlement status in memory or subquery if specified
+    let finalQuery = baseQuery;
+    if (filters.settlementStatus && filters.settlementStatus !== 'ALL') {
+      if (filters.settlementStatus === 'SETTLED') {
+        finalQuery = `SELECT * FROM (${baseQuery}) sub WHERE sub.status = 'SUCCESS' AND sub.amount_settled >= sub.amount`;
+      } else if (filters.settlementStatus === 'PARTIALLY_SETTLED') {
+        finalQuery = `SELECT * FROM (${baseQuery}) sub WHERE sub.status = 'SUCCESS' AND sub.amount_settled > 0 AND sub.amount_settled < sub.amount`;
+      } else if (filters.settlementStatus === 'UNSETTLED') {
+        finalQuery = `SELECT * FROM (${baseQuery}) sub WHERE sub.status = 'SUCCESS' AND sub.amount_settled = 0`;
+      }
+    }
+
+    const countSql = `SELECT COUNT(*)::int as total_rows FROM (${finalQuery}) cnt_sub`;
+    const countRes = await queryPostgres(countSql, queryParams);
+    const totalCount = Number(countRes.rows[0]?.total_rows || 0);
+
+    const recordsSql = `
+      ${finalQuery}
+      ORDER BY p.payment_timestamp DESC
+      LIMIT $${pIdx++} OFFSET $${pIdx++}
+    `;
+    const recordsRes = await queryPostgres(recordsSql, [...queryParams, limit, offset]);
+
+    const records: IDealerSettlementCollectionItem[] = recordsRes.rows.map((r: any) => {
+      const amt = Number(r.amount);
+      const settled = Number(r.amount_settled || 0);
+      let sStatus: 'UNSETTLED' | 'PARTIALLY_SETTLED' | 'SETTLED' | 'NOT_APPLICABLE' = 'UNSETTLED';
+      let remUnsettled = amt;
+
+      if (r.status === 'PENDING_VERIFICATION') {
+        sStatus = 'UNSETTLED';
+        remUnsettled = amt;
+      } else if (r.status === 'REJECTED' || r.is_reversal) {
+        sStatus = 'NOT_APPLICABLE';
+        remUnsettled = 0;
+      } else if (settled >= amt) {
+        sStatus = 'SETTLED';
+        remUnsettled = 0;
+      } else if (settled > 0) {
+        sStatus = 'PARTIALLY_SETTLED';
+        remUnsettled = Math.max(0, amt - settled);
+      } else {
+        sStatus = 'UNSETTLED';
+        remUnsettled = amt;
+      }
+
+      return {
+        id: r.id,
+        receiptNumber: r.receipt_number,
+        loanId: r.loan_id,
+        loanAccountNo: r.loan_account_no,
+        customerId: r.customer_id,
+        customerName: r.customer_name,
+        customerCode: r.customer_code,
+        customerPhone: r.customer_phone,
+        dealerId: r.dealer_id,
+        dealerStoreName: r.dealer_store_name,
+        dealerCode: r.dealer_code,
+        amount: amt,
+        paymentMode: r.payment_mode,
+        paymentTimestamp: r.payment_timestamp,
+        status: r.status,
+        approvedBy: r.approved_by || null,
+        approvedByName: r.approved_by_name || null,
+        approvedAt: r.approved_at || null,
+        amountSettled: settled,
+        remainingUnsettled: remUnsettled,
+        settlementStatus: sStatus,
+      };
+    });
+
+    return {
+      summary: {
+        pendingApprovalCount,
+        pendingApprovalAmount,
+        approvedCount,
+        totalCollectedAmount,
+        totalSettledAmount,
+        outstandingSettlementAmount,
+      },
+      records,
+      totalCount,
+      page,
+      limit,
+      totalPages: Math.ceil(totalCount / limit) || 1,
+    };
   }
 }

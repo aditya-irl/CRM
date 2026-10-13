@@ -312,6 +312,7 @@ export const DynamicAttachmentManager: React.FC<DynamicAttachmentManagerProps> =
                       <img
                         src={item.previewUrl || item.remoteUrl || ''}
                         alt={item.title || item.category}
+                        referrerPolicy="no-referrer"
                         style={{
                           width: 54,
                           height: 54,

@@ -863,10 +863,32 @@ export class PaymentService {
       const primaryEmiId = allocation.allocatedPayments[0]?.emiId || payment.emi_id || null;
       await client.query(
         `UPDATE payments
-         SET status = 'SUCCESS', emi_id = $1, updated_at = NOW()
-         WHERE id = $2`,
-        [primaryEmiId, paymentId]
+         SET status = 'SUCCESS', emi_id = $1, approved_by = $2, approved_at = NOW(), updated_at = NOW()
+         WHERE id = $3`,
+        [primaryEmiId, user.id, paymentId]
       );
+
+      // Notify originating dealer if applicable
+      if (payment.dealer_id) {
+        const dealerUsers = await client.query(
+          "SELECT id FROM users WHERE dealer_id = $1 AND status = 'ACTIVE'",
+          [payment.dealer_id]
+        );
+        for (const dUser of dealerUsers.rows) {
+          await client.query(
+            `INSERT INTO notifications (
+              id, recipient_user_id, channel, type, title, body, status, scheduled_for, metadata, created_at
+            ) VALUES ($1, $2, 'IN_APP', 'PAYMENT_RECEIPT', $3, $4, 'PENDING', NOW(), $5, NOW())`,
+            [
+              uuidv4(),
+              dUser.id,
+              `Store Collection Approved: ${payment.receipt_number}`,
+              `Customer collection of ₹${payment.amount} (Receipt: ${payment.receipt_number}) for Loan ${loan.loan_account_no} has been approved and allocated by administration.`,
+              JSON.stringify({ paymentId, receiptNumber: payment.receipt_number, amount: Number(payment.amount), status: PaymentStatus.SUCCESS }),
+            ]
+          );
+        }
+      }
 
       // 8. Immutable Audit Trail
       await AuditService.logWithClient(client, {
@@ -948,10 +970,34 @@ export class PaymentService {
          SET status = 'REJECTED',
              reversal_reason = $1,
              notes = CASE WHEN notes IS NULL OR notes = '' THEN $2 ELSE notes || ' | ' || $2 END,
+             approved_by = $3,
+             approved_at = NOW(),
              updated_at = NOW()
-         WHERE id = $3`,
-        [reason.trim(), `Rejected: ${reason.trim()}`, paymentId]
+         WHERE id = $4`,
+        [reason.trim(), `Rejected: ${reason.trim()}`, user.id, paymentId]
       );
+
+      // Notify originating dealer if applicable
+      if (payment.dealer_id) {
+        const dealerUsers = await client.query(
+          "SELECT id FROM users WHERE dealer_id = $1 AND status = 'ACTIVE'",
+          [payment.dealer_id]
+        );
+        for (const dUser of dealerUsers.rows) {
+          await client.query(
+            `INSERT INTO notifications (
+              id, recipient_user_id, channel, type, title, body, status, scheduled_for, metadata, created_at
+            ) VALUES ($1, $2, 'IN_APP', 'PAYMENT_RECEIPT', $3, $4, 'PENDING', NOW(), $5, NOW())`,
+            [
+              uuidv4(),
+              dUser.id,
+              `Store Collection Rejected: ${payment.receipt_number}`,
+              `Payment collection of ₹${payment.amount} (Receipt: ${payment.receipt_number}) was rejected by administration. Reason: ${reason.trim()}`,
+              JSON.stringify({ paymentId, receiptNumber: payment.receipt_number, amount: Number(payment.amount), status: PaymentStatus.REJECTED, reason: reason.trim() }),
+            ]
+          );
+        }
+      }
 
       // 3. Immutable Audit Trail
       await AuditService.logWithClient(client, {

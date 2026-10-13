@@ -96,6 +96,12 @@ export function initDatabase() {
       if (!colNames.includes('agent_id')) {
         db.exec('ALTER TABLE payments ADD COLUMN agent_id TEXT REFERENCES users(id);');
       }
+      if (!colNames.includes('approved_by')) {
+        db.exec('ALTER TABLE payments ADD COLUMN approved_by TEXT REFERENCES users(id);');
+      }
+      if (!colNames.includes('approved_at')) {
+        db.exec('ALTER TABLE payments ADD COLUMN approved_at TEXT;');
+      }
     }
   } catch (err) {
     // Ignore if table doesn't exist yet

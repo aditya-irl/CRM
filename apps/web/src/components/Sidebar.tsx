@@ -23,6 +23,7 @@ export type NavTab =
   | 'agents'
   | 'dealer-collections'
   | 'dealer-settlements'
+  | 'dealer-payables'
   | 'agent-collections'
   | 'direct-collections'
   | 'customers'
@@ -47,6 +48,8 @@ const SidebarComponent: React.FC<SidebarProps> = ({ activeTab, onSelectTab, user
     'dashboard',
     'customers',
     'devices',
+    'loans',
+    'dealer-payables',
     'dealer-collections',
     'dealer-settlements',
   ];
@@ -59,6 +62,12 @@ const SidebarComponent: React.FC<SidebarProps> = ({ activeTab, onSelectTab, user
     },
     { id: 'dealers', label: 'Dealer Stores', icon: <Store size={17} />, hiddenForAgent: true },
     { id: 'agents', label: 'Field Agents', icon: <UserCheck size={17} />, hiddenForAgent: true },
+    {
+      id: 'dealer-payables',
+      label: isDealer ? 'Store Payables' : 'Dealer Payables',
+      icon: <CreditCard size={17} />,
+      hiddenForAgent: true,
+    },
     {
       id: 'dealer-collections',
       label: isDealer ? 'Store Collections' : 'Dealer Collections',
@@ -94,7 +103,7 @@ const SidebarComponent: React.FC<SidebarProps> = ({ activeTab, onSelectTab, user
     },
     {
       id: 'loans',
-      label: isAgent ? 'My Loans' : 'Loans & EMI Terms',
+      label: isDealer ? 'Store Loans & Approvals' : isAgent ? 'My Loans' : 'Loans & EMI Terms',
       icon: <CreditCard size={17} />,
     },
     { id: 'payments', label: 'Payments Ledger', icon: <Receipt size={17} />, hiddenForAgent: true },
