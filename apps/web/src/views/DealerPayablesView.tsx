@@ -264,78 +264,84 @@ export const DealerPayablesView: React.FC<DealerPayablesViewProps> = ({
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <h2 style={{ fontSize: 20, fontWeight: 800 }}>
-              {isDealer ? 'Store Payables & Payouts' : 'Dealer Payables (Company to Dealer)'}
+              {isDealer ? 'Company Payments' : 'Company Payables'}
             </h2>
             <span className="badge badge-primary" style={{ fontSize: 11 }}>
-              Financed Product Disbursements
+              {isDealer ? 'Disbursements from Finance Company' : 'Company to Dealer Payouts'}
             </span>
           </div>
           <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
             {isDealer
-              ? 'View financed device amounts owed to your store by the company and track disbursement payout history.'
-              : 'Amounts the finance company owes dealers for eligible disbursed products and record payout transactions.'}
+              ? 'Track payments received from the finance company for your eligible financed products.'
+              : 'Manage payments owed by the company to partner dealers for financed products.'}
           </p>
         </div>
 
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {!isDealer && onNavigateToDealers && (
+            <button onClick={onNavigateToDealers} className="btn btn-secondary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Store size={14} />
+              <span>Manage Partner Stores</span>
+            </button>
+          )}
           {canManagePayables && (
-            <button onClick={() => handleOpenRecordModal()} className="btn btn-primary">
+            <button onClick={() => handleOpenRecordModal()} className="btn btn-primary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <Plus size={15} />
-              <span>Record Company Payment</span>
+              <span>Record Company Payout</span>
             </button>
           )}
         </div>
       </div>
 
-      {/* 4 Summary KPI Cards in Simple English */}
+      {/* 4 Summary KPI Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
         <div className="crm-card" style={{ padding: 16 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
-            We Need To Pay
+            {isDealer ? 'Amount Payable to Your Store' : 'Total Payable to Dealers'}
           </div>
           <div className="mono" style={{ fontSize: 24, fontWeight: 800, marginTop: 4 }}>
             {formatINR(summary?.totalPayable || 0)}
           </div>
           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-            Total amount payable for eligible products
+            {isDealer ? 'Total financed amount owed by the company' : 'Total amount payable for eligible products'}
           </div>
         </div>
 
         <div className="crm-card" style={{ padding: 16 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--success-text)', textTransform: 'uppercase' }}>
-            Already Paid
+            {isDealer ? 'Amount Received from Company' : 'Total Paid to Dealers'}
           </div>
           <div className="mono" style={{ fontSize: 24, fontWeight: 800, color: 'var(--success)', marginTop: 4 }}>
             {formatINR(summary?.totalPaid || 0)}
           </div>
           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-            Already paid by company to dealer(s)
+            {isDealer ? 'Total payouts received from finance company' : 'Already paid by company to dealers'}
           </div>
         </div>
 
         <div className="crm-card" style={{ padding: 16, borderLeft: '4px solid var(--warning)' }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--warning-text)', textTransform: 'uppercase' }}>
-            Still Left To Pay
+            {isDealer ? 'Remaining Amount Due from Company' : 'Remaining Payable'}
           </div>
           <div className="mono" style={{ fontSize: 24, fontWeight: 800, color: 'var(--warning-text)', marginTop: 4 }}>
             {formatINR(summary?.remainingPayable || 0)}
           </div>
           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-            Amount remaining to pay to dealer(s)
+            {isDealer ? 'Balance yet to be disbursed by company' : 'Amount remaining to pay to dealers'}
           </div>
         </div>
 
         <div className="crm-card" style={{ padding: 16 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
-            {isDealer ? 'Eligible Financed Phones' : 'Dealers With Pending Payout'}
+            Eligible Financed Phones
           </div>
           <div className="mono" style={{ fontSize: 24, fontWeight: 800, marginTop: 4 }}>
             {isDealer
               ? (summary?.dealers?.[0]?.eligibleLoansCount || 0)
-              : (summary?.dealers?.filter((d) => d.remainingPayable > 0).length || 0)}
+              : (summary?.dealers?.reduce((acc, d) => acc + (d.eligibleLoansCount || 0), 0) || 0)}
           </div>
           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-            {isDealer ? 'Active disbursed loans for your store' : 'Stores awaiting payout'}
+            {isDealer ? 'Active disbursed loans for your store' : 'Active disbursed loans across partner stores'}
           </div>
         </div>
       </div>
@@ -354,7 +360,7 @@ export const DealerPayablesView: React.FC<DealerPayablesViewProps> = ({
           className={`btn btn-sm ${activeTab === 'payments' ? 'btn-primary' : 'btn-secondary'}`}
         >
           <Receipt size={14} style={{ marginRight: 6 }} />
-          <span>Payment History ({totalCount})</span>
+          <span>Payout History ({totalCount})</span>
         </button>
       </div>
 
@@ -376,12 +382,12 @@ export const DealerPayablesView: React.FC<DealerPayablesViewProps> = ({
             <table className="crm-table">
               <thead>
                 <tr>
-                  <th>Partner Retail Store</th>
+                  <th>{isDealer ? 'Your Store' : 'Partner Retail Store'}</th>
                   <th>Area / City</th>
                   <th>Financed Devices</th>
-                  <th>We Need To Pay</th>
-                  <th>Already Paid</th>
-                  <th>Still Left To Pay</th>
+                  <th>{isDealer ? 'Amount Payable to Your Store' : 'Total Payable to Dealers'}</th>
+                  <th>{isDealer ? 'Amount Received from Company' : 'Total Paid to Dealers'}</th>
+                  <th>{isDealer ? 'Remaining Amount Due from Company' : 'Remaining Payable'}</th>
                   <th>Payout Status</th>
                   <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
@@ -451,18 +457,19 @@ export const DealerPayablesView: React.FC<DealerPayablesViewProps> = ({
                             <button
                               onClick={() => handleOpenLoansModal(dealer)}
                               className="btn btn-secondary btn-sm"
-                              title="View eligible financed products"
+                              title={isDealer ? 'View eligible financed phones' : 'View eligible financed loans'}
                             >
                               <Eye size={12} style={{ marginRight: 4 }} />
-                              <span>Eligible Loans</span>
+                              <span>{isDealer ? 'View Financed Phones' : 'View Eligible Loans'}</span>
                             </button>
                             {canManagePayables && dealer.remainingPayable > 0 && (
                               <button
                                 onClick={() => handleOpenRecordModal(dealer.dealerId)}
                                 className="btn btn-primary btn-sm"
-                                title="Record payment to this dealer"
+                                title="Record payout to this dealer"
                               >
-                                <span>Record Payment</span>
+                                <Plus size={12} style={{ marginRight: 4 }} />
+                                <span>Record Payout</span>
                               </button>
                             )}
                           </div>
@@ -540,27 +547,27 @@ export const DealerPayablesView: React.FC<DealerPayablesViewProps> = ({
               <thead>
                 <tr>
                   <th>Payout Ref</th>
-                  <th>Partner Retail Store</th>
+                  <th>{isDealer ? 'Your Store' : 'Partner Retail Store'}</th>
                   <th>Payment Date</th>
-                  <th>Amount</th>
+                  <th>{isDealer ? 'Amount Received' : 'Payout Amount'}</th>
                   <th>Method</th>
                   <th>UTR / Reference</th>
                   <th>Status</th>
                   <th>Recorded By</th>
-                  <th style={{ textAlign: 'right' }}>Actions</th>
+                  {canManagePayables && <th style={{ textAlign: 'right' }}>Actions</th>}
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={9} style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>
-                      Loading payment history...
+                    <td colSpan={canManagePayables ? 9 : 8} style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>
+                      Loading payout history...
                     </td>
                   </tr>
                 ) : payments.length === 0 ? (
                   <tr>
-                    <td colSpan={9} style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>
-                      No payment records found.
+                    <td colSpan={canManagePayables ? 9 : 8} style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>
+                      No payout records found.
                     </td>
                   </tr>
                 ) : (
@@ -603,23 +610,25 @@ export const DealerPayablesView: React.FC<DealerPayablesViewProps> = ({
                           </span>
                         </td>
                         <td style={{ fontSize: 12 }}>{p.createdByName || 'System'}</td>
-                        <td style={{ textAlign: 'right' }}>
-                          {canManagePayables && !isReversed && (
-                            <button
-                              onClick={() => {
-                                setReversingPayment(p);
-                                setReversalReason('');
-                                setReversalError(null);
-                              }}
-                              className="btn btn-secondary btn-sm"
-                              style={{ color: 'var(--danger-text)' }}
-                              title="Reverse payment entry"
-                            >
-                              <RotateCcw size={12} style={{ marginRight: 4 }} />
-                              <span>Reverse</span>
-                            </button>
-                          )}
-                        </td>
+                        {canManagePayables && (
+                          <td style={{ textAlign: 'right' }}>
+                            {!isReversed && (
+                              <button
+                                onClick={() => {
+                                  setReversingPayment(p);
+                                  setReversalReason('');
+                                  setReversalError(null);
+                                }}
+                                className="btn btn-secondary btn-sm"
+                                style={{ color: 'var(--danger-text)' }}
+                                title="Reverse payout entry"
+                              >
+                                <RotateCcw size={12} style={{ marginRight: 4 }} />
+                                <span>Reverse</span>
+                              </button>
+                            )}
+                          </td>
+                        )}
                       </tr>
                     );
                   })
@@ -741,9 +750,9 @@ export const DealerPayablesView: React.FC<DealerPayablesViewProps> = ({
           <div className="crm-modal" style={{ maxWidth: 540, width: '95%' }}>
             <div className="crm-modal-header">
               <div>
-                <h3 style={{ fontSize: 17, fontWeight: 700 }}>Record Company Payment to Dealer</h3>
+                <h3 style={{ fontSize: 17, fontWeight: 700 }}>Record Company Payout to Partner Store</h3>
                 <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                  Record an authorized payout from the finance company to the partner store.
+                  Record an authorized payout from the finance company to the partner store for eligible financed products.
                 </p>
               </div>
               <button onClick={() => setShowRecordModal(false)} className="btn-icon">
@@ -883,7 +892,7 @@ export const DealerPayablesView: React.FC<DealerPayablesViewProps> = ({
                   className="btn btn-primary"
                   disabled={submittingPayment || totalRemainingInModal <= 0}
                 >
-                  {submittingPayment ? 'Recording...' : 'Confirm Payment'}
+                  {submittingPayment ? 'Recording...' : 'Confirm Payout'}
                 </button>
               </div>
             </form>
@@ -896,7 +905,7 @@ export const DealerPayablesView: React.FC<DealerPayablesViewProps> = ({
         <div className="crm-modal-overlay">
           <div className="crm-modal" style={{ maxWidth: 440, width: '95%' }}>
             <div className="crm-modal-header">
-              <h3 style={{ fontSize: 16, fontWeight: 700 }}>Reverse Company Payment</h3>
+              <h3 style={{ fontSize: 16, fontWeight: 700 }}>Reverse Company Payout</h3>
               <button onClick={() => setReversingPayment(null)} className="btn-icon">
                 <X size={18} />
               </button>

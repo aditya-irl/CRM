@@ -191,21 +191,21 @@ export const App: React.FC = () => {
         return (
           <DealerPayablesView
             initialDealerId={isDealer ? (user.dealerId || undefined) : selectedDealerIdForPayables}
-            onNavigateToDealers={() => setActiveTab('dealers')}
+            onNavigateToDealers={!isDealer ? () => setActiveTab('dealers') : undefined}
           />
         );
       case 'dealer-collections':
         return (
           <DealerCollectionsView
             initialDealerId={isDealer ? (user.dealerId || undefined) : selectedDealerIdForCollections}
-            onNavigateToDealers={() => setActiveTab('dealers')}
+            onNavigateToDealers={!isDealer ? () => setActiveTab('dealers') : undefined}
           />
         );
       case 'dealer-settlements':
         return (
           <DealerSettlementsView
             initialDealerId={isDealer ? (user.dealerId || undefined) : selectedDealerIdForSettlements}
-            onNavigateToDealers={() => setActiveTab('dealers')}
+            onNavigateToDealers={!isDealer ? () => setActiveTab('dealers') : undefined}
             onNavigateToCollections={handleNavigateToDealerCollections}
           />
         );

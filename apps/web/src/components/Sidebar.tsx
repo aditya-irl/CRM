@@ -64,7 +64,7 @@ const SidebarComponent: React.FC<SidebarProps> = ({ activeTab, onSelectTab, user
     { id: 'agents', label: 'Field Agents', icon: <UserCheck size={17} />, hiddenForAgent: true },
     {
       id: 'dealer-payables',
-      label: isDealer ? 'Store Payables' : 'Dealer Payables',
+      label: isDealer ? 'Company Payments' : 'Company Payables',
       icon: <CreditCard size={17} />,
       hiddenForAgent: true,
     },

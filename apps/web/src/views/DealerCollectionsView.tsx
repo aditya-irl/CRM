@@ -7,6 +7,7 @@ import {
   formatDateDDMMYYYY,
   PaymentMode,
   PaymentStatus,
+  UserRole,
 } from '@crm/shared';
 import { ApiClient } from '../services/api';
 import {
@@ -39,6 +40,9 @@ export const DealerCollectionsView: React.FC<DealerCollectionsViewProps> = ({
   initialDealerId,
   onNavigateToDealers,
 }) => {
+  const currentUser = ApiClient.getUser();
+  const isDealer = currentUser?.role === UserRole.DEALER;
+
   const [dealers, setDealers] = useState<IDealer[]>([]);
   const [selectedDealerId, setSelectedDealerId] = useState<string>(initialDealerId || '');
   const [dateFilter, setDateFilter] = useState<DateFilterType>('ALL');
@@ -175,7 +179,7 @@ export const DealerCollectionsView: React.FC<DealerCollectionsViewProps> = ({
           </div>
         </div>
 
-        {onNavigateToDealers && (
+        {!isDealer && onNavigateToDealers && (
           <button onClick={onNavigateToDealers} className="btn btn-secondary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <Store size={14} />
             <span>Manage Partner Stores</span>

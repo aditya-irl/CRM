@@ -54,6 +54,7 @@ describe('TASK 2 — Scrollable Operational Menu Regression Tests', () => {
     expect(html).toContain('var(--primary-subtle)');
     expect(html).toContain('Customers &amp; Profiles');
     expect(html).toContain('Dealer Stores');
+    expect(html).toContain('Company Payables');
     expect(html).toContain('Reports &amp; Analytics');
     expect(html).toContain('Audit Trail &amp; Logs');
   });
@@ -66,6 +67,8 @@ describe('TASK 2 — Scrollable Operational Menu Regression Tests', () => {
     expect(html).toContain('Partner Terminal');
     expect(html).toContain('Store Isolation Enforced');
     expect(html).toContain('Store Customers');
+    expect(html).toContain('Company Payments');
+    expect(html).not.toContain('Company Payables');
     expect(html).toContain('Store Collections');
     expect(html).toContain('Store Settlements');
 
