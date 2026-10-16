@@ -5,8 +5,10 @@ import { calculateNextDueDate } from './datetime';
 // Configure Decimal.js for financial precision: 20 significant digits, ROUND_HALF_EVEN (Banker's rounding)
 Decimal.set({ precision: 20, rounding: Decimal.ROUND_HALF_EVEN });
 
-export const DEALER_ALLOWED_INTEREST_RATES = [4, 5, 6] as const;
-export type DealerAllowedInterestRate = (typeof DEALER_ALLOWED_INTEREST_RATES)[number];
+export const ALLOWED_MONTHLY_INTEREST_RATES = [4, 5, 6] as const;
+export type AllowedMonthlyInterestRate = (typeof ALLOWED_MONTHLY_INTEREST_RATES)[number];
+export const DEALER_ALLOWED_INTEREST_RATES = ALLOWED_MONTHLY_INTEREST_RATES;
+export type DealerAllowedInterestRate = AllowedMonthlyInterestRate;
 
 export interface LoanCalculationInput {
   principalAmount: number | string;

@@ -52,7 +52,7 @@ describe('Manual EMI Start Date and Tenure Selection Integration Tests', () => {
         .send({
           principalAmount: 60000,
           downPayment: 10000,
-          annualInterestRate: 14,
+          annualInterestRate: 4,
           interestCalcMethod: InterestMethod.FLAT_RATE,
           tenureMonths: 12,
           installmentFrequency: RepaymentFrequency.MONTHLY,
@@ -86,8 +86,8 @@ describe('Manual EMI Start Date and Tenure Selection Integration Tests', () => {
         .send({
           principalAmount: 50000,
           downPayment: 5000,
-          annualInterestRate: 15,
-          interestCalcMethod: InterestMethod.REDUCING_BALANCE,
+          annualInterestRate: 4,
+          interestCalcMethod: InterestMethod.FLAT_RATE,
           tenureMonths: 6,
           installmentFrequency: RepaymentFrequency.MONTHLY,
           disbursementDate: '2026-10-06',
@@ -100,8 +100,8 @@ describe('Manual EMI Start Date and Tenure Selection Integration Tests', () => {
         .send({
           principalAmount: 50000,
           downPayment: 5000,
-          annualInterestRate: 15,
-          interestCalcMethod: InterestMethod.REDUCING_BALANCE,
+          annualInterestRate: 4,
+          interestCalcMethod: InterestMethod.FLAT_RATE,
           tenureMonths: 6,
           installmentFrequency: RepaymentFrequency.MONTHLY,
           disbursementDate: '2026-10-06',
@@ -129,7 +129,7 @@ describe('Manual EMI Start Date and Tenure Selection Integration Tests', () => {
         .set('Authorization', `Bearer ${adminToken}`)
         .send({
           principalAmount: 30000,
-          annualInterestRate: 12,
+          annualInterestRate: 4,
           tenureMonths: 6,
           installmentFrequency: RepaymentFrequency.MONTHLY,
           interestCalcMethod: InterestMethod.FLAT_RATE,
@@ -142,7 +142,7 @@ describe('Manual EMI Start Date and Tenure Selection Integration Tests', () => {
         .set('Authorization', `Bearer ${adminToken}`)
         .send({
           principalAmount: 30000,
-          annualInterestRate: 12,
+          annualInterestRate: 4,
           tenureMonths: 12,
           installmentFrequency: RepaymentFrequency.MONTHLY,
           interestCalcMethod: InterestMethod.FLAT_RATE,
@@ -165,7 +165,7 @@ describe('Manual EMI Start Date and Tenure Selection Integration Tests', () => {
         .set('Authorization', `Bearer ${adminToken}`)
         .send({
           principalAmount: 40000,
-          annualInterestRate: 12,
+          annualInterestRate: 4,
           tenureMonths: 6,
           installmentFrequency: RepaymentFrequency.MONTHLY,
           interestCalcMethod: InterestMethod.FLAT_RATE,
@@ -189,7 +189,7 @@ describe('Manual EMI Start Date and Tenure Selection Integration Tests', () => {
         .set('Authorization', `Bearer ${adminToken}`)
         .send({
           principalAmount: 40000,
-          annualInterestRate: 12,
+          annualInterestRate: 4,
           tenureMonths: 6,
           installmentFrequency: RepaymentFrequency.MONTHLY,
           interestCalcMethod: InterestMethod.FLAT_RATE,
@@ -208,7 +208,7 @@ describe('Manual EMI Start Date and Tenure Selection Integration Tests', () => {
         .set('Authorization', `Bearer ${adminToken}`)
         .send({
           principalAmount: 40000,
-          annualInterestRate: 12,
+          annualInterestRate: 4,
           tenureMonths: 6,
           installmentFrequency: RepaymentFrequency.MONTHLY,
           interestCalcMethod: InterestMethod.FLAT_RATE,
@@ -227,7 +227,7 @@ describe('Manual EMI Start Date and Tenure Selection Integration Tests', () => {
         .set('Authorization', `Bearer ${adminToken}`)
         .send({
           principalAmount: 50000,
-          annualInterestRate: 12,
+          annualInterestRate: 4,
           tenureMonths: 6,
           installmentFrequency: RepaymentFrequency.MONTHLY,
           interestCalcMethod: InterestMethod.FLAT_RATE,
@@ -250,7 +250,7 @@ describe('Manual EMI Start Date and Tenure Selection Integration Tests', () => {
           customerId: testCustomerId,
           principalAmount: 48000,
           downPayment: 0,
-          annualInterestRate: 12,
+          annualInterestRate: 4,
           interestCalcMethod: InterestMethod.FLAT_RATE,
           tenureMonths: 6,
           installmentFrequency: RepaymentFrequency.MONTHLY,
@@ -307,7 +307,7 @@ describe('Manual EMI Start Date and Tenure Selection Integration Tests', () => {
         .send({
           customerId: testCustomerId,
           principalAmount: 48000,
-          annualInterestRate: 12,
+          annualInterestRate: 4,
           tenureMonths: 6,
           disbursementDate: '2026-10-06',
           firstEmiDate: '2026-10-01',

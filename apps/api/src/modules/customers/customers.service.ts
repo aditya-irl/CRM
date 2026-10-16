@@ -11,6 +11,7 @@ import {
   OnboardCustomerInput,
   InterestMethod,
   RepaymentFrequency,
+  ALLOWED_MONTHLY_INTEREST_RATES,
   DEALER_ALLOWED_INTEREST_RATES,
 } from '@crm/shared';
 import { AppError, NotFoundError, ForbiddenError } from '../../middlewares/error.middleware';
@@ -523,6 +524,7 @@ export class CustomerService {
         downPayment: Number(l.down_payment),
         netDisbursedAmount: Number(l.net_disbursed_amount),
         annualInterestRate: Number(l.annual_interest_rate),
+        monthlyInterestRate: Number(l.annual_interest_rate),
         interestCalcMethod: l.interest_calc_method,
         tenureMonths: Number(l.tenure_months),
         installmentFrequency: l.installment_frequency,
@@ -760,37 +762,39 @@ export class CustomerService {
         if (user.role === UserRole.DEALER) {
           if (!user.dealerId) throw new ForbiddenError('Dealer context missing');
           dealerId = user.dealerId;
-
-          // Enforce Dealer Interest Configuration (Requirements 2, 3, 4, 6):
-          // 1. Rate must be strictly 4%, 5%, or 6% per month
-          const rateNum = Number(data.loan.annualInterestRate);
-          if (!DEALER_ALLOWED_INTEREST_RATES.includes(rateNum as any)) {
-            throw new AppError(
-              `Dealer-originated onboarding only permits interest rates of 4%, 5%, or 6% per month. Received: ${data.loan.annualInterestRate}%`,
-              400
-            );
-          }
-
-          // 2. Repayment frequency must be MONTHLY only
-          const freq = data.loan.installmentFrequency || RepaymentFrequency.MONTHLY;
-          if (freq !== RepaymentFrequency.MONTHLY) {
-            throw new AppError(
-              `Dealer-originated onboarding only permits MONTHLY repayment frequency. Received: ${freq}`,
-              400
-            );
-          }
-          data.loan.installmentFrequency = RepaymentFrequency.MONTHLY;
-
-          // 3. Calculation method must be FLAT_RATE only
-          const method = data.loan.interestCalcMethod || InterestMethod.FLAT_RATE;
-          if (method !== InterestMethod.FLAT_RATE) {
-            throw new AppError(
-              `Dealer-originated onboarding only permits FLAT_RATE interest method. Received: ${method}`,
-              400
-            );
-          }
-          data.loan.interestCalcMethod = InterestMethod.FLAT_RATE;
         }
+
+        // Enforce Interest Configuration for new loan onboarding (Strict Business Rules):
+        // 1. Rate must be strictly 4%, 5%, or 6% per month
+        const rateNum = Number(data.loan.annualInterestRate ?? (data.loan as any).monthlyInterestRate);
+        if (!ALLOWED_MONTHLY_INTEREST_RATES.includes(rateNum as any)) {
+          const prefix = user.role === UserRole.DEALER ? 'Dealer-originated onboarding' : 'Loan onboarding';
+          throw new AppError(
+            `${prefix} only permits interest rates of 4%, 5%, or 6% per month. Received: ${data.loan.annualInterestRate}%`,
+            400
+          );
+        }
+
+        // 2. Repayment frequency must be MONTHLY only
+        const freq = data.loan.installmentFrequency || RepaymentFrequency.MONTHLY;
+        if (freq !== RepaymentFrequency.MONTHLY) {
+          throw new AppError(
+            `Loan onboarding only permits MONTHLY repayment frequency. Received: ${freq}`,
+            400
+          );
+        }
+        data.loan.installmentFrequency = RepaymentFrequency.MONTHLY;
+
+        // 3. Calculation method must be FLAT_RATE only
+        const method = data.loan.interestCalcMethod || InterestMethod.FLAT_RATE;
+        if (method !== InterestMethod.FLAT_RATE) {
+          throw new AppError(
+            `Loan onboarding only permits FLAT_RATE interest method. Received: ${method}`,
+            400
+          );
+        }
+        data.loan.interestCalcMethod = InterestMethod.FLAT_RATE;
+        data.loan.annualInterestRate = rateNum;
 
         if (dealerId) {
           const dealerCheck = await client.query(

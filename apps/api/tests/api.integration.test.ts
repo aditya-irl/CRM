@@ -78,7 +78,7 @@ describe('API Integration & End-to-End Tests', () => {
         customerId: testCustomerId,
         principalAmount: 50000,
         downPayment: 5000,
-        annualInterestRate: 12.0,
+        annualInterestRate: 4.0,
         interestCalcMethod: 'FLAT_RATE',
         tenureMonths: 6,
         installmentFrequency: 'MONTHLY',
@@ -90,7 +90,7 @@ describe('API Integration & End-to-End Tests', () => {
     expect(res.status).toBe(201);
     expect(res.body.success).toBe(true);
     expect(res.body.data.loanAccountNo).toBeDefined();
-    expect(res.body.data.totalPayable).toBe(77400); // (50000 - 5000) = 45000 * 12% monthly flat * 6 mos = 32400 int => 77400 total
+    expect(res.body.data.totalPayable).toBe(55800); // (50000 - 5000) = 45000 * 4% monthly flat * 6 mos = 10800 int => 55800 total
     testLoanId = res.body.data.id;
   });
 
@@ -124,7 +124,7 @@ describe('API Integration & End-to-End Tests', () => {
       .send({
         loanId: testLoanId,
         customerId: testCustomerId,
-        amount: 12900,
+        amount: 9300,
         paymentMode: 'CASH',
         notes: 'Integration test cash collection',
       });
@@ -132,7 +132,7 @@ describe('API Integration & End-to-End Tests', () => {
     expect(res.status).toBe(201);
     expect(res.body.success).toBe(true);
     expect(res.body.data.receiptNumber).toMatch(/^RCP-/);
-    expect(res.body.data.remainingLoanOutstanding).toBe(77400 - 12900);
+    expect(res.body.data.remainingLoanOutstanding).toBe(55800 - 9300);
 
     const paymentId = res.body.data.paymentId;
 
@@ -144,7 +144,7 @@ describe('API Integration & End-to-End Tests', () => {
       .send({
         loanId: testLoanId,
         customerId: testCustomerId,
-        amount: 12900,
+        amount: 9300,
         paymentMode: 'CASH',
       });
 

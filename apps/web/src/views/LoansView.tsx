@@ -11,6 +11,9 @@ import {
   RepaymentFrequency,
   LoanStatus,
   UserRole,
+  ALLOWED_MONTHLY_INTEREST_RATES,
+  parseDisplayDateToISO,
+  getBusinessDateStr,
 } from '@crm/shared';
 import {
   Plus,
@@ -69,13 +72,34 @@ export const LoansView: React.FC<LoansViewProps> = ({
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [principalAmount, setPrincipalAmount] = useState<number>(50000);
   const [downPayment, setDownPayment] = useState<number>(0);
-  const [annualRate, setAnnualRate] = useState<number>(1.0);
+  const [annualRate, setAnnualRate] = useState<number>(4);
   const [calcMethod, setCalcMethod] = useState<InterestMethod>(InterestMethod.FLAT_RATE);
   const [tenureMonths, setTenureMonths] = useState<number>(12);
   const [frequency, setFrequency] = useState<RepaymentFrequency>(RepaymentFrequency.MONTHLY);
-  const [disbDate, setDisbDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [emiStartDate, setEmiStartDate] = useState<string>(() => calculateNextDueDate(new Date().toISOString().split('T')[0], 1, RepaymentFrequency.MONTHLY));
+  const [disbDate, setDisbDate] = useState<string>(() => getBusinessDateStr());
+  const [disbDisplay, setDisbDisplay] = useState<string>(() => formatDateDDMMYYYY(getBusinessDateStr()));
+  const [emiStartDate, setEmiStartDate] = useState<string>(() => calculateNextDueDate(getBusinessDateStr(), 1, RepaymentFrequency.MONTHLY));
+  const [emiStartDisplay, setEmiStartDisplay] = useState<string>(() => formatDateDDMMYYYY(calculateNextDueDate(getBusinessDateStr(), 1, RepaymentFrequency.MONTHLY)));
   const [originationError, setOriginationError] = useState<string | null>(null);
+
+  const handleDisbDisplayChange = (displayVal: string) => {
+    setDisbDisplay(displayVal);
+    const parsed = parseDisplayDateToISO(displayVal);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(parsed)) {
+      setDisbDate(parsed);
+      const nextDue = calculateNextDueDate(parsed, 1, RepaymentFrequency.MONTHLY);
+      setEmiStartDate(nextDue);
+      setEmiStartDisplay(formatDateDDMMYYYY(nextDue));
+    }
+  };
+
+  const handleEmiStartDisplayChange = (displayVal: string) => {
+    setEmiStartDisplay(displayVal);
+    const parsed = parseDisplayDateToISO(displayVal);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(parsed)) {
+      setEmiStartDate(parsed);
+    }
+  };
 
   const [previewSchedule, setPreviewSchedule] = useState<any | null>(null);
   const [calculatingPreview, setCalculatingPreview] = useState(false);
@@ -566,9 +590,17 @@ export const LoansView: React.FC<LoansViewProps> = ({
         <button
           onClick={() => {
             ensureCustomersLoaded();
+            const today = getBusinessDateStr();
+            setDisbDate(today);
+            setDisbDisplay(formatDateDDMMYYYY(today));
+            const nextDue = calculateNextDueDate(today, 1, RepaymentFrequency.MONTHLY);
+            setEmiStartDate(nextDue);
+            setEmiStartDisplay(formatDateDDMMYYYY(nextDue));
+            setAnnualRate(4);
+            setCalcMethod(InterestMethod.FLAT_RATE);
+            setFrequency(RepaymentFrequency.MONTHLY);
             setShowOriginationModal(true);
             setPreviewSchedule(null);
-            setEmiStartDate(calculateNextDueDate(disbDate, 1, frequency));
             setOriginationError(null);
           }}
           className="btn btn-primary"
@@ -683,7 +715,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
                       {formatINR(loan.netDisbursedAmount || loan.principalAmount - loan.downPayment)}
                     </td>
                     <td className="mono">{formatINR(loan.downPayment)}</td>
-                    <td className="mono font-semibold">{loan.monthlyInterestRate || loan.annualInterestRate}% /mo</td>
+                    <td className="mono font-semibold">{loan.monthlyInterestRate ?? loan.annualInterestRate ?? (loan as any).annual_interest_rate}% /mo</td>
                     <td className="mono">{loan.tenureMonths} M</td>
                     <td className="mono font-bold" style={{ color: 'var(--warning-text)' }}>
                       {formatINR(loan.emiAmount)}
@@ -746,6 +778,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
                 <th>Loan Account</th>
                 <th>Borrower</th>
                 <th>Principal</th>
+                <th>Monthly Rate</th>
                 <th>Tenure</th>
                 <th>EMI</th>
                 <th>Total Payable</th>
@@ -759,13 +792,13 @@ export const LoansView: React.FC<LoansViewProps> = ({
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={11} style={{ textAlign: 'center', padding: 32, color: 'var(--text-secondary)' }}>
+                  <td colSpan={12} style={{ textAlign: 'center', padding: 32, color: 'var(--text-secondary)' }}>
                     Loading loan accounts...
                   </td>
                 </tr>
               ) : (activeStatusTab === 'ALL' ? loans : loans.filter((l) => (l.status || (l as any).status) === activeStatusTab)).length === 0 ? (
                 <tr>
-                  <td colSpan={11} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
+                  <td colSpan={12} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
                     No {activeStatusTab.toLowerCase()} loans found.
                   </td>
                 </tr>
@@ -785,6 +818,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
                         {(loan as any).customer_name || loan.customer?.fullName}
                       </td>
                       <td className="mono">{formatINR(loan.principalAmount || (loan as any).principal_amount)}</td>
+                      <td className="mono font-semibold">{loan.monthlyInterestRate ?? loan.annualInterestRate ?? (loan as any).annual_interest_rate}% /mo</td>
                       <td className="mono">{loan.tenureMonths || (loan as any).tenure_months} M</td>
                       <td className="mono" style={{ fontWeight: 700, color: 'var(--warning-text)' }}>
                         {formatINR(loan.emiAmount || (loan as any).emi_amount)}
@@ -956,60 +990,211 @@ export const LoansView: React.FC<LoansViewProps> = ({
                   />
                 </div>
 
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                    Interest Rate (% per month)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    className="form-input mono"
-                    value={annualRate}
-                    onChange={(e) => setAnnualRate(Number(e.target.value))}
-                    onBlur={(e) => setAnnualRate(Number(normalizeNumericLeadingZeros(e.target.value)))}
-                    required
-                  />
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                    Monthly flat simple interest rate (e.g. 1.0% or 1.5%)
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <div
+                    style={{
+                      background: 'var(--bg-surface-secondary)',
+                      padding: '16px',
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--border-subtle)',
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: 8,
+                        marginBottom: 12,
+                      }}
+                    >
+                      <div>
+                        <label style={{ fontSize: 13, fontWeight: 700, display: 'block', color: 'var(--text-primary)' }}>
+                          Interest Rate (Monthly Flat Simple Interest) <span style={{ color: 'var(--danger)' }}>*</span>
+                        </label>
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                          Select one of the approved monthly flat interest rates (4%, 5%, or 6%).
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        <span className="badge badge-info" style={{ fontSize: 11, padding: '4px 8px' }}>
+                          Method: Flat Rate
+                        </span>
+                        <span className="badge badge-secondary" style={{ fontSize: 11, padding: '4px 8px' }}>
+                          Frequency: Monthly
+                        </span>
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(3, 1fr)',
+                        gap: 12,
+                      }}
+                    >
+                      {ALLOWED_MONTHLY_INTEREST_RATES.map((rate) => {
+                        const isSelected = Number(annualRate) === rate;
+                        return (
+                          <button
+                            key={rate}
+                            type="button"
+                            onClick={() => setAnnualRate(rate)}
+                            style={{
+                              padding: '14px 12px',
+                              borderRadius: 'var(--radius-md)',
+                              border: isSelected ? '2px solid var(--primary)' : '1px solid var(--border-default)',
+                              background: isSelected ? 'rgba(59, 130, 246, 0.08)' : 'var(--bg-surface)',
+                              cursor: 'pointer',
+                              textAlign: 'center',
+                              position: 'relative',
+                              transition: 'all 0.15s ease',
+                            }}
+                          >
+                            {isSelected && (
+                              <div
+                                style={{
+                                  position: 'absolute',
+                                  top: 6,
+                                  right: 8,
+                                  width: 8,
+                                  height: 8,
+                                  borderRadius: '50%',
+                                  background: 'var(--primary)',
+                                }}
+                              />
+                            )}
+                            <div
+                              className="mono"
+                              style={{
+                                fontSize: 22,
+                                fontWeight: 800,
+                                color: isSelected ? 'var(--primary)' : 'var(--text-primary)',
+                                lineHeight: 1.2,
+                              }}
+                            >
+                              {rate}%
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 11,
+                                fontWeight: 600,
+                                color: isSelected ? 'var(--primary)' : 'var(--text-secondary)',
+                                marginTop: 4,
+                              }}
+                            >
+                              per month (flat)
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>Calculation Method</label>
-                  <select
-                    className="form-select"
-                    value={calcMethod}
-                    onChange={(e) => setCalcMethod(e.target.value as InterestMethod)}
-                  >
-                    <option value={InterestMethod.FLAT_RATE}>Flat Rate</option>
-                    <option value={InterestMethod.REDUCING_BALANCE}>Reducing Balance</option>
-                  </select>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                    Disbursement Date (DD/MM/YYYY) <span style={{ color: 'var(--danger)' }}>*</span>
+                  </label>
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <input
+                      type="text"
+                      className="form-input mono"
+                      placeholder="DD/MM/YYYY"
+                      value={disbDisplay}
+                      onChange={(e) => handleDisbDisplayChange(e.target.value)}
+                      onBlur={() => {
+                        if (/^\d{4}-\d{2}-\d{2}$/.test(disbDate)) {
+                          setDisbDisplay(formatDateDDMMYYYY(disbDate));
+                        }
+                      }}
+                      required
+                      style={{ paddingRight: 36 }}
+                    />
+                    <input
+                      type="date"
+                      value={disbDate}
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          setDisbDate(e.target.value);
+                          setDisbDisplay(formatDateDDMMYYYY(e.target.value));
+                        }
+                      }}
+                      tabIndex={-1}
+                      aria-label="Select Disbursement Date"
+                      style={{
+                        position: 'absolute',
+                        right: 8,
+                        width: 24,
+                        height: 24,
+                        opacity: 0,
+                        cursor: 'pointer',
+                        zIndex: 2,
+                      }}
+                    />
+                    <Calendar
+                      size={16}
+                      style={{
+                        position: 'absolute',
+                        right: 10,
+                        color: 'var(--text-muted)',
+                        pointerEvents: 'none',
+                      }}
+                    />
+                  </div>
                 </div>
 
                 <div>
                   <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                    Disbursement Date <span style={{ color: 'var(--danger)' }}>*</span>
+                    EMI Start Date (DD/MM/YYYY) <span style={{ color: 'var(--danger)' }}>*</span>
                   </label>
-                  <input
-                    type="date"
-                    className="form-input"
-                    value={disbDate}
-                    onChange={(e) => setDisbDate(e.target.value)}
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                    EMI Start Date <span style={{ color: 'var(--danger)' }}>*</span>
-                  </label>
-                  <input
-                    type="date"
-                    className="form-input"
-                    value={emiStartDate}
-                    onChange={(e) => setEmiStartDate(e.target.value)}
-                    required
-                  />
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <input
+                      type="text"
+                      className="form-input mono"
+                      placeholder="DD/MM/YYYY"
+                      value={emiStartDisplay}
+                      onChange={(e) => handleEmiStartDisplayChange(e.target.value)}
+                      onBlur={() => {
+                        if (/^\d{4}-\d{2}-\d{2}$/.test(emiStartDate)) {
+                          setEmiStartDisplay(formatDateDDMMYYYY(emiStartDate));
+                        }
+                      }}
+                      required
+                      style={{ paddingRight: 36 }}
+                    />
+                    <input
+                      type="date"
+                      value={emiStartDate}
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          setEmiStartDate(e.target.value);
+                          setEmiStartDisplay(formatDateDDMMYYYY(e.target.value));
+                        }
+                      }}
+                      tabIndex={-1}
+                      aria-label="Select EMI Start Date"
+                      style={{
+                        position: 'absolute',
+                        right: 8,
+                        width: 24,
+                        height: 24,
+                        opacity: 0,
+                        cursor: 'pointer',
+                        zIndex: 2,
+                      }}
+                    />
+                    <Calendar
+                      size={16}
+                      style={{
+                        position: 'absolute',
+                        right: 10,
+                        color: 'var(--text-muted)',
+                        pointerEvents: 'none',
+                      }}
+                    />
+                  </div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
                     Select the date when the first EMI becomes due.
                   </div>
@@ -1019,16 +1204,19 @@ export const LoansView: React.FC<LoansViewProps> = ({
                   <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
                     EMI Tenure <span style={{ color: 'var(--danger)' }}>*</span>
                   </label>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    className="form-input mono"
-                    placeholder="e.g. 12"
+                  <select
+                    className="form-select"
                     value={tenureMonths}
                     onChange={(e) => setTenureMonths(Number(e.target.value))}
                     required
-                  />
+                  >
+                    <option value={3}>3 Months</option>
+                    <option value={6}>6 Months</option>
+                    <option value={9}>9 Months</option>
+                    <option value={12}>12 Months</option>
+                    <option value={18}>18 Months</option>
+                    <option value={24}>24 Months</option>
+                  </select>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
                     Tenure in months (determines installment count).
                   </div>

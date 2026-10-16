@@ -737,5 +737,39 @@ describe('Financial Calculation Engine', () => {
       expect(toFixed2(totalSum)).toBe(13600);
     });
   });
+
+  describe('Loan Origination Allowed Rates & Date Handling Regression Tests', () => {
+    test('Allowed monthly interest rates are exactly 4%, 5%, and 6%', () => {
+      const { ALLOWED_MONTHLY_INTEREST_RATES, DEALER_ALLOWED_INTEREST_RATES } = require('./financial');
+      expect(ALLOWED_MONTHLY_INTEREST_RATES).toEqual([4, 5, 6]);
+      expect(DEALER_ALLOWED_INTEREST_RATES).toEqual([4, 5, 6]);
+
+      // Rejection of unsupported rates
+      const unsupported = [1.2, 1, 3.5, 7, 0, -1, 4.5, 12];
+      for (const rate of unsupported) {
+        expect(ALLOWED_MONTHLY_INTEREST_RATES.includes(rate)).toBe(false);
+      }
+    });
+
+    test('Date handling: DD/MM/YYYY formatting and ISO parsing preserve exact calendar date', () => {
+      const iso = '2026-10-14';
+      const formatted = formatDateDDMMYYYY(iso);
+      expect(formatted).toBe('14/10/2026');
+
+      const parsed = parseDisplayDateToISO(formatted);
+      expect(parsed).toBe(iso);
+    });
+
+    test('Date handling: Asia/Kolkata timezone date consistency', () => {
+      const { getBusinessDateStr } = require('./datetime');
+      const businessDate = getBusinessDateStr();
+      expect(businessDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+
+      // Verify that formatting and parsing the business date does not shift by one day
+      const display = formatDateDDMMYYYY(businessDate);
+      const parsedBack = parseDisplayDateToISO(display);
+      expect(parsedBack).toBe(businessDate);
+    });
+  });
 });
 

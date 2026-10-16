@@ -244,19 +244,41 @@ export class DealerService {
       RETURNING *
     `;
 
-    const result = await queryPostgres(sql, [
-      id,
-      dealerCode,
-      data.storeName.trim(),
-      data.ownerName.trim(),
-      data.phone.trim(),
-      data.alternatePhone?.trim() || null,
-      data.email?.trim() || null,
-      data.address.trim(),
-      data.areaCity.trim(),
-      status,
-      user.id,
-    ]);
+    let result: any;
+    try {
+      result = await queryPostgres(sql, [
+        id,
+        dealerCode,
+        data.storeName.trim(),
+        data.ownerName.trim(),
+        data.phone.trim(),
+        data.alternatePhone?.trim() || null,
+        data.email?.trim() || null,
+        data.address.trim(),
+        data.areaCity.trim(),
+        status,
+        user.id,
+      ]);
+    } catch (err: any) {
+      if (err.code === '23505' && err.constraint === 'dealers_dealer_code_key') {
+        dealerCode = `DLR-${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 90 + 10)}`;
+        result = await queryPostgres(sql, [
+          id,
+          dealerCode,
+          data.storeName.trim(),
+          data.ownerName.trim(),
+          data.phone.trim(),
+          data.alternatePhone?.trim() || null,
+          data.email?.trim() || null,
+          data.address.trim(),
+          data.areaCity.trim(),
+          status,
+          user.id,
+        ]);
+      } else {
+        throw err;
+      }
+    }
 
     const created = result.rows[0];
 

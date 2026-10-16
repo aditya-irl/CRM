@@ -11,7 +11,10 @@ import {
   assignLoanAgentSchema,
   unassignLoanAgentSchema,
   UserRole,
+  ALLOWED_MONTHLY_INTEREST_RATES,
   DEALER_ALLOWED_INTEREST_RATES,
+  RepaymentFrequency,
+  InterestMethod,
 } from '@crm/shared';
 import { AppError } from '../../middlewares/error.middleware';
 
@@ -29,15 +32,31 @@ router.post(
   validateBody(calculateLoanSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      if (req.user?.role === UserRole.DEALER) {
-        const rateNum = Number(req.body.annualInterestRate);
-        if (!DEALER_ALLOWED_INTEREST_RATES.includes(rateNum as any)) {
-          throw new AppError(
-            `Dealer-originated loans only support interest rates of 4%, 5%, or 6% per month. Received: ${req.body.annualInterestRate}%`,
-            400
-          );
-        }
+      const rateNum = Number(req.body.annualInterestRate ?? req.body.monthlyInterestRate);
+      if (!ALLOWED_MONTHLY_INTEREST_RATES.includes(rateNum as any)) {
+        throw new AppError(
+          `Loan origination only supports interest rates of 4%, 5%, or 6% per month. Received: ${req.body.annualInterestRate ?? req.body.monthlyInterestRate}%`,
+          400
+        );
       }
+      const freq = req.body.installmentFrequency || RepaymentFrequency.MONTHLY;
+      if (freq !== RepaymentFrequency.MONTHLY) {
+        throw new AppError(
+          `Loan origination only supports MONTHLY repayment frequency. Received: ${freq}`,
+          400
+        );
+      }
+      const method = req.body.interestCalcMethod || InterestMethod.FLAT_RATE;
+      if (method !== InterestMethod.FLAT_RATE) {
+        throw new AppError(
+          `Loan origination only supports FLAT_RATE interest method. Received: ${method}`,
+          400
+        );
+      }
+      req.body.installmentFrequency = RepaymentFrequency.MONTHLY;
+      req.body.interestCalcMethod = InterestMethod.FLAT_RATE;
+      req.body.annualInterestRate = rateNum;
+
       const result = LoanService.calculatePreview(req.body);
       return res.json({
         success: true,

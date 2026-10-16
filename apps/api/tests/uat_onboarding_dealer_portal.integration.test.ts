@@ -117,8 +117,8 @@ describe('UAT Final Integration Tests: Onboarding, Dealer RLAC, and Customer Por
         loan: {
           principalAmount: 45000,
           downPayment: 5000,
-          annualInterestRate: 14.5,
-          interestCalcMethod: InterestMethod.REDUCING_BALANCE,
+          annualInterestRate: 4.0,
+          interestCalcMethod: InterestMethod.FLAT_RATE,
           tenureMonths: 12,
           installmentFrequency: RepaymentFrequency.MONTHLY,
           disbursementDate: '2026-09-01',
@@ -168,8 +168,8 @@ describe('UAT Final Integration Tests: Onboarding, Dealer RLAC, and Customer Por
         loan: {
           principalAmount: 30000,
           downPayment: 5000,
-          annualInterestRate: 12.0,
-          interestCalcMethod: InterestMethod.REDUCING_BALANCE,
+          annualInterestRate: 4.0,
+          interestCalcMethod: InterestMethod.FLAT_RATE,
           tenureMonths: -5, // Invalid negative tenure causes Amortization error
           installmentFrequency: RepaymentFrequency.MONTHLY,
           disbursementDate: '2026-09-01',
@@ -204,19 +204,19 @@ describe('UAT Final Integration Tests: Onboarding, Dealer RLAC, and Customer Por
         .send({
           principalAmount: 120000,
           downPayment: 20000,
-          annualInterestRate: 10,
+          annualInterestRate: 5,
           tenureMonths: 12,
           installmentFrequency: RepaymentFrequency.MONTHLY,
-          interestCalcMethod: InterestMethod.REDUCING_BALANCE,
+          interestCalcMethod: InterestMethod.FLAT_RATE,
           disbursementDate: '2026-09-01',
         });
 
       expect(previewRes.status).toBe(200);
       expect(previewRes.body.data.netDisbursedAmount).toBe(100000);
       expect(previewRes.body.data.totalInstallments).toBe(12);
-      expect(previewRes.body.data.emiAmount).toBe(18333.33);
-      expect(previewRes.body.data.totalInterest).toBe(120000);
-      expect(previewRes.body.data.totalPayable).toBe(220000);
+      expect(previewRes.body.data.emiAmount).toBe(13333.33);
+      expect(previewRes.body.data.totalInterest).toBe(60000);
+      expect(previewRes.body.data.totalPayable).toBe(160000);
 
       // Persisted Onboarding verification
       const onboardRes = await request(app)
@@ -235,10 +235,10 @@ describe('UAT Final Integration Tests: Onboarding, Dealer RLAC, and Customer Por
           loan: {
             principalAmount: 120000,
             downPayment: 20000,
-            annualInterestRate: 10,
+            annualInterestRate: 5,
             tenureMonths: 12,
             installmentFrequency: RepaymentFrequency.MONTHLY,
-            interestCalcMethod: InterestMethod.REDUCING_BALANCE,
+            interestCalcMethod: InterestMethod.FLAT_RATE,
             disbursementDate: '2026-09-01',
           },
         });
@@ -247,15 +247,15 @@ describe('UAT Final Integration Tests: Onboarding, Dealer RLAC, and Customer Por
       const loan = onboardRes.body.data.loan;
       expect(loan.netDisbursedAmount).toBe(100000);
       expect(loan.totalInstallments).toBe(12);
-      expect(loan.emiAmount).toBe(18333.33);
+      expect(loan.emiAmount).toBe(13333.33);
 
       // Verify persisted emi_installments in PostgreSQL: exactly 12 records
       const emiDb = await queryPostgres('SELECT * FROM emi_installments WHERE loan_id = $1 ORDER BY installment_number ASC', [loan.id]);
       expect(emiDb.rows.length).toBe(12);
-      expect(Number(emiDb.rows[0].expected_amount)).toBe(18333.33);
+      expect(Number(emiDb.rows[0].expected_amount)).toBe(13333.33);
     });
 
-    test('1.4 CASE 2 — FLAT RATE: Retail ₹120,000, Down Payment ₹20,000 (Net Financed ₹100,000), 10% monthly flat, 12 Months -> exactly 12 installments, Total Interest = ₹120,000, EMI ≈ ₹18,333.33', async () => {
+    test('1.4 CASE 2 — FLAT RATE: Retail ₹120,000, Down Payment ₹20,000 (Net Financed ₹100,000), 5% monthly flat, 12 Months -> exactly 12 installments, Total Interest = ₹60,000, EMI ≈ ₹13,333.33', async () => {
       // Direct API preview verification
       const previewRes = await request(app)
         .post('/api/v1/loans/calculate-preview')
@@ -263,7 +263,7 @@ describe('UAT Final Integration Tests: Onboarding, Dealer RLAC, and Customer Por
         .send({
           principalAmount: 120000,
           downPayment: 20000,
-          annualInterestRate: 10,
+          annualInterestRate: 5,
           tenureMonths: 12,
           installmentFrequency: RepaymentFrequency.MONTHLY,
           interestCalcMethod: InterestMethod.FLAT_RATE,
@@ -273,9 +273,9 @@ describe('UAT Final Integration Tests: Onboarding, Dealer RLAC, and Customer Por
       expect(previewRes.status).toBe(200);
       expect(previewRes.body.data.netDisbursedAmount).toBe(100000);
       expect(previewRes.body.data.totalInstallments).toBe(12);
-      expect(previewRes.body.data.totalInterest).toBe(120000);
-      expect(previewRes.body.data.totalPayable).toBe(220000);
-      expect(previewRes.body.data.emiAmount).toBe(18333.33);
+      expect(previewRes.body.data.totalInterest).toBe(60000);
+      expect(previewRes.body.data.totalPayable).toBe(160000);
+      expect(previewRes.body.data.emiAmount).toBe(13333.33);
 
       // Persisted Onboarding verification
       const onboardRes = await request(app)
@@ -294,7 +294,7 @@ describe('UAT Final Integration Tests: Onboarding, Dealer RLAC, and Customer Por
           loan: {
             principalAmount: 120000,
             downPayment: 20000,
-            annualInterestRate: 10,
+            annualInterestRate: 5,
             tenureMonths: 12,
             installmentFrequency: RepaymentFrequency.MONTHLY,
             interestCalcMethod: InterestMethod.FLAT_RATE,
@@ -306,9 +306,9 @@ describe('UAT Final Integration Tests: Onboarding, Dealer RLAC, and Customer Por
       const loan = onboardRes.body.data.loan;
       expect(loan.netDisbursedAmount).toBe(100000);
       expect(loan.totalInstallments).toBe(12);
-      expect(loan.totalInterest).toBe(120000);
-      expect(loan.totalPayable).toBe(220000);
-      expect(loan.emiAmount).toBe(18333.33);
+      expect(loan.totalInterest).toBe(60000);
+      expect(loan.totalPayable).toBe(160000);
+      expect(loan.emiAmount).toBe(13333.33);
 
       // Verify persisted emi_installments in PostgreSQL: exactly 12 records
       const emiDb = await queryPostgres('SELECT * FROM emi_installments WHERE loan_id = $1 ORDER BY installment_number ASC', [loan.id]);
@@ -325,7 +325,7 @@ describe('UAT Final Integration Tests: Onboarding, Dealer RLAC, and Customer Por
         .send({
           principalAmount: 120000,
           downPayment: 20000,
-          annualInterestRate: 10,
+          annualInterestRate: 5,
           tenureMonths: 6,
           installmentFrequency: RepaymentFrequency.MONTHLY,
           interestCalcMethod: InterestMethod.FLAT_RATE,
@@ -341,7 +341,7 @@ describe('UAT Final Integration Tests: Onboarding, Dealer RLAC, and Customer Por
         .send({
           principalAmount: 120000,
           downPayment: 20000,
-          annualInterestRate: 10,
+          annualInterestRate: 5,
           tenureMonths: 12,
           installmentFrequency: RepaymentFrequency.MONTHLY,
           interestCalcMethod: InterestMethod.FLAT_RATE,

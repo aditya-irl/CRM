@@ -173,7 +173,7 @@ describe('TASK 2: Payment Collection Source Integration Tests', () => {
         dealerId: activeDealerId,
         principalAmount: 10000,
         downPayment: 0,
-        annualInterestRate: 2,
+        annualInterestRate: 4,
         interestCalcMethod: InterestMethod.FLAT_RATE,
         tenureMonths: 4,
         installmentFrequency: RepaymentFrequency.MONTHLY,
@@ -193,7 +193,7 @@ describe('TASK 2: Payment Collection Source Integration Tests', () => {
         customerId: customer2Id,
         principalAmount: 12000,
         downPayment: 0,
-        annualInterestRate: 20,
+        annualInterestRate: 4,
         interestCalcMethod: InterestMethod.FLAT_RATE,
         tenureMonths: 6,
         installmentFrequency: RepaymentFrequency.MONTHLY,
@@ -498,10 +498,10 @@ describe('TASK 2: Payment Collection Source Integration Tests', () => {
       .set('Authorization', `Bearer ${adminToken}`);
 
     expect(loanRes.status).toBe(200);
-    // Loan total was 10000 + (10000 * 0.24 * 4 / 12) = 10800.
-    // 8100 was paid. Remaining total should be 2700.
+    // Loan total was 10000 + (10000 * 0.04 * 4) = 11600.
+    // 8100 was paid. Remaining total should be 3500.
     const remaining = Number(loanRes.body.data.outstandingBalance || loanRes.body.data.outstanding_balance);
-    expect(remaining).toBe(2700);
+    expect(remaining).toBe(3500);
   });
 
   // 14. Payment reversal preserves collection-source information

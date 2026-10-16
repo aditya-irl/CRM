@@ -13,6 +13,7 @@ import {
   RepaymentFrequency,
   EMIStatus,
   IDeviceItem,
+  ALLOWED_MONTHLY_INTEREST_RATES,
   DEALER_ALLOWED_INTEREST_RATES,
 } from '@crm/shared';
 import { AppError, NotFoundError, ForbiddenError, ConflictError } from '../../middlewares/error.middleware';
@@ -72,37 +73,38 @@ export class LoanService {
         throw new ForbiddenError('Dealer context missing');
       }
       dealerId = user.dealerId;
-
-      // Enforce Dealer Interest Configuration (Requirements 2, 3, 4, 6):
-      // 1. Rate must be strictly 4%, 5%, or 6% per month
-      const rateNum = Number(data.annualInterestRate);
-      if (!DEALER_ALLOWED_INTEREST_RATES.includes(rateNum as any)) {
-        throw new AppError(
-          `Dealer-originated loans only support interest rates of 4%, 5%, or 6% per month. Received: ${data.annualInterestRate}%`,
-          400
-        );
-      }
-
-      // 2. Repayment frequency must be MONTHLY only
-      const freq = data.installmentFrequency || RepaymentFrequency.MONTHLY;
-      if (freq !== RepaymentFrequency.MONTHLY) {
-        throw new AppError(
-          `Dealer-originated loans only support MONTHLY repayment frequency. Received: ${freq}`,
-          400
-        );
-      }
-      data.installmentFrequency = RepaymentFrequency.MONTHLY;
-
-      // 3. Calculation method must be FLAT_RATE only
-      const method = data.interestCalcMethod || InterestMethod.FLAT_RATE;
-      if (method !== InterestMethod.FLAT_RATE) {
-        throw new AppError(
-          `Dealer-originated loans only support FLAT_RATE interest method. Received: ${method}`,
-          400
-        );
-      }
-      data.interestCalcMethod = InterestMethod.FLAT_RATE;
     }
+
+    // Enforce New Loan Interest Configuration (Strict Business Rules):
+    // 1. Rate must be strictly 4%, 5%, or 6% per month
+    const rateNum = Number(data.annualInterestRate ?? (data as any).monthlyInterestRate);
+    if (!ALLOWED_MONTHLY_INTEREST_RATES.includes(rateNum as any)) {
+      throw new AppError(
+        `Loan origination only supports interest rates of 4%, 5%, or 6% per month. Received: ${data.annualInterestRate}%`,
+        400
+      );
+    }
+
+    // 2. Repayment frequency must be MONTHLY only
+    const freq = data.installmentFrequency || RepaymentFrequency.MONTHLY;
+    if (freq !== RepaymentFrequency.MONTHLY) {
+      throw new AppError(
+        `Loan origination only supports MONTHLY repayment frequency. Received: ${freq}`,
+        400
+      );
+    }
+    data.installmentFrequency = RepaymentFrequency.MONTHLY;
+
+    // 3. Calculation method must be FLAT_RATE only
+    const method = data.interestCalcMethod || InterestMethod.FLAT_RATE;
+    if (method !== InterestMethod.FLAT_RATE) {
+      throw new AppError(
+        `Loan origination only supports FLAT_RATE interest method. Received: ${method}`,
+        400
+      );
+    }
+    data.interestCalcMethod = InterestMethod.FLAT_RATE;
+    data.annualInterestRate = rateNum;
 
     let dealerInfo: { store_name: string; dealer_code: string } | null = null;
     if (dealerId) {
@@ -411,6 +413,7 @@ export class LoanService {
       downPayment: calc.downPayment,
       netDisbursedAmount: calc.netDisbursedAmount,
       annualInterestRate: calc.annualInterestRate,
+      monthlyInterestRate: calc.annualInterestRate,
       interestCalcMethod: calc.interestCalcMethod,
       tenureMonths: calc.tenureMonths,
       installmentFrequency: calc.installmentFrequency,
@@ -1074,6 +1077,7 @@ export class LoanService {
       downPayment: Number(l.down_payment),
       netDisbursedAmount: Number(l.net_disbursed_amount),
       annualInterestRate: Number(l.annual_interest_rate),
+      monthlyInterestRate: Number(l.annual_interest_rate),
       interestCalcMethod: l.interest_calc_method,
       tenureMonths: Number(l.tenure_months),
       installmentFrequency: l.installment_frequency,
@@ -1248,6 +1252,8 @@ export class LoanService {
       net_disbursed_amount: Number(loan.net_disbursed_amount),
       annualInterestRate: Number(loan.annual_interest_rate),
       annual_interest_rate: Number(loan.annual_interest_rate),
+      monthlyInterestRate: Number(loan.annual_interest_rate),
+      monthly_interest_rate: Number(loan.annual_interest_rate),
       interestCalcMethod: loan.interest_calc_method,
       interest_calc_method: loan.interest_calc_method,
       tenureMonths: Number(loan.tenure_months),

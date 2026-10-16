@@ -180,6 +180,7 @@ export interface ILoan {
   downPayment: number | string;
   netDisbursedAmount: number | string;
   annualInterestRate: number | string; // e.g. 0.12 or 12.0%
+  monthlyInterestRate?: number | string;
   interestCalcMethod: InterestMethod;
   tenureMonths: number;
   installmentFrequency: RepaymentFrequency;

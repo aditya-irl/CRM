@@ -6,12 +6,15 @@ import {
   RepaymentFrequency,
   formatINR,
   formatDateDDMMYYYY,
+  parseDisplayDateToISO,
+  getBusinessDateStr,
   calculateNextDueDate,
   ICustomer,
   ILoan,
   IDealer,
   UserRole,
   normalizeNumericLeadingZeros,
+  ALLOWED_MONTHLY_INTEREST_RATES,
   DEALER_ALLOWED_INTEREST_RATES,
 } from '@crm/shared';
 import { MediaUploader, MediaUploadResult } from './MediaUploader';
@@ -32,6 +35,7 @@ import {
   Plus,
   Store,
   RefreshCw,
+  Calendar,
 } from 'lucide-react';
 
 interface AddCustomerWizardProps {
@@ -127,12 +131,46 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
 
   // STEP 4: EMI / Finance Configuration
   const [downPayment, setDownPayment] = useState<number>(5000);
-  const [annualRate, setAnnualRate] = useState<number>(isDealer ? 4 : 1.0);
-  const [calcMethod, setCalcMethod] = useState<InterestMethod>(InterestMethod.FLAT_RATE);
+  const [annualRate, setAnnualRate] = useState<number>(4);
+  const [calcMethod] = useState<InterestMethod>(InterestMethod.FLAT_RATE);
   const [tenureMonths, setTenureMonths] = useState<number>(6);
-  const [frequency, setFrequency] = useState<RepaymentFrequency>(RepaymentFrequency.MONTHLY);
-  const [disbursementDate, setDisbursementDate] = useState(new Date().toISOString().split('T')[0]);
-  const [firstEmiDate, setFirstEmiDate] = useState(() => calculateNextDueDate(new Date().toISOString().split('T')[0], 1, RepaymentFrequency.MONTHLY));
+  const [frequency] = useState<RepaymentFrequency>(RepaymentFrequency.MONTHLY);
+  const [disbursementDate, setDisbursementDate] = useState(() => getBusinessDateStr());
+  const [firstEmiDate, setFirstEmiDate] = useState(() => calculateNextDueDate(getBusinessDateStr(), 1, RepaymentFrequency.MONTHLY));
+  const [disbDisplay, setDisbDisplay] = useState(() => formatDateDDMMYYYY(getBusinessDateStr()));
+  const [firstEmiDisplay, setFirstEmiDisplay] = useState(() => formatDateDDMMYYYY(calculateNextDueDate(getBusinessDateStr(), 1, RepaymentFrequency.MONTHLY)));
+
+  const handleDisbDateChange = (isoDate: string) => {
+    setDisbursementDate(isoDate);
+    setDisbDisplay(formatDateDDMMYYYY(isoDate));
+    const nextDue = calculateNextDueDate(isoDate, 1, RepaymentFrequency.MONTHLY);
+    setFirstEmiDate(nextDue);
+    setFirstEmiDisplay(formatDateDDMMYYYY(nextDue));
+  };
+
+  const handleDisbDisplayChange = (displayVal: string) => {
+    setDisbDisplay(displayVal);
+    const parsed = parseDisplayDateToISO(displayVal);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(parsed)) {
+      setDisbursementDate(parsed);
+      const nextDue = calculateNextDueDate(parsed, 1, RepaymentFrequency.MONTHLY);
+      setFirstEmiDate(nextDue);
+      setFirstEmiDisplay(formatDateDDMMYYYY(nextDue));
+    }
+  };
+
+  const handleFirstEmiDateChange = (isoDate: string) => {
+    setFirstEmiDate(isoDate);
+    setFirstEmiDisplay(formatDateDDMMYYYY(isoDate));
+  };
+
+  const handleFirstEmiDisplayChange = (displayVal: string) => {
+    setFirstEmiDisplay(displayVal);
+    const parsed = parseDisplayDateToISO(displayVal);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(parsed)) {
+      setFirstEmiDate(parsed);
+    }
+  };
 
   // Server Calculated Preview
   const [previewSchedule, setPreviewSchedule] = useState<any | null>(null);
@@ -176,14 +214,16 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
     setSerialNumber('');
     setProductPrice(30000);
     setInvoiceNumber('');
-    setInvoiceDate(new Date().toISOString().split('T')[0]);
+    setInvoiceDate(getBusinessDateStr());
     setDownPayment(5000);
-    setAnnualRate(isDealer ? 4 : 1.0);
-    setCalcMethod(InterestMethod.FLAT_RATE);
+    setAnnualRate(4);
     setTenureMonths(6);
-    setFrequency(RepaymentFrequency.MONTHLY);
-    setDisbursementDate(new Date().toISOString().split('T')[0]);
-    setFirstEmiDate(calculateNextDueDate(new Date().toISOString().split('T')[0], 1, RepaymentFrequency.MONTHLY));
+    const today = getBusinessDateStr();
+    setDisbursementDate(today);
+    setDisbDisplay(formatDateDDMMYYYY(today));
+    const firstEmi = calculateNextDueDate(today, 1, RepaymentFrequency.MONTHLY);
+    setFirstEmiDate(firstEmi);
+    setFirstEmiDisplay(formatDateDDMMYYYY(firstEmi));
   };
 
   const handleClose = () => {
@@ -1092,34 +1132,112 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                     <div>
                       <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
-                        Loan Origination Date <span style={{ color: 'var(--danger)' }}>*</span>
+                        Loan Origination Date (DD/MM/YYYY) <span style={{ color: 'var(--danger)' }}>*</span>
                       </label>
-                      <input
-                        type="date"
-                        className="form-input"
-                        value={disbursementDate}
-                        onChange={(e) => setDisbursementDate(e.target.value)}
-                        required
-                      />
+                      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                        <input
+                          type="text"
+                          className="form-input mono"
+                          placeholder="DD/MM/YYYY"
+                          value={disbDisplay}
+                          onChange={(e) => handleDisbDisplayChange(e.target.value)}
+                          onBlur={() => {
+                            if (/^\d{4}-\d{2}-\d{2}$/.test(disbursementDate)) {
+                              setDisbDisplay(formatDateDDMMYYYY(disbursementDate));
+                            }
+                          }}
+                          required
+                          style={{ paddingRight: 36 }}
+                        />
+                        <input
+                          type="date"
+                          value={disbursementDate}
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              setDisbursementDate(e.target.value);
+                              setDisbDisplay(formatDateDDMMYYYY(e.target.value));
+                            }
+                          }}
+                          tabIndex={-1}
+                          aria-label="Select Origination Date"
+                          style={{
+                            position: 'absolute',
+                            right: 8,
+                            width: 24,
+                            height: 24,
+                            opacity: 0,
+                            cursor: 'pointer',
+                            zIndex: 2,
+                          }}
+                        />
+                        <Calendar
+                          size={16}
+                          style={{
+                            position: 'absolute',
+                            right: 10,
+                            color: 'var(--text-muted)',
+                            pointerEvents: 'none',
+                          }}
+                        />
+                      </div>
                     </div>
                     <div>
                       <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
-                        EMI Start Date <span style={{ color: 'var(--danger)' }}>*</span>
+                        EMI Start Date (DD/MM/YYYY) <span style={{ color: 'var(--danger)' }}>*</span>
                       </label>
-                      <input
-                        type="date"
-                        className="form-input"
-                        value={firstEmiDate}
-                        onChange={(e) => setFirstEmiDate(e.target.value)}
-                        required
-                      />
+                      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                        <input
+                          type="text"
+                          className="form-input mono"
+                          placeholder="DD/MM/YYYY"
+                          value={firstEmiDisplay}
+                          onChange={(e) => handleFirstEmiDisplayChange(e.target.value)}
+                          onBlur={() => {
+                            if (/^\d{4}-\d{2}-\d{2}$/.test(firstEmiDate)) {
+                              setFirstEmiDisplay(formatDateDDMMYYYY(firstEmiDate));
+                            }
+                          }}
+                          required
+                          style={{ paddingRight: 36 }}
+                        />
+                        <input
+                          type="date"
+                          value={firstEmiDate}
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              setFirstEmiDate(e.target.value);
+                              setFirstEmiDisplay(formatDateDDMMYYYY(e.target.value));
+                            }
+                          }}
+                          tabIndex={-1}
+                          aria-label="Select EMI Start Date"
+                          style={{
+                            position: 'absolute',
+                            right: 8,
+                            width: 24,
+                            height: 24,
+                            opacity: 0,
+                            cursor: 'pointer',
+                            zIndex: 2,
+                          }}
+                        />
+                        <Calendar
+                          size={16}
+                          style={{
+                            position: 'absolute',
+                            right: 10,
+                            color: 'var(--text-muted)',
+                            pointerEvents: 'none',
+                          }}
+                        />
+                      </div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
                         Select the date when the first EMI becomes due.
                       </div>
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12 }}>
                     <div>
                       <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
                         EMI Tenure <span style={{ color: 'var(--danger)' }}>*</span>
@@ -1142,157 +1260,106 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                       </div>
                     </div>
 
-                    {isDealer ? (
+                    <div
+                      style={{
+                        background: 'var(--bg-surface-secondary)',
+                        padding: '16px',
+                        borderRadius: 'var(--radius-md)',
+                        border: '1px solid var(--border-subtle)',
+                      }}
+                    >
                       <div
                         style={{
-                          gridColumn: '1 / -1',
-                          background: 'var(--bg-surface-secondary)',
-                          padding: '16px',
-                          borderRadius: 'var(--radius-md)',
-                          border: '1px solid var(--border-subtle)',
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          gap: 8,
+                          marginBottom: 12,
                         }}
                       >
-                        <div
-                          style={{
-                            display: 'flex',
-                            flexWrap: 'wrap',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            gap: 8,
-                            marginBottom: 12,
-                          }}
-                        >
-                          <div>
-                            <label style={{ fontSize: 13, fontWeight: 700, display: 'block', color: 'var(--text-primary)' }}>
-                              Dealer Financing Rate (Monthly Flat Simple Interest) <span style={{ color: 'var(--danger)' }}>*</span>
-                            </label>
-                            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                              Select one of the three partner flat interest rates.
-                            </span>
-                          </div>
-                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                            <span className="badge badge-info" style={{ fontSize: 11, padding: '4px 8px' }}>
-                              Method: Flat Rate
-                            </span>
-                            <span className="badge badge-secondary" style={{ fontSize: 11, padding: '4px 8px' }}>
-                              Frequency: Monthly
-                            </span>
-                          </div>
+                        <div>
+                          <label style={{ fontSize: 13, fontWeight: 700, display: 'block', color: 'var(--text-primary)' }}>
+                            Interest Rate (Monthly Flat Simple Interest) <span style={{ color: 'var(--danger)' }}>*</span>
+                          </label>
+                          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                            Select one of the approved monthly flat interest rates (4%, 5%, or 6%).
+                          </span>
                         </div>
-
-                        <div
-                          style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
-                            gap: 12,
-                          }}
-                        >
-                          {DEALER_ALLOWED_INTEREST_RATES.map((rate) => {
-                            const isSelected = Number(annualRate) === rate;
-                            return (
-                              <button
-                                key={rate}
-                                type="button"
-                                onClick={() => setAnnualRate(rate)}
-                                style={{
-                                  padding: '14px 12px',
-                                  borderRadius: 'var(--radius-md)',
-                                  border: isSelected ? '2px solid var(--primary)' : '1px solid var(--border-default)',
-                                  background: isSelected ? 'rgba(59, 130, 246, 0.08)' : 'var(--bg-surface)',
-                                  cursor: 'pointer',
-                                  textAlign: 'center',
-                                  position: 'relative',
-                                  transition: 'all 0.15s ease',
-                                }}
-                              >
-                                {isSelected && (
-                                  <div
-                                    style={{
-                                      position: 'absolute',
-                                      top: 6,
-                                      right: 8,
-                                      width: 8,
-                                      height: 8,
-                                      borderRadius: '50%',
-                                      background: 'var(--primary)',
-                                    }}
-                                  />
-                                )}
-                                <div
-                                  className="mono"
-                                  style={{
-                                    fontSize: 22,
-                                    fontWeight: 800,
-                                    color: isSelected ? 'var(--primary)' : 'var(--text-primary)',
-                                    lineHeight: 1.2,
-                                  }}
-                                >
-                                  {rate}%
-                                </div>
-                                <div
-                                  style={{
-                                    fontSize: 11,
-                                    fontWeight: 600,
-                                    color: isSelected ? 'var(--primary)' : 'var(--text-secondary)',
-                                    marginTop: 4,
-                                  }}
-                                >
-                                  per month (flat)
-                                </div>
-                              </button>
-                            );
-                          })}
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          <span className="badge badge-info" style={{ fontSize: 11, padding: '4px 8px' }}>
+                            Method: Flat Rate
+                          </span>
+                          <span className="badge badge-secondary" style={{ fontSize: 11, padding: '4px 8px' }}>
+                            Frequency: Monthly
+                          </span>
                         </div>
                       </div>
-                    ) : (
-                      <>
-                        <div>
-                          <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
-                            Interest Rate (% per month)
-                          </label>
-                          <input
-                            type="number"
-                            step="0.1"
-                            className="form-input mono"
-                            value={annualRate}
-                            onChange={(e) => setAnnualRate(Number(e.target.value))}
-                            onBlur={(e) => setAnnualRate(Number(normalizeNumericLeadingZeros(e.target.value) || 0))}
-                          />
-                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-                            Monthly flat simple rate (e.g. 1.0% or 1.5% per month)
-                          </div>
-                        </div>
 
-                        <div>
-                          <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
-                            Interest Method
-                          </label>
-                          <select
-                            className="form-select"
-                            value={calcMethod}
-                            onChange={(e) => setCalcMethod(e.target.value as InterestMethod)}
-                          >
-                            <option value={InterestMethod.FLAT_RATE}>Flat Rate</option>
-                            <option value={InterestMethod.REDUCING_BALANCE}>Reducing Balance</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
-                            Frequency
-                          </label>
-                          <select
-                            className="form-select"
-                            value={frequency}
-                            onChange={(e) => setFrequency(e.target.value as RepaymentFrequency)}
-                          >
-                            <option value={RepaymentFrequency.MONTHLY}>Monthly</option>
-                            <option value={RepaymentFrequency.WEEKLY}>Weekly</option>
-                            <option value={RepaymentFrequency.DAILY}>Daily</option>
-                          </select>
-                        </div>
-                      </>
-                    )}
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(3, 1fr)',
+                          gap: 12,
+                        }}
+                      >
+                        {ALLOWED_MONTHLY_INTEREST_RATES.map((rate) => {
+                          const isSelected = Number(annualRate) === rate;
+                          return (
+                            <button
+                              key={rate}
+                              type="button"
+                              onClick={() => setAnnualRate(rate)}
+                              style={{
+                                padding: '14px 12px',
+                                borderRadius: 'var(--radius-md)',
+                                border: isSelected ? '2px solid var(--primary)' : '1px solid var(--border-default)',
+                                background: isSelected ? 'rgba(59, 130, 246, 0.08)' : 'var(--bg-surface)',
+                                cursor: 'pointer',
+                                textAlign: 'center',
+                                position: 'relative',
+                                transition: 'all 0.15s ease',
+                              }}
+                            >
+                              {isSelected && (
+                                <div
+                                  style={{
+                                    position: 'absolute',
+                                    top: 6,
+                                    right: 8,
+                                    width: 8,
+                                    height: 8,
+                                    borderRadius: '50%',
+                                    background: 'var(--primary)',
+                                  }}
+                                />
+                              )}
+                              <div
+                                className="mono"
+                                style={{
+                                  fontSize: 22,
+                                  fontWeight: 800,
+                                  color: isSelected ? 'var(--primary)' : 'var(--text-primary)',
+                                  lineHeight: 1.2,
+                                }}
+                              >
+                                {rate}%
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  color: isSelected ? 'var(--primary)' : 'var(--text-secondary)',
+                                  marginTop: 4,
+                                }}
+                              >
+                                per month (flat)
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>

@@ -54,7 +54,7 @@ describe('Loan Details & Amortization Schedule Integrity Regression Tests', () =
     await closeAllQueues();
   });
 
-  test('1. Monthly Flat Simple Interest: Retail 10k, DP 4k, Financed 6k, Rate 1%, Tenure 6m', async () => {
+  test('1. Monthly Flat Simple Interest: Retail 10k, DP 4k, Financed 6k, Rate 4%, Tenure 6m', async () => {
     // Preview calculation
     const previewRes = await request(app)
       .post('/api/v1/loans/calculate-preview')
@@ -62,8 +62,8 @@ describe('Loan Details & Amortization Schedule Integrity Regression Tests', () =
       .send({
         principalAmount: 10000,
         downPayment: 4000,
-        monthlyInterestRate: 1,
-        annualInterestRate: 1,
+        monthlyInterestRate: 4,
+        annualInterestRate: 4,
         tenureMonths: 6,
         disbursementDate: '2026-10-06',
         firstEmiDate: '2026-11-06',
@@ -72,21 +72,21 @@ describe('Loan Details & Amortization Schedule Integrity Regression Tests', () =
     expect(previewRes.status).toBe(200);
     const data = previewRes.body.data;
     expect(data.netDisbursedAmount).toBe(6000);
-    expect(data.totalInterest).toBe(360);
-    expect(data.totalPayable).toBe(6360);
-    expect(data.emiAmount).toBe(1060);
+    expect(data.totalInterest).toBe(1440);
+    expect(data.totalPayable).toBe(7440);
+    expect(data.emiAmount).toBe(1240);
     expect(data.totalInstallments).toBe(6);
     expect(data.schedule.length).toBe(6);
 
     // Verify installments in schedule
     data.schedule.forEach((inst: any, idx: number) => {
       expect(inst.installmentNumber).toBe(idx + 1);
-      expect(inst.expectedAmount).toBe(1060);
+      expect(inst.expectedAmount).toBe(1240);
       expect(inst.principalComponent).toBe(1000);
-      expect(inst.interestComponent).toBe(60);
+      expect(inst.interestComponent).toBe(240);
       expect(inst.paidAmount).toBe(0);
       expect(inst.penaltyAmount).toBe(0);
-      expect(inst.remainingAmount).toBe(1060);
+      expect(inst.remainingAmount).toBe(1240);
     });
   });
 
@@ -99,8 +99,8 @@ describe('Loan Details & Amortization Schedule Integrity Regression Tests', () =
         dealerId,
         principalAmount: 10000,
         downPayment: 4000,
-        monthlyInterestRate: 1,
-        annualInterestRate: 1,
+        monthlyInterestRate: 4,
+        annualInterestRate: 4,
         tenureMonths: 6,
         disbursementDate: '2026-10-06',
         firstEmiDate: '2026-11-06',
@@ -129,8 +129,8 @@ describe('Loan Details & Amortization Schedule Integrity Regression Tests', () =
     expect(loanDetail.dealer_id).toBe(dealerId);
     expect(loanDetail.netDisbursedAmount).toBe(6000);
     expect(loanDetail.net_disbursed_amount).toBe(6000);
-    expect(loanDetail.totalPayable).toBe(6360);
-    expect(loanDetail.total_payable).toBe(6360);
+    expect(loanDetail.totalPayable).toBe(7440);
+    expect(loanDetail.total_payable).toBe(7440);
 
     // Verify exactly 6 installments returned
     expect(loanDetail.installments).toBeDefined();
@@ -147,17 +147,17 @@ describe('Loan Details & Amortization Schedule Integrity Regression Tests', () =
       expect(inst.dueDate.length).toBeGreaterThan(0);
       expect(inst.due_date).toBe(inst.dueDate);
 
-      // Expected amount must be > 0 (exactly 1060)
-      expect(inst.expectedAmount).toBe(1060);
-      expect(inst.expected_amount).toBe(1060);
+      // Expected amount must be > 0 (exactly 1240)
+      expect(inst.expectedAmount).toBe(1240);
+      expect(inst.expected_amount).toBe(1240);
 
       // Principal component must be 1000
       expect(inst.principalComponent).toBe(1000);
       expect(inst.principal_component).toBe(1000);
 
-      // Interest component must be 60
-      expect(inst.interestComponent).toBe(60);
-      expect(inst.interest_component).toBe(60);
+      // Interest component must be 240
+      expect(inst.interestComponent).toBe(240);
+      expect(inst.interest_component).toBe(240);
 
       // Paid initially 0
       expect(inst.paidAmount).toBe(0);
@@ -168,8 +168,8 @@ describe('Loan Details & Amortization Schedule Integrity Regression Tests', () =
       expect(inst.penalty_amount).toBe(0);
 
       // Total due initially equals expected amount
-      expect(inst.remainingAmount).toBe(1060);
-      expect(inst.remaining_amount).toBe(1060);
+      expect(inst.remainingAmount).toBe(1240);
+      expect(inst.remaining_amount).toBe(1240);
 
       // Status must not be undefined
       expect(inst.status).toBeDefined();

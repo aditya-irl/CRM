@@ -836,7 +836,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
 
                             <div>
                               <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Tenure & Rate</div>
-                              <span>{loan.tenureMonths} Months • {(loan as any).annualInterestRate ?? '1.0'}%/mo</span>
+                              <span>{loan.tenureMonths} Months • {(loan as any).monthlyInterestRate ?? (loan as any).annualInterestRate ?? (loan as any).annual_interest_rate ?? 4}%/mo</span>
                             </div>
                             <div>
                               <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Loan Origination Date</div>
