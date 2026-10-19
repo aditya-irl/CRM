@@ -815,7 +815,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
                         {loan.loanAccountNo || (loan as any).loan_account_no}
                       </td>
                       <td style={{ fontWeight: 600 }}>
-                        {(loan as any).customer_name || loan.customer?.fullName}
+                        {loan.customerName || (loan as any).customer_name || loan.customer?.fullName || (loan as any).customer?.full_name || '—'}
                       </td>
                       <td className="mono">{formatINR(loan.principalAmount || (loan as any).principal_amount)}</td>
                       <td className="mono font-semibold">{loan.monthlyInterestRate ?? loan.annualInterestRate ?? (loan as any).annual_interest_rate}% /mo</td>
@@ -1549,6 +1549,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
               {selectedLoanDetail.loan.status === 'ACTIVE' &&
                 (currentUser?.role === UserRole.SUPER_ADMIN ||
                   currentUser?.role === UserRole.ADMIN ||
+                  currentUser?.role === UserRole.BRANCH_MANAGER ||
                   (currentUser?.role === UserRole.DEALER &&
                     (selectedLoanDetail.loan.dealerId ?? selectedLoanDetail.loan.dealer_id) === currentUser.dealerId)) && (
                 <button
@@ -2447,6 +2448,8 @@ export const LoansView: React.FC<LoansViewProps> = ({
             ApiClient.listLoans().then(setLoans).catch(console.error);
           }}
           user={currentUser}
+          isDealerContext={currentUser?.role === UserRole.DEALER}
+          dealerId={currentUser?.dealerId || selectedLoanDetail?.loan?.dealerId || (selectedLoanDetail?.loan as any)?.dealer_id}
           preselectedLoan={selectedLoanDetail?.loan}
           preselectedInstallment={selectedInstallmentForPayment}
         />

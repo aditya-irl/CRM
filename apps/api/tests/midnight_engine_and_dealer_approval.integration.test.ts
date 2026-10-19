@@ -15,21 +15,27 @@ describe('Midnight Engine & Dealer Customer Approval Integration Tests', () => {
   const agentEmail = `agent_${runId}@midnighttest.com`;
   const dealer1UserEmail = `dealer1_${runId}@midnighttest.com`;
   const dealer2UserEmail = `dealer2_${runId}@midnighttest.com`;
+  const branchManagerEmail = `bm_${runId}@midnighttest.com`;
 
   let superAdminToken: string;
   let adminToken: string;
+  let branchManagerToken: string;
   let agentToken: string;
   let dealer1Token: string;
   let dealer2Token: string;
 
   let superAdminId: string;
   let adminId: string;
+  let branchManagerId: string;
   let agentId: string;
   let dealer1UserId: string;
   let dealer2UserId: string;
 
   let dealer1Id: string;
   let dealer2Id: string;
+
+  let createdLoan1Id: string;
+  let createdCustomer1Id: string;
 
   beforeAll(async () => {
     const hash = bcrypt.hashSync('Password@123', 10);
@@ -54,18 +60,22 @@ describe('Midnight Engine & Dealer Customer Approval Integration Tests', () => {
       ]
     );
 
+    branchManagerId = uuidv4();
+
     // 2. Seed Users
     await queryPostgres(
       `INSERT INTO users (id, email, phone, password_hash, full_name, role, dealer_id, status, created_at, updated_at)
        VALUES 
          ($1, $2, $3, $4, 'Super Admin User', 'SUPER_ADMIN', NULL, 'ACTIVE', NOW(), NOW()),
          ($5, $6, $7, $4, 'Admin Manager User', 'ADMIN', NULL, 'ACTIVE', NOW(), NOW()),
-         ($8, $9, $10, $4, 'Field Agent User', 'COLLECTION_AGENT', NULL, 'ACTIVE', NOW(), NOW()),
-         ($11, $12, $13, $4, 'Dealer User One', 'DEALER', $14, 'ACTIVE', NOW(), NOW()),
-         ($15, $16, $17, $4, 'Dealer User Two', 'DEALER', $18, 'ACTIVE', NOW(), NOW())`,
+         ($8, $9, $10, $4, 'Branch Manager User', 'BRANCH_MANAGER', NULL, 'ACTIVE', NOW(), NOW()),
+         ($11, $12, $13, $4, 'Field Agent User', 'COLLECTION_AGENT', NULL, 'ACTIVE', NOW(), NOW()),
+         ($14, $15, $16, $4, 'Dealer User One', 'DEALER', $17, 'ACTIVE', NOW(), NOW()),
+         ($18, $19, $20, $4, 'Dealer User Two', 'DEALER', $21, 'ACTIVE', NOW(), NOW())`,
       [
         superAdminId, superAdminEmail, `+9190${Math.floor(10000000 + Math.random() * 90000000)}`, hash,
         adminId, adminEmail, `+9193${Math.floor(10000000 + Math.random() * 90000000)}`,
+        branchManagerId, branchManagerEmail, `+9197${Math.floor(10000000 + Math.random() * 90000000)}`,
         agentId, agentEmail, `+9194${Math.floor(10000000 + Math.random() * 90000000)}`,
         dealer1UserId, dealer1UserEmail, `+9195${Math.floor(10000000 + Math.random() * 90000000)}`, dealer1Id,
         dealer2UserId, dealer2UserEmail, `+9196${Math.floor(10000000 + Math.random() * 90000000)}`, dealer2Id,
@@ -78,6 +88,9 @@ describe('Midnight Engine & Dealer Customer Approval Integration Tests', () => {
 
     const admLogin = await request(app).post('/api/v1/auth/login').send({ email: adminEmail, password: 'Password@123' });
     adminToken = admLogin.body.data.tokens.accessToken;
+
+    const bmLogin = await request(app).post('/api/v1/auth/login').send({ email: branchManagerEmail, password: 'Password@123' });
+    branchManagerToken = bmLogin.body.data.tokens.accessToken;
 
     const agtLogin = await request(app).post('/api/v1/auth/login').send({ email: agentEmail, password: 'Password@123' });
     agentToken = agtLogin.body.data.tokens.accessToken;
@@ -128,6 +141,16 @@ describe('Midnight Engine & Dealer Customer Approval Integration Tests', () => {
       expect(res.body.processed).toBeDefined();
     }, 30000);
 
+    test('BRANCH_MANAGER role is forbidden from triggering Midnight Engine (403)', async () => {
+      const res = await request(app)
+        .post('/api/v1/system/trigger-jobs')
+        .set('Authorization', `Bearer ${branchManagerToken}`)
+        .send({});
+
+      expect(res.status).toBe(403);
+      expect(res.body.error?.message).toContain('SUPER_ADMIN, ADMIN');
+    });
+
     test('DEALER role is forbidden from triggering Midnight Engine (403)', async () => {
       const res = await request(app)
         .post('/api/v1/system/trigger-jobs')
@@ -135,6 +158,7 @@ describe('Midnight Engine & Dealer Customer Approval Integration Tests', () => {
         .send({});
 
       expect(res.status).toBe(403);
+      expect(res.body.error?.message).toContain('SUPER_ADMIN, ADMIN');
     });
 
     test('COLLECTION_AGENT role is forbidden from triggering Midnight Engine (403)', async () => {
@@ -144,6 +168,7 @@ describe('Midnight Engine & Dealer Customer Approval Integration Tests', () => {
         .send({});
 
       expect(res.status).toBe(403);
+      expect(res.body.error?.message).toContain('SUPER_ADMIN, ADMIN');
     });
 
     test('Unauthenticated request is rejected (401)', async () => {
@@ -180,8 +205,6 @@ describe('Midnight Engine & Dealer Customer Approval Integration Tests', () => {
   // GROUP 2: DEALER CUSTOMER ONBOARDING, APPROVAL FLOW & RLAC
   // =========================================================================
   describe('Issue 2: Dealer Add Customer -> Approval Workflow & RLAC', () => {
-    let createdLoan1Id: string;
-    let createdCustomer1Id: string;
 
     test('Dealer successfully onboards Customer + Financed Device Loan atomically without 500 collision', async () => {
       const customerPhone = `98${Math.floor(10000000 + Math.random() * 90000000)}`;
@@ -401,6 +424,69 @@ describe('Midnight Engine & Dealer Customer Approval Integration Tests', () => {
       expect(adminReject.status).toBe(200);
       expect(adminReject.body.data.status).toBe(LoanStatus.REJECTED);
       expect(adminReject.body.data.reason).toBe(reasonText);
+    });
+  });
+
+  // =========================================================================
+  // GROUP 3: BORROWER NAME VISIBILITY & TENANT ISOLATION IN LOANS LIST
+  // =========================================================================
+  describe('Issue 3: Borrower Names Visibility & Scoping in Loans List', () => {
+    test('Loans list API returns canonical customerName for linked loans', async () => {
+      const res = await request(app)
+        .get('/api/v1/loans')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(Array.isArray(res.body.data)).toBe(true);
+
+      const targetLoan = res.body.data.find((l: any) => l.id === createdLoan1Id);
+      expect(targetLoan).toBeDefined();
+      expect(targetLoan.customerName).toContain('Ramesh Sharma');
+      expect(targetLoan.customerCode).toBeDefined();
+      expect(targetLoan.dealerStoreName).toBe('Midnight Partner 1');
+    });
+
+    test('Dealer 1 can only view loans originated by Dealer 1 (Dealer 2 loans not exposed)', async () => {
+      const res = await request(app)
+        .get('/api/v1/loans')
+        .set('Authorization', `Bearer ${dealer1Token}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      // All returned loans must belong to dealer 1
+      res.body.data.forEach((l: any) => {
+        expect(l.dealerId).toBe(dealer1Id);
+        expect(l.customerName).toBeDefined();
+      });
+    });
+
+    test('Loans list handles missing or soft-deleted borrower records gracefully', async () => {
+      const fakeCustId = uuidv4();
+      const fakeLoanId = uuidv4();
+      await queryPostgres(
+        `INSERT INTO customers (id, customer_code, full_name, primary_phone, address_line1, city, state, pincode, area_route, is_active, deleted_at, created_at, updated_at)
+         VALUES ($1, $2, 'Deleted Borrower', '9999999999', 'Fake St', 'Delhi', 'Delhi', '110001', 'CENTRAL_DELHI', true, NOW(), NOW(), NOW())`,
+        [fakeCustId, `CUST-DEL-${runId}`]
+      );
+      await queryPostgres(
+        `INSERT INTO loans (id, loan_account_no, customer_id, dealer_id, principal_amount, down_payment, net_disbursed_amount, annual_interest_rate, interest_calc_method, tenure_months, installment_frequency, total_installments, emi_amount, total_interest, total_payable, total_paid, outstanding_balance, status, disbursement_date, first_emi_date, maturity_date, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, 10000, 2000, 8000, 4.0, 'FLAT_RATE', 6, 'MONTHLY', 6, 1600, 1600, 9600, 0, 9600, 'ACTIVE', '2026-10-06', '2026-11-06', '2027-05-06', NOW(), NOW())`,
+        [fakeLoanId, `LN-DEL-${runId}`, fakeCustId, dealer1Id]
+      );
+
+      const res = await request(app)
+        .get('/api/v1/loans')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      const deletedLoan = res.body.data.find((l: any) => l.id === fakeLoanId);
+      expect(deletedLoan).toBeDefined();
+      expect(deletedLoan.customerName === null || deletedLoan.customerName === undefined).toBe(true);
+
+      // Clean up test records
+      await queryPostgres('DELETE FROM loans WHERE id = $1', [fakeLoanId]);
+      await queryPostgres('DELETE FROM customers WHERE id = $1', [fakeCustId]);
     });
   });
 });

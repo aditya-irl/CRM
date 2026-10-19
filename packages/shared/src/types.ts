@@ -175,6 +175,10 @@ export interface ILoan {
   id: string;
   loanAccountNo: string;
   customerId: string;
+  customerName?: string;
+  customerCode?: string;
+  primaryPhone?: string;
+  areaRoute?: string;
   customer?: ICustomer;
   principalAmount: number | string;
   downPayment: number | string;

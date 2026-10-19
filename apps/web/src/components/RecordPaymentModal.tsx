@@ -51,10 +51,21 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   dealerId,
   dealerStoreName,
 }) => {
-  const isDealer = isDealerContext || user?.role === UserRole.DEALER;
-  const isAgent = user?.role === UserRole.COLLECTION_AGENT;
-  const effectiveDealerId = dealerId || user?.dealerId;
-  const effectiveAgentId = isAgent ? user?.id : '';
+  const currentUser = user || ApiClient.getUser();
+  const isDealer = isDealerContext || currentUser?.role === UserRole.DEALER;
+  const isAgent = currentUser?.role === UserRole.COLLECTION_AGENT;
+  const isAdminRole =
+    currentUser?.role === UserRole.SUPER_ADMIN ||
+    currentUser?.role === UserRole.ADMIN ||
+    currentUser?.role === UserRole.BRANCH_MANAGER;
+  const effectiveDealerId =
+    dealerId ||
+    user?.dealerId ||
+    currentUser?.dealerId ||
+    (preselectedLoan as any)?.dealerId ||
+    (preselectedLoan as any)?.dealer_id ||
+    '';
+  const effectiveAgentId = isAgent ? (user?.id || currentUser?.id || '') : '';
 
   // Form State
   const [activeLoans, setActiveLoans] = useState<any[]>([]);
@@ -125,6 +136,18 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
 
+    if (isDealer) {
+      setCollectionSource(CollectionSource.DEALER);
+      if (effectiveDealerId) {
+        setSelectedDealerId(effectiveDealerId);
+      }
+    } else if (isAgent) {
+      setCollectionSource(CollectionSource.RECOVERY_AGENT);
+      if (effectiveAgentId) {
+        setSelectedAgentId(effectiveAgentId);
+      }
+    }
+
     if (preselectedLoan) {
       setSelectedLoan(preselectedLoan);
       setSelectedLoanId(preselectedLoan.id);
@@ -133,8 +156,8 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       loadActiveLoans();
     }
 
-    // Load dealers and agents for admin selection if not dealer or agent
-    if (!isDealer && !isAgent) {
+    // Load dealers and agents for admin selection ONLY if user is an authorized administrative role
+    if (!isDealer && !isAgent && isAdminRole) {
       ApiClient.getDealers(undefined, 'ACTIVE')
         .then(setDealersList)
         .catch(() => []);
@@ -142,7 +165,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
         .then(setAgentsList)
         .catch(() => []);
     }
-  }, [isOpen, preselectedLoan, isDealer, isAgent, effectiveDealerId, effectiveAgentId]);
+  }, [isOpen, preselectedLoan, isDealer, isAgent, effectiveDealerId, effectiveAgentId, isAdminRole]);
 
   const loadActiveLoans = async () => {
     setLoadingLoans(true);
@@ -409,6 +432,20 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     setSubmitting(true);
     try {
       const idempotencyKey = `${isDealer ? 'DEALER' : isAgent ? 'AGT' : 'ADMIN'}_${selectedLoan.id}_${Date.now()}`;
+      const finalSource = isDealer
+        ? CollectionSource.DEALER
+        : isAgent
+        ? CollectionSource.RECOVERY_AGENT
+        : collectionSource;
+      const finalDealerId =
+        (isDealer || finalSource === CollectionSource.DEALER)
+          ? (effectiveDealerId || selectedDealerId || (selectedLoan as any)?.dealerId || (selectedLoan as any)?.dealer_id || undefined)
+          : undefined;
+      const finalAgentId =
+        (!isDealer && (isAgent || finalSource === CollectionSource.RECOVERY_AGENT))
+          ? (effectiveAgentId || selectedAgentId || undefined)
+          : undefined;
+
       const payload: any = {
         loanId: selectedLoan.id,
         emiId: selectedInstallmentId || undefined,
@@ -418,9 +455,9 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
           ? (parseFloat(penaltyAmountStr) || 0)
           : undefined,
         paymentMode,
-        collectionSource: isAgent ? CollectionSource.RECOVERY_AGENT : collectionSource,
-        dealerId: collectionSource === CollectionSource.DEALER ? (effectiveDealerId || selectedDealerId) : undefined,
-        agentId: (isAgent || collectionSource === CollectionSource.RECOVERY_AGENT) ? (effectiveAgentId || selectedAgentId) : undefined,
+        collectionSource: finalSource,
+        dealerId: finalDealerId,
+        agentId: finalAgentId,
         referenceNumber: referenceNumber.trim() || undefined,
         notes: notes.trim() || undefined,
         idempotencyKey,

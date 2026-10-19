@@ -997,10 +997,10 @@ export class LoanService {
              d.store_name as dealer_store_name,
              d.dealer_code
       FROM loans l
-      JOIN customers c ON l.customer_id = c.id
+      LEFT JOIN customers c ON l.customer_id = c.id AND c.deleted_at IS NULL
       LEFT JOIN users u ON l.assigned_agent_id = u.id
       LEFT JOIN dealers d ON l.dealer_id = d.id
-      WHERE c.deleted_at IS NULL
+      WHERE 1=1
     `;
     const params: any[] = [];
     let paramIndex = 1;

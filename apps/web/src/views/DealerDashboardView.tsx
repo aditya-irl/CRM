@@ -674,6 +674,7 @@ export const DealerDashboardView: React.FC<DealerDashboardViewProps> = ({ onNavi
             fetchDashboardData();
           }}
           preselectedLoan={selectedLoanForPayment}
+          user={ApiClient.getUser() || undefined}
           isDealerContext={true}
           dealerId={data?.dealer?.id}
           dealerStoreName={data?.dealer?.storeName}
