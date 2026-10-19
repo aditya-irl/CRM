@@ -716,18 +716,20 @@ export class DealerService {
 
     const d = dealerRes.rows[0];
 
-    // Compute dealer-scoped metrics
+    // Compute dealer-scoped metrics with single-pass conditional aggregation
     const metricsRes = await queryPostgres(
       `SELECT
-        (SELECT COUNT(DISTINCT customer_id) FROM loans WHERE dealer_id = $1) as total_customers,
-        (SELECT COUNT(*) FROM loans WHERE dealer_id = $1 AND status = 'ACTIVE') as active_loans,
-        (SELECT COUNT(*) FROM loans WHERE dealer_id = $1 AND status = 'APPROVED') as approved_loans,
-        (SELECT COUNT(*) FROM loans WHERE dealer_id = $1 AND status = 'PENDING_APPROVAL') as pending_loans,
-        (SELECT COUNT(*) FROM loans WHERE dealer_id = $1 AND status = 'CLOSED') as closed_loans,
-        (SELECT COALESCE(SUM(principal_amount), 0) FROM loans WHERE dealer_id = $1) as total_financed_amount,
-        (SELECT COALESCE(SUM(outstanding_balance), 0) FROM loans WHERE dealer_id = $1 AND status = 'ACTIVE') as total_outstanding_balance,
+        COUNT(DISTINCT customer_id) as total_customers,
+        COUNT(*) FILTER (WHERE status = 'ACTIVE') as active_loans,
+        COUNT(*) FILTER (WHERE status = 'APPROVED') as approved_loans,
+        COUNT(*) FILTER (WHERE status = 'PENDING_APPROVAL') as pending_loans,
+        COUNT(*) FILTER (WHERE status = 'CLOSED') as closed_loans,
+        COALESCE(SUM(principal_amount), 0) as total_financed_amount,
+        COALESCE(SUM(outstanding_balance) FILTER (WHERE status = 'ACTIVE'), 0) as total_outstanding_balance,
         (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE dealer_id = $1 AND collection_source = 'DEALER' AND status = 'SUCCESS' AND is_reversal = FALSE) as total_collected_amount,
         (SELECT COALESCE(SUM(amount), 0) FROM dealer_settlements WHERE dealer_id = $1 AND status = 'COMPLETED') as total_settled_amount
+      FROM loans
+      WHERE dealer_id = $1
       `,
       [targetDealerId]
     );

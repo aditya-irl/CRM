@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { ApiClient } from '../services/api';
 import {
   IFinanceDashboardStats,
@@ -56,6 +56,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 }) => {
   const [stats, setStats] = useState<IFinanceDashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
   const [preset, setPreset] = useState<string>('this-month');
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
@@ -112,21 +116,38 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       !DASHBOARD_ALLOWED_ROLES.includes(effectiveUser.role as typeof DASHBOARD_ALLOWED_ROLES[number])
     ) {
       setLoading(false);
+      setRefreshing(false);
+      setError('You do not have administrative permission to view the executive finance dashboard.');
       return;
     }
 
-    setLoading(true);
+    const reqId = ++requestIdRef.current;
+    if (stats) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+    setError(null);
+
     try {
       const data = await ApiClient.getFinanceDashboard({
         preset: targetPreset,
         startDate: targetPreset === 'custom' ? start : undefined,
         endDate: targetPreset === 'custom' ? end : undefined,
       });
+      if (reqId !== requestIdRef.current) return;
       setStats(data);
-    } catch (err) {
+      setLastUpdated(new Date().toLocaleTimeString());
+      setError(null);
+    } catch (err: any) {
+      if (reqId !== requestIdRef.current) return;
       console.error('Failed to load executive finance dashboard metrics', err);
+      setError(err?.message || 'Failed to load executive finance dashboard metrics');
     } finally {
-      setLoading(false);
+      if (reqId === requestIdRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   };
 
@@ -192,7 +213,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
         <div style={{ height: 40, width: '40%' }} className="skeleton" />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 14 }}>
+        <div className="dashboard-kpi-grid-6" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
           {[1, 2, 3, 4, 5, 6].map((i) => (
             <div key={i} style={{ height: 110 }} className="skeleton" />
           ))}
@@ -202,10 +223,79 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     );
   }
 
+  if (!stats && error) {
+    return (
+      <div className="crm-card" style={{ padding: '36px 24px', textAlign: 'center', maxWidth: 600, margin: '40px auto' }}>
+        <div
+          style={{
+            width: 48,
+            height: 48,
+            borderRadius: '50%',
+            background: 'var(--danger-bg)',
+            color: 'var(--danger)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 16px',
+          }}
+        >
+          <AlertCircle size={24} />
+        </div>
+        <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8, color: 'var(--text-primary)' }}>
+          Executive Dashboard Unavailable
+        </h3>
+        <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20, lineHeight: 1.5 }}>
+          {error}
+        </p>
+        <button
+          onClick={() => fetchDashboardData()}
+          className="btn btn-primary"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 8, margin: '0 auto' }}
+        >
+          <RefreshCw size={14} />
+          <span>Retry Loading Dashboard</span>
+        </button>
+      </div>
+    );
+  }
+
   if (!stats) return null;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      {/* Background Refresh Error Alert (Stale Data Banner) */}
+      {error && (
+        <div
+          style={{
+            background: 'var(--warning-bg)',
+            border: '1px solid var(--warning-border)',
+            borderRadius: 'var(--radius-md)',
+            padding: '12px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 12,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'var(--warning-text)' }}>
+            <AlertCircle size={16} />
+            <span>
+              Unable to refresh latest metrics ({error}). Displaying data loaded at {lastUpdated || 'earlier'}.
+            </span>
+          </div>
+          <button
+            onClick={() => fetchDashboardData()}
+            className="btn btn-secondary btn-sm"
+            disabled={refreshing}
+            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+          >
+            <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
+            <span>{refreshing ? 'Refreshing...' : 'Retry'}</span>
+          </button>
+        </div>
+      )}
+
       {/* 1. Header & Context */}
       <div
         style={{

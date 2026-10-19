@@ -846,7 +846,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: 10 }}>
+            <div className="modal-actions-footer" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               <button
                 type="button"
                 onClick={() => setShowConfirmation(false)}
@@ -987,6 +987,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
               {/* Loan Context Overview */}
               {selectedLoan && (
                 <div
+                  className="modal-form-grid-2"
                   style={{
                     background: 'var(--bg-surface-secondary)',
                     borderRadius: 'var(--radius-sm)',
@@ -1316,12 +1317,12 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                 ) : (
                   /* Super Admin / Admin Collection Source Selector */
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <div style={{ display: 'flex', gap: 8 }}>
+                    <div className="collection-source-button-group" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       <button
                         type="button"
                         onClick={() => setCollectionSource(CollectionSource.DIRECT_CUSTOMER)}
                         className={`btn btn-sm ${collectionSource === CollectionSource.DIRECT_CUSTOMER ? 'btn-primary' : 'btn-secondary'}`}
-                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}
+                        style={{ flex: '1 1 120px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}
                       >
                         <Building2 size={13} />
                         <span>DIRECT</span>
@@ -1330,7 +1331,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                         type="button"
                         onClick={() => setCollectionSource(CollectionSource.DEALER)}
                         className={`btn btn-sm ${collectionSource === CollectionSource.DEALER ? 'btn-primary' : 'btn-secondary'}`}
-                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}
+                        style={{ flex: '1 1 120px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}
                       >
                         <Store size={13} />
                         <span>DEALER</span>
@@ -1339,7 +1340,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                         type="button"
                         onClick={() => setCollectionSource(CollectionSource.RECOVERY_AGENT)}
                         className={`btn btn-sm ${collectionSource === CollectionSource.RECOVERY_AGENT ? 'btn-primary' : 'btn-secondary'}`}
-                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}
+                        style={{ flex: '1 1 140px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}
                       >
                         <UserCheck size={13} />
                         <span>RECOVERY AGENT</span>
@@ -1384,7 +1385,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
               </div>
 
               {/* Payment Mode & Reference */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+              <div className="modal-form-grid-2" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
                 <div>
                   <label
                     style={{
@@ -1580,7 +1581,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
               )}
 
               {/* Submit Buttons */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
+              <div className="modal-actions-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
                 <button
                   type="button"
                   onClick={onClose}

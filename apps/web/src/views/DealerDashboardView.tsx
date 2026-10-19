@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { IDealerDashboardMetrics, formatINR, formatDateDDMMYYYY } from '@crm/shared';
 import { ApiClient } from '../services/api';
 import {
@@ -16,6 +16,7 @@ import {
   ArrowUpRight,
   TrendingUp,
   UserPlus,
+  AlertCircle,
 } from 'lucide-react';
 import { AddCustomerWizard } from '../components/AddCustomerWizard';
 import { RecordPaymentModal } from '../components/RecordPaymentModal';
@@ -30,17 +31,36 @@ export const DealerDashboardView: React.FC<DealerDashboardViewProps> = ({ onNavi
   const [showRecordPaymentModal, setShowRecordPaymentModal] = useState(false);
   const [selectedLoanForPayment, setSelectedLoanForPayment] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
   const [activeSubTab, setActiveSubTab] = useState<'loans' | 'collections' | 'settlements'>('loans');
 
   const fetchDashboardData = async () => {
-    setLoading(true);
+    const reqId = ++requestIdRef.current;
+    if (data) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+    setError(null);
+
     try {
       const res = await ApiClient.getDealerDashboard();
+      if (reqId !== requestIdRef.current) return;
       setData(res);
-    } catch (err) {
+      setLastUpdated(new Date().toLocaleTimeString());
+      setError(null);
+    } catch (err: any) {
+      if (reqId !== requestIdRef.current) return;
       console.error('Failed to load dealer dashboard metrics', err);
+      setError(err?.message || 'Failed to load partner store metrics');
     } finally {
-      setLoading(false);
+      if (reqId === requestIdRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   };
 
@@ -53,8 +73,78 @@ export const DealerDashboardView: React.FC<DealerDashboardViewProps> = ({ onNavi
     return formatDateDDMMYYYY(dateStr);
   };
 
+
+  if (!data && error) {
+    return (
+      <div className="crm-card" style={{ padding: '36px 24px', textAlign: 'center', maxWidth: 600, margin: '40px auto' }}>
+        <div
+          style={{
+            width: 48,
+            height: 48,
+            borderRadius: '50%',
+            background: 'var(--danger-bg)',
+            color: 'var(--danger)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 16px',
+          }}
+        >
+          <AlertCircle size={24} />
+        </div>
+        <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8, color: 'var(--text-primary)' }}>
+          Partner Store Dashboard Unavailable
+        </h3>
+        <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20, lineHeight: 1.5 }}>
+          {error}
+        </p>
+        <button
+          onClick={() => fetchDashboardData()}
+          className="btn btn-primary"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 8, margin: '0 auto' }}
+        >
+          <RefreshCw size={14} />
+          <span>Retry Loading Store Data</span>
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      {/* Background Refresh Error Alert (Stale Data Banner) */}
+      {error && (
+        <div
+          style={{
+            background: 'var(--warning-bg)',
+            border: '1px solid var(--warning-border)',
+            borderRadius: 'var(--radius-md)',
+            padding: '12px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 12,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'var(--warning-text)' }}>
+            <AlertCircle size={16} />
+            <span>
+              Unable to refresh store metrics ({error}). Displaying data loaded at {lastUpdated || 'earlier'}.
+            </span>
+          </div>
+          <button
+            onClick={() => fetchDashboardData()}
+            className="btn btn-secondary btn-sm"
+            disabled={refreshing}
+            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+          >
+            <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
+            <span>{refreshing ? 'Refreshing...' : 'Retry'}</span>
+          </button>
+        </div>
+      )}
+
       {/* Header Banner */}
       <div
         className="crm-card"

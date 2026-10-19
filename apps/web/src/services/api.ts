@@ -115,31 +115,80 @@ export interface IPortalLinkResult {
 export class ApiClient {
   private static refreshPromise: Promise<string> | null = null;
 
+  private static getSessionStorage(): Storage | null {
+    try {
+      if (typeof sessionStorage !== 'undefined') return sessionStorage;
+      if (typeof window !== 'undefined' && window.sessionStorage) return window.sessionStorage;
+    } catch {}
+    return null;
+  }
+
+  private static getLocalStorage(): Storage | null {
+    try {
+      if (typeof localStorage !== 'undefined') return localStorage;
+      if (typeof window !== 'undefined' && window.localStorage) return window.localStorage;
+    } catch {}
+    return null;
+  }
+
   public static getToken(): string | null {
-    return localStorage.getItem('crm_access_token');
+    const session = this.getSessionStorage();
+    return session?.getItem('crm_access_token') || null;
   }
 
   public static getRefreshToken(): string | null {
-    return localStorage.getItem('crm_refresh_token');
+    const session = this.getSessionStorage();
+    return session?.getItem('crm_refresh_token') || null;
   }
 
   public static setAuth(user: IUser, token: string, refreshToken?: string) {
-    localStorage.setItem('crm_access_token', token);
-    if (refreshToken) {
-      localStorage.setItem('crm_refresh_token', refreshToken);
+    const session = this.getSessionStorage();
+
+    // 1. Write to tab-scoped sessionStorage (authoritative and private to this tab)
+    if (session) {
+      session.setItem('crm_access_token', token);
+      if (refreshToken) {
+        session.setItem('crm_refresh_token', refreshToken);
+      }
+      session.setItem('crm_user', JSON.stringify(user));
     }
-    localStorage.setItem('crm_user', JSON.stringify(user));
+
+    // 2. Eradicate any legacy tokens in localStorage to prevent origin-wide leakage
+    const local = this.getLocalStorage();
+    if (local && local !== session) {
+      local.removeItem('crm_access_token');
+      local.removeItem('crm_refresh_token');
+      local.removeItem('crm_user');
+    }
   }
 
   public static getUser(): IUser | null {
-    const raw = localStorage.getItem('crm_user');
-    return raw ? JSON.parse(raw) : null;
+    const session = this.getSessionStorage();
+    const raw = session?.getItem('crm_user') || null;
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
   }
 
   public static logout() {
-    localStorage.removeItem('crm_access_token');
-    localStorage.removeItem('crm_refresh_token');
-    localStorage.removeItem('crm_user');
+    const session = this.getSessionStorage();
+
+    if (session) {
+      session.removeItem('crm_access_token');
+      session.removeItem('crm_refresh_token');
+      session.removeItem('crm_user');
+    }
+
+    // Clean up any legacy localStorage entries
+    const local = this.getLocalStorage();
+    if (local && local !== session) {
+      local.removeItem('crm_access_token');
+      local.removeItem('crm_refresh_token');
+      local.removeItem('crm_user');
+    }
   }
 
   /**
@@ -184,11 +233,15 @@ export class ApiClient {
         const newAccessToken: string = json.data.accessToken;
         const newRefreshToken: string | undefined = json.data.refreshToken;
 
-        localStorage.setItem('crm_access_token', newAccessToken);
-        if (newRefreshToken) {
-          localStorage.setItem('crm_refresh_token', newRefreshToken);
-        }
+        const session = this.getSessionStorage();
+        const local = this.getLocalStorage();
 
+        if (session) {
+          session.setItem('crm_access_token', newAccessToken);
+          if (newRefreshToken) {
+            session.setItem('crm_refresh_token', newRefreshToken);
+          }
+        }
         return newAccessToken;
       } catch (err) {
         this.logout();
@@ -427,6 +480,7 @@ export class ApiClient {
       const error = new Error(fullMsg);
       (error as any).details = json?.error?.details;
       (error as any).code = json?.error?.code;
+      (error as any).statusCode = res.status;
       throw error;
     }
 
@@ -437,7 +491,10 @@ export class ApiClient {
     const current = this.getUser();
     if (!current) return null;
     const updated = { ...current, ...updates };
-    localStorage.setItem('crm_user', JSON.stringify(updated));
+    const session = this.getSessionStorage();
+    if (session) {
+      session.setItem('crm_user', JSON.stringify(updated));
+    }
     return updated;
   }
 

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { IUser, UserRole, formatDateDDMMYYYY } from '@crm/shared';
 import { ApiClient } from '../services/api';
-import { LogOut, Play, CheckCircle2, Shield, Plus, Calendar, Store } from 'lucide-react';
+import { LogOut, Play, CheckCircle2, Shield, Plus, Calendar, Store, Menu } from 'lucide-react';
 import { BrandLogo } from './BrandLogo';
 import { NotificationBell } from './NotificationBell';
 
@@ -11,6 +11,7 @@ interface NavbarProps {
   onRefreshData?: () => void;
   onOpenAddCustomer?: () => void;
   onNavigate?: (tab: string, params?: any) => void;
+  onToggleMobileMenu?: () => void;
 }
 
 const NavbarComponent: React.FC<NavbarProps> = ({
@@ -19,6 +20,7 @@ const NavbarComponent: React.FC<NavbarProps> = ({
   onRefreshData,
   onOpenAddCustomer,
   onNavigate,
+  onToggleMobileMenu,
 }) => {
   const [runningJob, setRunningJob] = useState(false);
   const [jobNotice, setJobNotice] = useState<string | null>(null);
@@ -64,6 +66,7 @@ const NavbarComponent: React.FC<NavbarProps> = ({
 
   return (
     <header
+      className="navbar-header"
       style={{
         background: '#ffffff',
         borderBottom: '1px solid var(--border-subtle)',
@@ -74,19 +77,30 @@ const NavbarComponent: React.FC<NavbarProps> = ({
         zIndex: 50,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        {onToggleMobileMenu && (
+          <button
+            onClick={onToggleMobileMenu}
+            className="btn btn-secondary btn-sm mobile-menu-toggle"
+            aria-label="Toggle Navigation Drawer"
+            style={{ padding: '6px 8px' }}
+          >
+            <Menu size={16} />
+          </button>
+        )}
+
         <BrandLogo variant="horizontal" size="sm" showLegal={true} />
 
-        <div style={{ height: 20, width: 1, background: 'var(--border-subtle)' }} />
+        <div className="navbar-business-date-divider" style={{ height: 20, width: 1, background: 'var(--border-subtle)' }} />
 
         {/* Current Business Date */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
+        <div className="navbar-business-date" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
           <Calendar size={13} color="var(--primary)" />
           <span>Business Date: <strong>{todayDateStr}</strong></span>
         </div>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div className="navbar-actions" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         {jobNotice && (
           <div
             style={{
@@ -110,10 +124,10 @@ const NavbarComponent: React.FC<NavbarProps> = ({
         {onOpenAddCustomer && (user.role === UserRole.SUPER_ADMIN || user.role === UserRole.ADMIN || user.role === UserRole.BRANCH_MANAGER) && (
           <button
             onClick={onOpenAddCustomer}
-            className="btn btn-primary btn-sm"
+            className="btn btn-primary btn-sm btn-responsive-action"
           >
             <Plus size={13} />
-            <span>Add Customer</span>
+            <span className="btn-responsive-label">Add Customer</span>
           </button>
         )}
 
@@ -121,11 +135,11 @@ const NavbarComponent: React.FC<NavbarProps> = ({
           <button
             onClick={handleTriggerJobs}
             disabled={runningJob}
-            className="btn btn-secondary btn-sm"
+            className="btn btn-secondary btn-sm btn-responsive-action"
             title="Execute daily midnight EMI state transitions and reminder queues manually"
           >
             <Play size={12} color="var(--warning)" />
-            <span>{runningJob ? 'Processing...' : 'Run Midnight Engine'}</span>
+            <span className="btn-responsive-label">{runningJob ? 'Processing...' : 'Run Midnight Engine'}</span>
           </button>
         )}
 

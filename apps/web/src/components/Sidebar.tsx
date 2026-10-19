@@ -38,11 +38,30 @@ interface SidebarProps {
   activeTab: NavTab;
   onSelectTab: (tab: NavTab) => void;
   user: IUser;
+  mobileOpen?: boolean;
+  onCloseMobile?: () => void;
 }
 
-const SidebarComponent: React.FC<SidebarProps> = ({ activeTab, onSelectTab, user }) => {
+const SidebarComponent: React.FC<SidebarProps> = ({
+  activeTab,
+  onSelectTab,
+  user,
+  mobileOpen = false,
+  onCloseMobile,
+}) => {
   const isAgent = user.role === UserRole.COLLECTION_AGENT;
   const isDealer = user.role === UserRole.DEALER;
+
+  React.useEffect(() => {
+    if (!mobileOpen || !onCloseMobile) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onCloseMobile();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [mobileOpen, onCloseMobile]);
 
   const dealerAllowedTabs: NavTab[] = [
     'dashboard',
@@ -112,20 +131,29 @@ const SidebarComponent: React.FC<SidebarProps> = ({ activeTab, onSelectTab, user
   ];
 
   return (
-    <aside
-      style={{
-        width: 240,
-        height: '100%',
-        background: '#ffffff',
-        borderRight: '1px solid var(--border-subtle)',
-        display: 'flex',
-        flexDirection: 'column',
-        padding: '16px 12px',
-        flexShrink: 0,
-        overflow: 'hidden',
-        boxSizing: 'border-box',
-      }}
-    >
+    <>
+      {mobileOpen && (
+        <div
+          className="crm-sidebar-overlay"
+          onClick={onCloseMobile}
+          aria-label="Close navigation overlay"
+        />
+      )}
+      <aside
+        className={`crm-sidebar ${mobileOpen ? 'open' : ''}`}
+        style={{
+          width: 240,
+          height: '100%',
+          background: '#ffffff',
+          borderRight: '1px solid var(--border-subtle)',
+          display: 'flex',
+          flexDirection: 'column',
+          padding: '16px 12px',
+          flexShrink: 0,
+          overflow: 'hidden',
+          boxSizing: 'border-box',
+        }}
+      >
       <div
         style={{
           padding: '0 10px 14px',
@@ -220,6 +248,7 @@ const SidebarComponent: React.FC<SidebarProps> = ({ activeTab, onSelectTab, user
         </div>
       </div>
     </aside>
+    </>
   );
 };
 

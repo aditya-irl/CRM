@@ -51,6 +51,7 @@ export const App: React.FC = () => {
 
   const [user, setUser] = useState<IUser | null>(ApiClient.getUser());
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [selectedDealerIdForCollections, setSelectedDealerIdForCollections] = useState<string | null>(null);
   const [selectedDealerIdForSettlements, setSelectedDealerIdForSettlements] = useState<string | null>(null);
   const [selectedDealerIdForPayables, setSelectedDealerIdForPayables] = useState<string | null>(null);
@@ -59,6 +60,16 @@ export const App: React.FC = () => {
   const [customersRefreshTrigger, setCustomersRefreshTrigger] = useState(0);
   const [focusedLoanParams, setFocusedLoanParams] = useState<{ statusTab?: any; loanId?: string; search?: string } | null>(null);
   const [focusedDealerId, setFocusedDealerId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleAuthExpired = () => {
+      setUser(null);
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('crm_auth_expired', handleAuthExpired);
+      return () => window.removeEventListener('crm_auth_expired', handleAuthExpired);
+    }
+  }, []);
 
   useEffect(() => {
     if (user) {
@@ -249,10 +260,20 @@ export const App: React.FC = () => {
         onLogout={handleLogout}
         onOpenAddCustomer={() => setShowAddCustomerWizard(true)}
         onNavigate={handleNotificationNavigate}
+        onToggleMobileMenu={() => setMobileMenuOpen((prev) => !prev)}
       />
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        <Sidebar activeTab={activeTab} onSelectTab={setActiveTab} user={user} />
-        <main style={{ flex: 1, padding: 24, overflowY: 'auto', background: 'var(--bg-app)' }}>
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
+        <Sidebar
+          activeTab={activeTab}
+          onSelectTab={(tab) => {
+            setActiveTab(tab);
+            setMobileMenuOpen(false);
+          }}
+          user={user}
+          mobileOpen={mobileMenuOpen}
+          onCloseMobile={() => setMobileMenuOpen(false)}
+        />
+        <main className="main-content-container" style={{ flex: 1, padding: 24, overflowY: 'auto', background: 'var(--bg-app)' }}>
           <Suspense fallback={<ViewFallback />}>
             {renderView()}
           </Suspense>
