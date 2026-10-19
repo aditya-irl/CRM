@@ -69,6 +69,66 @@ describe('Login Flow & Authentication Regression Tests', () => {
       const url = buildApiUrl('///auth///login');
       expect(url).toBe('/api/v1/auth/login');
     });
+
+    test('supports runtime window.__CRM_API_BASE_URL__ override for trusted onrender/vercel origins', () => {
+      (window as any).__CRM_API_BASE_URL__ = 'https://crm-api-staging.onrender.com/api/v1';
+      const url = buildApiUrl('/auth/login');
+      expect(url).toBe('https://crm-api-staging.onrender.com/api/v1/auth/login');
+      delete (window as any).__CRM_API_BASE_URL__;
+    });
+
+    test('rejects untrusted third-party origins in window.__CRM_API_BASE_URL__ and falls back to safe /api/v1', () => {
+      (window as any).__CRM_API_BASE_URL__ = 'https://evil-exfiltration-site.com/api/v1';
+      const url = buildApiUrl('/auth/login');
+      expect(url).toBe('/api/v1/auth/login');
+      delete (window as any).__CRM_API_BASE_URL__;
+    });
+
+    test('rejects javascript: and protocol-relative schemes in runtime override', () => {
+      (window as any).__CRM_API_BASE_URL__ = 'javascript:alert(1)';
+      expect(buildApiUrl('/auth/login')).toBe('/api/v1/auth/login');
+
+      (window as any).__CRM_API_BASE_URL__ = '//evil.com/api/v1';
+      expect(buildApiUrl('/auth/login')).toBe('/api/v1/auth/login');
+      delete (window as any).__CRM_API_BASE_URL__;
+    });
+  });
+
+  describe('ApiClient HTTP 405 Method Not Allowed Handling', () => {
+    test('rejects with informative diagnostic error when API returns 405 with non-JSON body (e.g. Vercel SPA fallback)', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 405,
+        headers: new Headers({ 'content-type': 'text/html' }),
+        json: async () => {
+          throw new SyntaxError('Unexpected token < in JSON at position 0');
+        },
+      } as any);
+
+      await expect(ApiClient.login('admin@financecrm.com', 'AdminPass123!')).rejects.toThrow(
+        'API request rejected with HTTP 405 Method Not Allowed. The frontend is requesting its own static host instead of the backend API server. Please ensure VITE_API_BASE_URL is configured for this environment.'
+      );
+    });
+
+    test('rejects with informative diagnostic error and statusCode 405 when API returns 405 with JSON body', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 405,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({
+          success: false,
+          error: { message: 'Method Not Allowed' },
+        }),
+      } as any);
+
+      try {
+        await ApiClient.login('admin@financecrm.com', 'AdminPass123!');
+        fail('Expected login to throw');
+      } catch (err: any) {
+        expect(err.message).toContain('HTTP 405 Method Not Allowed');
+        expect(err.statusCode).toBe(405);
+      }
+    });
   });
 
   describe('ApiClient 401 Handling — Login vs Protected Endpoints', () => {

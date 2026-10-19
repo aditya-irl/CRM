@@ -34,10 +34,45 @@ import {
   INotification,
 } from '@crm/shared';
 
+export function isValidTrustedApiBase(rawUrl: string): boolean {
+  if (typeof rawUrl !== 'string' || !rawUrl.trim()) return false;
+  const trimmed = rawUrl.trim();
+  // Allow relative paths (e.g. '/api/v1')
+  if (trimmed.startsWith('/') && !trimmed.startsWith('//')) return true;
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+
+    const hostname = parsed.hostname.toLowerCase();
+    // 1. Localhost and loopback
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '0.0.0.0') {
+      return true;
+    }
+    // 2. Same origin
+    if (typeof window !== 'undefined' && window.location && parsed.origin === window.location.origin) {
+      return true;
+    }
+    // 3. Official cloud CRM backend infrastructures (Render and Vercel domains)
+    if (parsed.protocol === 'https:' && (hostname.endsWith('.onrender.com') || hostname.endsWith('.vercel.app'))) {
+      return true;
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 export function buildApiUrl(endpoint: string = ''): string {
   let base = (import.meta as any).env?.VITE_API_BASE_URL;
   if (!base || base === 'undefined' || base === 'null' || typeof base !== 'string') {
-    base = '/api/v1';
+    const runtimeOverride = typeof window !== 'undefined' ? (window as any).__CRM_API_BASE_URL__ : undefined;
+    if (runtimeOverride && isValidTrustedApiBase(runtimeOverride)) {
+      base = runtimeOverride;
+    } else {
+      base = '/api/v1';
+    }
   }
   // Trim spaces and trailing slashes
   base = base.trim().replace(/\/+$/, '');
@@ -426,6 +461,15 @@ export class ApiClient {
         }
         throw new Error('Session expired. Please log in again.');
       }
+
+      if (res.status === 405) {
+        const error = new Error(
+          'API request rejected with HTTP 405 Method Not Allowed. The frontend is requesting its own static host instead of the backend API server. Please ensure VITE_API_BASE_URL is configured for this environment.'
+        );
+        (error as any).statusCode = 405;
+        throw error;
+      }
+
       throw new Error(
         `Unable to reach the API server (HTTP ${res.status}). Please ensure the backend is running and try again.`
       );
@@ -461,6 +505,14 @@ export class ApiClient {
         window.dispatchEvent(new Event('crm_auth_expired'));
       }
       throw new Error('Session expired. Please log in again.');
+    }
+
+    if (res.status === 405) {
+      const error = new Error(
+        'API request rejected with HTTP 405 Method Not Allowed. The frontend is requesting its own static host instead of the backend API server. Please ensure VITE_API_BASE_URL is configured for this environment.'
+      );
+      (error as any).statusCode = 405;
+      throw error;
     }
 
     if (res.status === 413) {
