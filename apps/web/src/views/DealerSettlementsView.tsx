@@ -126,6 +126,13 @@ export const DealerSettlementsView: React.FC<DealerSettlementsViewProps> = ({
   const [submittingReversal, setSubmittingReversal] = useState(false);
   const [reversalError, setReversalError] = useState<string | null>(null);
 
+  // Rejection Modal
+  const [rejectingSettlement, setRejectingSettlement] = useState<IDealerSettlement | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [submittingReject, setSubmittingReject] = useState(false);
+  const [rejectError, setRejectError] = useState<string | null>(null);
+  const [approvingSettlementId, setApprovingSettlementId] = useState<string | null>(null);
+
   // Load Dealers List
   useEffect(() => {
     if (!isDealer) {
@@ -329,22 +336,79 @@ export const DealerSettlementsView: React.FC<DealerSettlementsViewProps> = ({
 
     setSubmittingSettlement(true);
     try {
-      await ApiClient.createDealerSettlement({
-        dealerId: modalDealerId,
-        amount: amountNum,
-        settlementDate: modalDate,
-        paymentMethod: modalPaymentMethod,
-        referenceNumber: modalReference.trim() || undefined,
-        notes: modalNotes.trim() || undefined,
-      });
+      if (isDealer) {
+        await ApiClient.requestDealerSettlement({
+          dealerId: modalDealerId,
+          amount: amountNum,
+          settlementDate: modalDate,
+          paymentMethod: modalPaymentMethod,
+          referenceNumber: modalReference.trim() || undefined,
+          notes: modalNotes.trim() || undefined,
+        });
+        alert('Settlement request submitted successfully and is awaiting administrator approval.');
+      } else {
+        await ApiClient.createDealerSettlement({
+          dealerId: modalDealerId,
+          amount: amountNum,
+          settlementDate: modalDate,
+          paymentMethod: modalPaymentMethod,
+          referenceNumber: modalReference.trim() || undefined,
+          notes: modalNotes.trim() || undefined,
+        });
+        alert('Settlement successfully recorded and reconciled.');
+      }
 
-      alert('Settlement successfully recorded and reconciled.');
       setShowRecordModal(false);
       await fetchData();
     } catch (err: any) {
       setModalError(err.message || 'Failed to record settlement.');
     } finally {
       setSubmittingSettlement(false);
+    }
+  };
+
+  // Approve Settlement (Admin)
+  const handleApproveSettlement = async (settlementId: string) => {
+    if (!window.confirm('Are you sure you want to approve and process this settlement? This will allocate unsettled collections and mark the settlement completed.')) {
+      return;
+    }
+    setApprovingSettlementId(settlementId);
+    try {
+      await ApiClient.approveDealerSettlement(settlementId);
+      alert('Settlement approved and processed successfully.');
+      await fetchData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to approve settlement.');
+    } finally {
+      setApprovingSettlementId(null);
+    }
+  };
+
+  // Open Reject Modal (Admin)
+  const handleOpenRejectModal = (settlement: IDealerSettlement) => {
+    setRejectingSettlement(settlement);
+    setRejectReason('');
+    setRejectError(null);
+  };
+
+  // Submit Rejection (Admin)
+  const handleSubmitReject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rejectingSettlement) return;
+    if (!rejectReason.trim() || rejectReason.trim().length < 3) {
+      setRejectError('Rejection reason is required (minimum 3 characters).');
+      return;
+    }
+    setSubmittingReject(true);
+    try {
+      await ApiClient.rejectDealerSettlement(rejectingSettlement.id, rejectReason.trim());
+      alert('Settlement request rejected.');
+      setRejectingSettlement(null);
+      await fetchData();
+    } catch (err: any) {
+      setRejectError(err.message || 'Failed to reject settlement.');
+    } finally {
+      setSubmittingReject(false);
     }
   };
 
@@ -880,7 +944,7 @@ export const DealerSettlementsView: React.FC<DealerSettlementsViewProps> = ({
 
               <select
                 className="form-input"
-                style={{ width: 160 }}
+                style={{ width: 175 }}
                 value={statusFilter}
                 onChange={(e) => {
                   setStatusFilter(e.target.value);
@@ -888,7 +952,9 @@ export const DealerSettlementsView: React.FC<DealerSettlementsViewProps> = ({
                 }}
               >
                 <option value="ALL">All Statuses</option>
+                <option value="PENDING_APPROVAL">Pending Approval</option>
                 <option value="COMPLETED">Completed</option>
+                <option value="REJECTED">Rejected</option>
                 <option value="REVERSED">Reversed</option>
               </select>
 
@@ -939,7 +1005,9 @@ export const DealerSettlementsView: React.FC<DealerSettlementsViewProps> = ({
                   </tr>
                 ) : (
                   settlements.map((settlement) => {
+                    const isPending = settlement.status === SettlementStatus.PENDING_APPROVAL;
                     const isCompleted = settlement.status === SettlementStatus.COMPLETED;
+                    const isRejected = settlement.status === SettlementStatus.REJECTED;
                     const isReversed = settlement.status === SettlementStatus.REVERSED;
                     return (
                       <tr key={settlement.id} style={{ opacity: isReversed ? 0.7 : 1 }}>
@@ -962,7 +1030,7 @@ export const DealerSettlementsView: React.FC<DealerSettlementsViewProps> = ({
                             className="mono font-bold"
                             style={{
                               textDecoration: isReversed ? 'line-through' : 'none',
-                              color: isReversed ? 'var(--text-muted)' : 'var(--success)',
+                              color: isReversed ? 'var(--text-muted)' : isPending ? 'var(--warning-text, #d97706)' : 'var(--success)',
                             }}
                           >
                             {formatINR(settlement.amount)}
@@ -977,17 +1045,25 @@ export const DealerSettlementsView: React.FC<DealerSettlementsViewProps> = ({
                           </span>
                         </td>
                         <td>
-                          <span className={`badge ${isCompleted ? 'badge-paid' : 'badge-overdue'}`}>
-                            {settlement.status}
-                          </span>
+                          {isPending ? (
+                            <span className="badge badge-warning" style={{ background: 'rgba(245, 158, 11, 0.12)', color: 'var(--warning-text, #d97706)', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+                              Pending Approval
+                            </span>
+                          ) : isRejected ? (
+                            <span className="badge badge-danger">Rejected</span>
+                          ) : isCompleted ? (
+                            <span className="badge badge-paid">Completed</span>
+                          ) : (
+                            <span className="badge badge-overdue">{settlement.status}</span>
+                          )}
                         </td>
                         <td>
                           <span className="badge badge-secondary" style={{ fontSize: 11 }}>
-                            {settlement.allocationsCount} receipt(s)
+                            {settlement.allocationsCount || 0} receipt(s)
                           </span>
                         </td>
                         <td style={{ textAlign: 'right' }}>
-                          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
                             <button
                               onClick={() => handleOpenDetail(settlement.id)}
                               className="btn btn-secondary btn-sm"
@@ -996,6 +1072,29 @@ export const DealerSettlementsView: React.FC<DealerSettlementsViewProps> = ({
                               <ExternalLink size={12} />
                               <span>View</span>
                             </button>
+                            {canManageSettlements && isPending && (
+                              <>
+                                <button
+                                  onClick={() => handleApproveSettlement(settlement.id)}
+                                  disabled={approvingSettlementId === settlement.id}
+                                  className="btn btn-success btn-sm"
+                                  style={{ background: 'var(--success)', color: '#fff', border: 'none' }}
+                                  title="Approve & Process Settlement"
+                                >
+                                  <Check size={12} />
+                                  <span>{approvingSettlementId === settlement.id ? 'Approving...' : 'Approve'}</span>
+                                </button>
+                                <button
+                                  onClick={() => handleOpenRejectModal(settlement)}
+                                  className="btn btn-secondary btn-sm"
+                                  style={{ color: 'var(--danger-text)' }}
+                                  title="Reject Settlement Request"
+                                >
+                                  <XCircle size={12} />
+                                  <span>Reject</span>
+                                </button>
+                              </>
+                            )}
                             {canManageSettlements && isCompleted && (
                               <button
                                 onClick={() => {
@@ -1398,6 +1497,80 @@ export const DealerSettlementsView: React.FC<DealerSettlementsViewProps> = ({
                   disabled={submittingReversal}
                 >
                   {submittingReversal ? 'Reversing...' : 'Confirm Reversal'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* REJECTION MODAL */}
+      {rejectingSettlement && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.45)',
+            backdropFilter: 'blur(3px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: 16,
+          }}
+        >
+          <div className="crm-card" style={{ width: '100%', maxWidth: 460 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <h3 style={{ fontSize: 16, fontWeight: 700 }}>Reject Settlement Request</h3>
+              <button
+                onClick={() => setRejectingSettlement(null)}
+                className="btn btn-secondary btn-sm"
+                style={{ border: 'none' }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {rejectError && (
+              <div style={{ background: '#fef2f2', border: '1px solid #fee2e2', color: '#b91c1c', padding: '8px 12px', borderRadius: 'var(--radius-sm)', fontSize: 12, marginBottom: 12 }}>
+                {rejectError}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmitReject} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                Are you sure you want to reject settlement request <strong className="mono">{rejectingSettlement.settlementNumber}</strong> ({formatINR(rejectingSettlement.amount)}) submitted by <strong>{rejectingSettlement.dealerStoreName}</strong>?
+              </p>
+
+              <div>
+                <label className="form-label" style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                  Reason for Rejection *
+                </label>
+                <textarea
+                  className="form-input"
+                  style={{ width: '100%', minHeight: 60 }}
+                  placeholder="State the reason for rejecting this settlement request"
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => setRejectingSettlement(null)}
+                  className="btn btn-secondary"
+                  disabled={submittingReject}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-danger"
+                  disabled={submittingReject}
+                >
+                  {submittingReject ? 'Rejecting...' : 'Confirm Rejection'}
                 </button>
               </div>
             </form>

@@ -359,6 +359,16 @@ export const kycConfirmSchema = z.object({
   fileSizeBytes: z.number().int().positive(),
 });
 
+export const kycDirectUploadSchema = z.object({
+  customerId: z.string().uuid('Invalid customer ID'),
+  docType: z.nativeEnum(KYCType),
+  docNumber: z.string().max(100).optional().nullable(),
+  fileName: z.string().min(1, 'File name is required').max(255),
+  mimeType: z.string().regex(/^(image\/(jpeg|png|webp)|application\/pdf)$/, 'Only JPEG, PNG, WEBP, or PDF files are permitted'),
+  fileBase64: z.string().min(1, 'File content is required'),
+});
+export type KYCDirectUploadInput = z.infer<typeof kycDirectUploadSchema>;
+
 export const dealerCollectionsFilterSchema = z.object({
   dealerId: z.string().uuid('Invalid dealer ID').optional(),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Start date must be YYYY-MM-DD').optional(),

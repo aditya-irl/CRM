@@ -81,6 +81,31 @@ router.get(
 );
 
 /**
+ * GET /api/v1/dealer-payables/:id
+ * GET /api/v1/dealer-payables/payments/:id
+ * Retrieve single company payout details with allocated loans.
+ */
+router.get(
+  ['/:id', '/payments/:id'],
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER, UserRole.DEALER),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await DealerPayablesService.getDealerPayablePaymentById(
+        req.params.id,
+        req.user!
+      );
+      return res.json({
+        success: true,
+        data: result,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
  * POST /api/v1/dealer-payables
  * POST /api/v1/dealer-payables/payments
  * Record a company payment made to a dealer for eligible financed products.

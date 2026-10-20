@@ -14,6 +14,7 @@ import {
   ALLOWED_MONTHLY_INTEREST_RATES,
   parseDisplayDateToISO,
   getBusinessDateStr,
+  generateAmortizationSchedule,
 } from '@crm/shared';
 import {
   Plus,
@@ -58,7 +59,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
   const [search, setSearch] = useState(initialSearch || '');
 
   // Portfolio Filtering & Approval Queue States
-  const [activeStatusTab, setActiveStatusTab] = useState<'ALL' | 'PENDING_APPROVAL' | 'APPROVED' | 'ACTIVE' | 'CLOSED' | 'REJECTED'>(
+  const [activeStatusTab, setActiveStatusTab] = useState<'ALL' | 'PENDING_APPROVAL' | 'APPROVED' | 'ACTIVE' | 'CLOSED' | 'REJECTED' | 'TERMS'>(
     initialStatusTab || (focusLoanId ? 'PENDING_APPROVAL' : 'ALL')
   );
   const [pendingApprovalsList, setPendingApprovalsList] = useState<any[]>([]);
@@ -66,6 +67,33 @@ export const LoansView: React.FC<LoansViewProps> = ({
   const [rejectionReason, setRejectionReason] = useState<string>('');
   const [submittingDecision, setSubmittingDecision] = useState(false);
   const [decisionError, setDecisionError] = useState<string | null>(null);
+
+  // Loan & EMI Terms Simulator State
+  const [simPrincipal, setSimPrincipal] = useState<number>(30000);
+  const [simDownPayment, setSimDownPayment] = useState<number>(0);
+  const [simRate, setSimRate] = useState<number>(4);
+  const [simTenure, setSimTenure] = useState<number>(6);
+  const [simSchedule, setSimSchedule] = useState<any | null>(null);
+
+  useEffect(() => {
+    try {
+      const today = getBusinessDateStr();
+      const sched = generateAmortizationSchedule({
+        principalAmount: Math.max(1000, Number(simPrincipal) || 1000),
+        downPayment: Math.max(0, Number(simDownPayment) || 0),
+        annualInterestRate: Number(simRate) || 4,
+        monthlyInterestRate: Number(simRate) || 4,
+        tenureMonths: Math.max(1, Number(simTenure) || 6),
+        installmentFrequency: RepaymentFrequency.MONTHLY,
+        interestCalcMethod: InterestMethod.FLAT_RATE,
+        disbursementDate: today,
+        firstEmiDate: calculateNextDueDate(today, 1, RepaymentFrequency.MONTHLY),
+      });
+      setSimSchedule(sched);
+    } catch {
+      setSimSchedule(null);
+    }
+  }, [simPrincipal, simDownPayment, simRate, simTenure]);
 
   // Origination Modal State
   const [showOriginationModal, setShowOriginationModal] = useState(false);
@@ -658,11 +686,293 @@ export const LoansView: React.FC<LoansViewProps> = ({
         >
           Rejected ({loans.filter((l) => (l.status || (l as any).status) === 'REJECTED').length})
         </button>
+        {(currentUser?.role === UserRole.SUPER_ADMIN || currentUser?.role === UserRole.ADMIN) && (
+          <button
+            onClick={() => setActiveStatusTab('TERMS')}
+            className={`btn btn-sm ${activeStatusTab === 'TERMS' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}
+          >
+            <Calculator size={14} />
+            <span>Loan & EMI Terms</span>
+          </button>
+        )}
       </div>
 
-      {/* Loans Table */}
-      <div className="table-container">
-        {activeStatusTab === 'PENDING_APPROVAL' && currentUser?.role !== UserRole.DEALER ? (
+      {activeStatusTab === 'TERMS' ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24, marginTop: 12 }}>
+          {/* Executive Policy Notice */}
+          <div
+            style={{
+              background: 'var(--card-bg, #1e293b)',
+              border: '1px solid var(--border-subtle, #334155)',
+              borderRadius: 12,
+              padding: 24,
+              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+              <div style={{ padding: 10, background: 'rgba(59, 130, 246, 0.15)', borderRadius: 10, color: '#3b82f6' }}>
+                <Calculator size={24} />
+              </div>
+              <div>
+                <h3 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
+                  Platform Loan & EMI Financing Terms
+                </h3>
+                <p style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)' }}>
+                  Institutional financing policy, approved interest rate tiers, and mathematical amortization rules.
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16, marginTop: 16 }}>
+              <div style={{ background: 'var(--surface-secondary, #0f172a)', padding: 16, borderRadius: 8, border: '1px solid var(--border-subtle)' }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--primary)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Approved Interest Rates
+                </div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 4 }}>
+                  4% / 5% / 6% <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)' }}>per month</span>
+                </div>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: 0 }}>
+                  Flat simple interest calculated on net financed principal. Any unapproved rates (e.g. 1%, 2%, 3%, 7%+) are strictly rejected by the backend engine.
+                </p>
+              </div>
+
+              <div style={{ background: 'var(--surface-secondary, #0f172a)', padding: 16, borderRadius: 8, border: '1px solid var(--border-subtle)' }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#10b981', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Repayment Schedule
+                </div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 4 }}>
+                  Monthly Frequency
+                </div>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: 0 }}>
+                  Standard monthly installments. Due dates are aligned with month-end calendar arithmetic using safe calendar date clamping.
+                </p>
+              </div>
+
+              <div style={{ background: 'var(--surface-secondary, #0f172a)', padding: 16, borderRadius: 8, border: '1px solid var(--border-subtle)' }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#f59e0b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Calculation Precision
+                </div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 4 }}>
+                  Decimal.js Engine
+                </div>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: 0 }}>
+                  20-digit precision with Banker's Rounding (ROUND_HALF_EVEN). Final installment automatically adjusts any fractional cent discrepancies.
+                </p>
+              </div>
+
+              <div style={{ background: 'var(--surface-secondary, #0f172a)', padding: 16, borderRadius: 8, border: '1px solid var(--border-subtle)' }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#8b5cf6', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Historical Immutability
+                </div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 4 }}>
+                  Locked Schedules
+                </div>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: 0 }}>
+                  Historical loans and already disbursed schedules are strictly immutable. Legacy database column <code>annual_interest_rate</code> stores monthly rate directly.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Interactive Simulation & Amortization Preview */}
+          <div
+            style={{
+              background: 'var(--card-bg, #1e293b)',
+              border: '1px solid var(--border-subtle, #334155)',
+              borderRadius: 12,
+              padding: 24,
+            }}
+          >
+            <h4 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 16px 0', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Calculator size={18} color="var(--primary)" />
+              Institutional EMI Simulator & Terms Validator
+            </h4>
+
+            {/* Controls */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 24 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                  Total Principal / Retail Price (₹)
+                </label>
+                <input
+                  type="number"
+                  className="form-input"
+                  value={simPrincipal}
+                  min={1000}
+                  step={500}
+                  onChange={(e) => setSimPrincipal(Math.max(1000, Number(e.target.value) || 0))}
+                  style={{ width: '100%' }}
+                />
+                <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                  {[15000, 30000, 50000, 75000, 100000].map((amt) => (
+                    <button
+                      key={amt}
+                      type="button"
+                      className="btn btn-sm btn-secondary"
+                      style={{ fontSize: 11, padding: '2px 6px' }}
+                      onClick={() => setSimPrincipal(amt)}
+                    >
+                      ₹{(amt / 1000).toFixed(0)}k
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                  Down Payment (₹)
+                </label>
+                <input
+                  type="number"
+                  className="form-input"
+                  value={simDownPayment}
+                  min={0}
+                  max={Math.max(0, simPrincipal - 1000)}
+                  step={500}
+                  onChange={(e) => setSimDownPayment(Math.max(0, Number(e.target.value) || 0))}
+                  style={{ width: '100%' }}
+                />
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  Net Financed: {formatINR(Math.max(0, simPrincipal - simDownPayment))}
+                </span>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                  Monthly Flat Rate (Policy Approved)
+                </label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {[4, 5, 6].map((rate) => (
+                    <button
+                      key={rate}
+                      type="button"
+                      onClick={() => setSimRate(rate)}
+                      className={`btn btn-sm ${simRate === rate ? 'btn-primary' : 'btn-secondary'}`}
+                      style={{ flex: 1, fontWeight: simRate === rate ? 700 : 500 }}
+                    >
+                      {rate}% / mo
+                    </button>
+                  ))}
+                </div>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginTop: 4 }}>
+                  Flat rate calculated on net financed amount
+                </span>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                  Tenure (Months)
+                </label>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {[3, 6, 9, 12, 18, 24].map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setSimTenure(t)}
+                      className={`btn btn-sm ${simTenure === t ? 'btn-primary' : 'btn-secondary'}`}
+                      style={{ minWidth: 42, fontWeight: simTenure === t ? 700 : 500 }}
+                    >
+                      {t}M
+                    </button>
+                  ))}
+                </div>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginTop: 4 }}>
+                  {simTenure} monthly installments
+                </span>
+              </div>
+            </div>
+
+            {/* Real-time Summary Cards */}
+            {simSchedule && (
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                  gap: 12,
+                  marginBottom: 24,
+                  padding: 16,
+                  background: 'var(--surface-secondary, #0f172a)',
+                  borderRadius: 8,
+                  border: '1px solid var(--border-subtle)',
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Net Financed Principal</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', marginTop: 2 }}>
+                    {formatINR(simSchedule.netDisbursedAmount)}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Monthly Interest ({simSchedule.monthlyInterestRate}%)</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--warning-text)', marginTop: 2 }}>
+                    {formatINR(simSchedule.totalInterest / simSchedule.tenureMonths)}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Total Interest ({simSchedule.tenureMonths} Mos)</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--warning-text)', marginTop: 2 }}>
+                    {formatINR(simSchedule.totalInterest)}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Total Payable</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--primary)', marginTop: 2 }}>
+                    {formatINR(simSchedule.totalPayable)}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Standard Monthly EMI</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--success-text)', marginTop: 2 }}>
+                    {formatINR(simSchedule.emiAmount)}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Generated Amortization Schedule Table */}
+            {simSchedule && simSchedule.schedule && (
+              <div className="table-container" style={{ maxHeight: 380, overflowY: 'auto' }}>
+                <table className="crm-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: 80 }}>Inst #</th>
+                      <th>Due Date</th>
+                      <th>Principal (₹)</th>
+                      <th>Interest (₹)</th>
+                      <th>Expected EMI (₹)</th>
+                      <th>Remaining Balance (₹)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {simSchedule.schedule.map((inst: any) => (
+                      <tr key={inst.installmentNumber}>
+                        <td className="mono font-semibold" style={{ color: 'var(--primary)' }}>
+                          #{inst.installmentNumber}
+                        </td>
+                        <td className="mono">{formatDateDDMMYYYY(inst.dueDate)}</td>
+                        <td className="mono">{formatINR(inst.principalComponent)}</td>
+                        <td className="mono" style={{ color: 'var(--warning-text)' }}>
+                          {formatINR(inst.interestComponent)}
+                        </td>
+                        <td className="mono font-bold" style={{ color: 'var(--text-primary)' }}>
+                          {formatINR(inst.expectedAmount)}
+                        </td>
+                        <td className="mono" style={{ color: 'var(--text-secondary)' }}>
+                          {formatINR(inst.remainingAmount)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* Loans Table */
+        <div className="table-container">
+          {activeStatusTab === 'PENDING_APPROVAL' && currentUser?.role !== UserRole.DEALER ? (
           <table className="crm-table">
             <thead>
               <tr>
@@ -934,6 +1244,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
           </table>
         )}
       </div>
+      )}
 
       {/* Modal 1: Loan Origination & Amortization Calculator */}
       {showOriginationModal && (

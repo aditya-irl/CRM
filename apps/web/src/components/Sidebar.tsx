@@ -67,7 +67,6 @@ const SidebarComponent: React.FC<SidebarProps> = ({
     'dashboard',
     'customers',
     'devices',
-    'loans',
     'dealer-payables',
     'dealer-collections',
     'dealer-settlements',
@@ -122,7 +121,7 @@ const SidebarComponent: React.FC<SidebarProps> = ({
     },
     {
       id: 'loans',
-      label: isDealer ? 'Store Loans & Approvals' : isAgent ? 'My Loans' : 'Loans & EMI Terms',
+      label: isAgent ? 'My Loans' : 'Loans & EMI Terms',
       icon: <CreditCard size={17} />,
     },
     { id: 'payments', label: 'Payments Ledger', icon: <Receipt size={17} />, hiddenForAgent: true },

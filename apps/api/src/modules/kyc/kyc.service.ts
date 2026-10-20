@@ -10,6 +10,28 @@ import { AuditService } from '../audit/audit.service';
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
+/**
+ * Validates magic bytes / binary file header signatures against declared MIME type
+ * to prevent disguised or malicious executable/script file uploads.
+ */
+function validateMagicBytes(buffer: Buffer, mimeType: string): boolean {
+  if (buffer.length < 3) return false;
+  const normMime = mimeType.toLowerCase().trim();
+  if (normMime === 'application/pdf') {
+    return buffer.length >= 4 && buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46;
+  }
+  if (normMime === 'image/jpeg' || normMime === 'image/jpg') {
+    return buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+  }
+  if (normMime === 'image/png') {
+    return buffer.length >= 4 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47;
+  }
+  if (normMime === 'image/webp') {
+    return buffer.length >= 4 && buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46;
+  }
+  return true;
+}
+
 export class KYCService {
   /**
    * Generate secure short-lived pre-signed upload URL (Clamped to <= 300s).
@@ -61,7 +83,7 @@ export class KYCService {
       const dealerAccess = await queryPostgres(
         `SELECT id FROM loans WHERE dealer_id = $1 AND customer_id = $2
          UNION
-         SELECT id FROM customers WHERE id = $2 AND created_by = $3`,
+         SELECT id FROM customers WHERE id = $2 AND (created_by = $3 OR created_by IN (SELECT id FROM users WHERE dealer_id = $1))`,
         [user.dealerId, customer.id, user.id]
       );
       if (dealerAccess.rows.length === 0) {
@@ -69,16 +91,23 @@ export class KYCService {
       }
     }
 
-    const fileExt = fileName.split('.').pop()?.toLowerCase() || 'bin';
+    const rawExt = fileName.split('.').pop()?.toLowerCase() || 'bin';
+    const fileExt = rawExt.replace(/[^a-z0-9]/g, '') || 'bin';
     const storageKey = `kyc/${customerId}/${uuidv4()}.${fileExt}`;
 
     const storage = getStorageProvider();
-    const uploadUrl = await storage.getSignedUrl({
-      key: storageKey,
-      expiresInSeconds: MAX_KYC_URL_EXPIRY_SECONDS,
-      operation: 'putObject',
-      mimeType,
-    });
+    let uploadUrl: string;
+    try {
+      uploadUrl = await storage.getSignedUrl({
+        key: storageKey,
+        expiresInSeconds: MAX_KYC_URL_EXPIRY_SECONDS,
+        operation: 'putObject',
+        mimeType,
+      });
+    } catch (storageErr: any) {
+      console.error(`[KYC Presigned Upload Storage Error] Storage getSignedUrl failed for key ${storageKey}:`, storageErr?.message || storageErr);
+      throw new AppError('Storage service temporarily unavailable. Please retry shortly.', 503, 'STORAGE_PROVIDER_ERROR');
+    }
 
     return {
       uploadUrl,
@@ -136,7 +165,7 @@ export class KYCService {
       const dealerAccess = await queryPostgres(
         `SELECT id FROM loans WHERE dealer_id = $1 AND customer_id = $2
          UNION
-         SELECT id FROM customers WHERE id = $2 AND created_by = $3`,
+         SELECT id FROM customers WHERE id = $2 AND (created_by = $3 OR created_by IN (SELECT id FROM users WHERE dealer_id = $1))`,
         [user.dealerId, data.customerId, user.id]
       );
       if (dealerAccess.rows.length === 0) {
@@ -240,6 +269,11 @@ export class KYCService {
       throw new ValidationError('File size must be greater than 0 and less than or equal to 10 MB.');
     }
 
+    // Binary file signature / magic bytes validation
+    if (!validateMagicBytes(data.fileBuffer, data.mimeType)) {
+      throw new ValidationError('File content does not match the declared MIME type.');
+    }
+
     const custRes = await queryPostgres(
       'SELECT id, area_route FROM customers WHERE id = $1 AND deleted_at IS NULL',
       [data.customerId]
@@ -268,7 +302,7 @@ export class KYCService {
       const dealerAccess = await queryPostgres(
         `SELECT id FROM loans WHERE dealer_id = $1 AND customer_id = $2
          UNION
-         SELECT id FROM customers WHERE id = $2 AND created_by = $3`,
+         SELECT id FROM customers WHERE id = $2 AND (created_by = $3 OR created_by IN (SELECT id FROM users WHERE dealer_id = $1))`,
         [user.dealerId, customer.id, user.id]
       );
       if (dealerAccess.rows.length === 0) {
@@ -276,16 +310,22 @@ export class KYCService {
       }
     }
 
-    const fileExt = data.fileName.split('.').pop()?.toLowerCase() || 'bin';
+    const rawExt = data.fileName.split('.').pop()?.toLowerCase() || 'bin';
+    const fileExt = rawExt.replace(/[^a-z0-9]/g, '') || 'bin';
     const storageKey = `kyc/${data.customerId}/${uuidv4()}.${fileExt}`;
 
     const storage = getStorageProvider();
-    await storage.upload({
-      key: storageKey,
-      body: data.fileBuffer,
-      mimeType: data.mimeType,
-      isPrivate: true,
-    });
+    try {
+      await storage.upload({
+        key: storageKey,
+        body: data.fileBuffer,
+        mimeType: data.mimeType,
+        isPrivate: true,
+      });
+    } catch (storageErr: any) {
+      console.error(`[KYC Direct Upload Storage Error] Upload failed for key ${storageKey}:`, storageErr?.message || storageErr);
+      throw new AppError('Storage service temporarily unavailable. Please retry upload shortly.', 503, 'STORAGE_PROVIDER_ERROR');
+    }
 
     const docId = uuidv4();
     let maskedNumber: string | null = null;
@@ -313,36 +353,46 @@ export class KYCService {
       RETURNING *
     `;
 
-    const result = await queryPostgres(sql, [
-      docId,
-      data.customerId,
-      data.docType,
-      maskedNumber,
-      numberHash,
-      storageKey,
-      data.mimeType,
-      fileSizeBytes,
-      user.id,
-    ]);
+    try {
+      const result = await queryPostgres(sql, [
+        docId,
+        data.customerId,
+        data.docType,
+        maskedNumber,
+        numberHash,
+        storageKey,
+        data.mimeType,
+        fileSizeBytes,
+        user.id,
+      ]);
 
-    const created = result.rows[0];
+      const created = result.rows[0];
 
-    await AuditService.log({
-      userId: user.id,
-      action: 'KYC_DOCUMENT_UPLOADED',
-      entity: 'KYCDocument',
-      entityId: docId,
-      newState: { customerId: data.customerId, docType: data.docType, maskedNumber },
-    });
+      await AuditService.log({
+        userId: user.id,
+        action: 'KYC_DOCUMENT_UPLOADED',
+        entity: 'KYCDocument',
+        entityId: docId,
+        newState: { customerId: data.customerId, docType: data.docType, maskedNumber },
+      });
 
-    return {
-      id: created.id,
-      customerId: created.customer_id,
-      docType: created.doc_type,
-      docNumberMasked: created.doc_number_masked,
-      status: created.status as KYCStatus,
-      createdAt: created.created_at,
-    };
+      return {
+        id: created.id,
+        customerId: created.customer_id,
+        docType: created.doc_type,
+        docNumberMasked: created.doc_number_masked,
+        status: created.status as KYCStatus,
+        createdAt: created.created_at,
+      };
+    } catch (dbErr: any) {
+      console.error(`[KYC Direct Upload DB Error] Database insert failed for docId ${docId}, cleaning up storage file:`, dbErr?.message || dbErr);
+      try {
+        await storage.delete(storageKey);
+      } catch (cleanupErr: any) {
+        console.error(`[KYC Direct Upload Cleanup Error] Failed to delete orphaned key ${storageKey}:`, cleanupErr?.message || cleanupErr);
+      }
+      throw dbErr;
+    }
   }
 
   /**
@@ -493,12 +543,18 @@ export class KYCService {
       );
     }
 
-    const downloadUrl = await storage.getSignedUrl({
-      key: doc.storage_key,
-      expiresInSeconds: MAX_KYC_URL_EXPIRY_SECONDS,
-      operation: 'getObject',
-      mimeType: doc.file_mime_type,
-    });
+    let downloadUrl: string;
+    try {
+      downloadUrl = await storage.getSignedUrl({
+        key: doc.storage_key,
+        expiresInSeconds: MAX_KYC_URL_EXPIRY_SECONDS,
+        operation: 'getObject',
+        mimeType: doc.file_mime_type,
+      });
+    } catch (storageErr: any) {
+      console.error(`[KYC Download Error] Failed to generate signed URL for key ${doc.storage_key}:`, storageErr?.message || storageErr);
+      throw new AppError('Storage service temporarily unavailable. Please retry shortly.', 503, 'STORAGE_PROVIDER_ERROR');
+    }
 
     await AuditService.log({
       userId: user.id,
@@ -566,7 +622,13 @@ export class KYCService {
       throw new AppError('Streaming not supported for active storage provider', 500);
     }
 
-    const streamResult = await storage.getStream(doc.storage_key);
+    let streamResult: any;
+    try {
+      streamResult = await storage.getStream(doc.storage_key);
+    } catch (storageErr: any) {
+      console.error(`[KYC Stream Error] Failed to get stream for key ${doc.storage_key}:`, storageErr?.message || storageErr);
+      throw new AppError('Storage service temporarily unavailable. Please retry shortly.', 503, 'STORAGE_PROVIDER_ERROR');
+    }
 
     await AuditService.log({
       userId: user.id,
@@ -680,16 +742,23 @@ export class KYCService {
     }
     const doc = docRes.rows[0];
 
-    const fileExt = data.fileName.split('.').pop()?.toLowerCase() || 'bin';
+    const rawExt = data.fileName.split('.').pop()?.toLowerCase() || 'bin';
+    const fileExt = rawExt.replace(/[^a-z0-9]/g, '') || 'bin';
     const newStorageKey = `kyc/${doc.customer_id}/${uuidv4()}.${fileExt}`;
 
     const storage = getStorageProvider();
-    const uploadUrl = await storage.getSignedUrl({
-      key: newStorageKey,
-      expiresInSeconds: MAX_KYC_URL_EXPIRY_SECONDS,
-      operation: 'putObject',
-      mimeType: data.mimeType,
-    });
+    let uploadUrl: string;
+    try {
+      uploadUrl = await storage.getSignedUrl({
+        key: newStorageKey,
+        expiresInSeconds: MAX_KYC_URL_EXPIRY_SECONDS,
+        operation: 'putObject',
+        mimeType: data.mimeType,
+      });
+    } catch (storageErr: any) {
+      console.error(`[KYC Reupload Storage Error] getSignedUrl failed for key ${newStorageKey}:`, storageErr?.message || storageErr);
+      throw new AppError('Storage service temporarily unavailable. Please retry shortly.', 503, 'STORAGE_PROVIDER_ERROR');
+    }
 
     return {
       uploadUrl,
@@ -729,7 +798,14 @@ export class KYCService {
     }
 
     const storage = getStorageProvider();
-    const newFileExists = await storage.exists(data.storageKey);
+    let newFileExists = false;
+    try {
+      newFileExists = await storage.exists(data.storageKey);
+    } catch (storageErr: any) {
+      console.error(`[KYC Replacement Confirm Error] storage.exists failed for key ${data.storageKey}:`, storageErr?.message || storageErr);
+      throw new AppError('Storage service temporarily unavailable. Please retry shortly.', 503, 'STORAGE_PROVIDER_ERROR');
+    }
+
     if (!newFileExists) {
       throw new ValidationError('Uploaded replacement file was not found in storage. Ensure file upload completed before confirming.');
     }

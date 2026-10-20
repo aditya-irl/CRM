@@ -134,7 +134,9 @@ export enum CollectionSource {
 
 export enum SettlementStatus {
   PENDING = 'PENDING',
+  PENDING_APPROVAL = 'PENDING_APPROVAL',
   COMPLETED = 'COMPLETED',
+  REJECTED = 'REJECTED',
   REVERSED = 'REVERSED',
 }
 

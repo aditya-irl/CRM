@@ -144,6 +144,10 @@ export class DealerSettlementsService {
         ds.is_reversal,
         ds.reversal_reason,
         ds.reversed_at,
+        ds.approved_by,
+        ds.approved_at,
+        ds.rejected_by,
+        ds.rejected_at,
         ds.created_by,
         ds.created_at,
         ds.updated_at,
@@ -152,10 +156,14 @@ export class DealerSettlementsService {
         d.owner_name,
         d.phone,
         u.full_name as created_by_name,
+        u_app.full_name as approved_by_name,
+        u_rej.full_name as rejected_by_name,
         (SELECT COUNT(*)::int FROM dealer_settlement_allocations WHERE settlement_id = ds.id) as allocations_count
       FROM dealer_settlements ds
       JOIN dealers d ON ds.dealer_id = d.id
       LEFT JOIN users u ON ds.created_by = u.id
+      LEFT JOIN users u_app ON ds.approved_by = u_app.id
+      LEFT JOIN users u_rej ON ds.rejected_by = u_rej.id
       ${whereSql}
       ORDER BY ds.created_at DESC
       LIMIT $${paramIndex++} OFFSET $${paramIndex++}
@@ -179,6 +187,12 @@ export class DealerSettlementsService {
       isReversal: Boolean(r.is_reversal),
       reversalReason: r.reversal_reason,
       reversedAt: r.reversed_at,
+      approvedBy: r.approved_by,
+      approvedByName: r.approved_by_name,
+      approvedAt: r.approved_at,
+      rejectedBy: r.rejected_by,
+      rejectedByName: r.rejected_by_name,
+      rejectedAt: r.rejected_at,
       createdBy: r.created_by,
       createdByName: r.created_by_name || 'System Admin',
       createdAt: r.created_at,
@@ -404,6 +418,10 @@ export class DealerSettlementsService {
         ds.is_reversal,
         ds.reversal_reason,
         ds.reversed_at,
+        ds.approved_by,
+        ds.approved_at,
+        ds.rejected_by,
+        ds.rejected_at,
         ds.created_by,
         ds.created_at,
         ds.updated_at,
@@ -411,10 +429,14 @@ export class DealerSettlementsService {
         d.dealer_code,
         d.owner_name,
         d.phone,
-        u.full_name as created_by_name
+        u.full_name as created_by_name,
+        u_app.full_name as approved_by_name,
+        u_rej.full_name as rejected_by_name
       FROM dealer_settlements ds
       JOIN dealers d ON ds.dealer_id = d.id
       LEFT JOIN users u ON ds.created_by = u.id
+      LEFT JOIN users u_app ON ds.approved_by = u_app.id
+      LEFT JOIN users u_rej ON ds.rejected_by = u_rej.id
       WHERE ds.id = $1
     `;
     const res = await queryPostgres(settlementSql, [id]);
@@ -480,6 +502,12 @@ export class DealerSettlementsService {
       isReversal: Boolean(r.is_reversal),
       reversalReason: r.reversal_reason,
       reversedAt: r.reversed_at,
+      approvedBy: r.approved_by,
+      approvedByName: r.approved_by_name,
+      approvedAt: r.approved_at,
+      rejectedBy: r.rejected_by,
+      rejectedByName: r.rejected_by_name,
+      rejectedAt: r.rejected_at,
       createdBy: r.created_by,
       createdByName: r.created_by_name || 'System Admin',
       createdAt: r.created_at,
@@ -491,6 +519,7 @@ export class DealerSettlementsService {
 
   /**
    * Create a dealer settlement with atomic row-locking, over-settlement prevention, and receipt allocations.
+   * If called by a dealer, automatically records as a pending approval request.
    */
   public static async createSettlement(
     payload: CreateDealerSettlementInput,
@@ -499,7 +528,7 @@ export class DealerSettlementsService {
     this.checkAccess(user);
 
     if (user.role === UserRole.DEALER) {
-      throw new ForbiddenError('Dealers cannot record settlements');
+      return this.requestSettlement(payload, user);
     }
 
     const settlementAmount = new Decimal(payload.amount);
@@ -724,6 +753,418 @@ export class DealerSettlementsService {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         allocationsCount: finalAllocations.length,
+      };
+    });
+  }
+
+  /**
+   * Dealer submits a settlement request for collected EMI amounts.
+   * Recorded with status 'PENDING_APPROVAL' and awaits administrator approval.
+   * Concurrency-safe, prevents exceeding available unsettled collections.
+   */
+  public static async requestSettlement(
+    payload: CreateDealerSettlementInput,
+    user: AuthenticatedUser
+  ): Promise<IDealerSettlement> {
+    this.checkAccess(user);
+
+    const dealerId = user.role === UserRole.DEALER ? user.dealerId! : payload.dealerId;
+    if (!dealerId) {
+      throw new BadRequestError('Dealer ID is required');
+    }
+
+    const settlementAmount = new Decimal(payload.amount);
+    if (settlementAmount.lessThanOrEqualTo(0)) {
+      throw new BadRequestError('Settlement amount must be greater than 0');
+    }
+
+    return await runPostgresTransaction(async (client) => {
+      // 1. Lock dealer row
+      const dealerRes = await client.query(
+        `SELECT id, store_name, dealer_code, status FROM dealers WHERE id = $1 FOR UPDATE`,
+        [dealerId]
+      );
+      if (dealerRes.rows.length === 0) {
+        throw new NotFoundError('Partner store not found');
+      }
+      const dealer = dealerRes.rows[0];
+
+      // 2. Calculate total active collections for this dealer
+      const colRes = await client.query(
+        `SELECT COALESCE(SUM(amount), 0)::numeric as total_collections
+         FROM payments
+         WHERE dealer_id = $1
+           AND collection_source = 'DEALER'
+           AND status = 'SUCCESS'
+           AND is_reversal = FALSE`,
+        [dealerId]
+      );
+      const totalCollections = new Decimal(colRes.rows[0]?.total_collections || 0);
+
+      // 3. Calculate total settled or pending approval settlements for this dealer
+      const setRes = await client.query(
+        `SELECT COALESCE(SUM(amount), 0)::numeric as total_settled
+         FROM dealer_settlements
+         WHERE dealer_id = $1 AND status IN ('COMPLETED', 'PENDING_APPROVAL')`,
+        [dealerId]
+      );
+      const totalSettled = new Decimal(setRes.rows[0]?.total_settled || 0);
+
+      // 4. Over-settlement validation
+      const availableUnsettled = totalCollections.minus(totalSettled);
+      if (settlementAmount.greaterThan(availableUnsettled)) {
+        throw new BadRequestError(
+          `Requested settlement amount (₹${settlementAmount.toFixed(2)}) exceeds available unsettled dealer collections (₹${availableUnsettled.toFixed(2)})`
+        );
+      }
+
+      // 5. Generate sequential settlement number (STL-YYYY-XXXXXX)
+      const currentYear = new Date(payload.settlementDate || Date.now()).getFullYear();
+      try {
+        await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`dealer_settlement_seq_${currentYear}`]);
+      } catch {}
+
+      const seqRes = await client.query(
+        `SELECT COALESCE(MAX(CAST(SPLIT_PART(settlement_number, '-', 3) AS INTEGER)), 1000) as max_seq
+         FROM dealer_settlements
+         WHERE settlement_number LIKE $1`,
+        [`STL-${currentYear}-%`]
+      );
+      const nextSeq = (parseInt(seqRes.rows[0]?.max_seq || '1000', 10) + 1).toString().padStart(6, '0');
+      const settlementNumber = `STL-${currentYear}-${nextSeq}`;
+      const settlementId = uuidv4();
+
+      // 6. Insert pending approval settlement record
+      await client.query(
+        `INSERT INTO dealer_settlements (
+           id, settlement_number, dealer_id, amount, settlement_date, payment_method,
+           reference_number, notes, status, is_reversal, created_by, created_at, updated_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'PENDING_APPROVAL', FALSE, $9, NOW(), NOW())`,
+        [
+          settlementId,
+          settlementNumber,
+          dealerId,
+          settlementAmount.toNumber(),
+          payload.settlementDate,
+          payload.paymentMethod,
+          payload.referenceNumber || null,
+          payload.notes || null,
+          user.id,
+        ]
+      );
+
+      // 7. Notify Admins
+      const adminUsers = await client.query(
+        `SELECT id FROM users WHERE role IN ('SUPER_ADMIN', 'ADMIN') AND status = 'ACTIVE'`
+      );
+      for (const adm of adminUsers.rows) {
+        await client.query(
+          `INSERT INTO notifications (
+            id, recipient_user_id, channel, type, title, body, status, scheduled_for, metadata, created_at
+          ) VALUES ($1, $2, 'IN_APP', 'DEALER_APPROVAL_REQUIRED', $3, $4, 'PENDING', NOW(), $5, NOW())`,
+          [
+            uuidv4(),
+            adm.id,
+            'Partner Store Settlement Request Pending Approval',
+            `Store ${dealer.store_name} (${dealer.dealer_code}) requested settlement of ₹${settlementAmount.toFixed(2)} (${settlementNumber}).`,
+            JSON.stringify({
+              settlementId,
+              settlementNumber,
+              dealerId,
+              amount: settlementAmount.toNumber(),
+            }),
+          ]
+        );
+      }
+
+      // 8. Write Audit Log
+      await AuditService.logWithClient(client, {
+        userId: user.id,
+        action: 'DEALER_SETTLEMENT_REQUESTED',
+        entity: 'DealerSettlement',
+        entityId: settlementId,
+        newState: {
+          settlementNumber,
+          dealerId,
+          dealerStoreName: dealer.store_name,
+          amount: settlementAmount.toNumber(),
+          settlementDate: payload.settlementDate,
+          paymentMethod: payload.paymentMethod,
+          referenceNumber: payload.referenceNumber,
+          status: SettlementStatus.PENDING_APPROVAL,
+        },
+      });
+
+      return {
+        id: settlementId,
+        settlementNumber,
+        dealerId,
+        dealerStoreName: dealer.store_name,
+        dealerCode: dealer.dealer_code,
+        amount: settlementAmount.toNumber(),
+        settlementDate: payload.settlementDate,
+        paymentMethod: payload.paymentMethod as SettlementPaymentMethod,
+        referenceNumber: payload.referenceNumber || null,
+        notes: payload.notes || null,
+        status: SettlementStatus.PENDING_APPROVAL,
+        isReversal: false,
+        createdBy: user.id,
+        createdByName: user.fullName || 'Partner Store',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        allocationsCount: 0,
+        allocations: [],
+      };
+    });
+  }
+
+  /**
+   * Admin approves a pending dealer settlement request.
+   * Atomically locks collections, allocates oldest-first, updates status to COMPLETED, and logs audit.
+   */
+  public static async approveSettlement(
+    id: string,
+    user: AuthenticatedUser
+  ): Promise<IDealerSettlement> {
+    if (
+      user.role !== UserRole.SUPER_ADMIN &&
+      user.role !== UserRole.ADMIN &&
+      user.role !== UserRole.BRANCH_MANAGER
+    ) {
+      throw new ForbiddenError('Only authorized administrators can approve settlements');
+    }
+
+    return await runPostgresTransaction(async (client) => {
+      // 1. Lock settlement row
+      const setRes = await client.query(
+        `SELECT ds.*, d.store_name, d.dealer_code, d.owner_name, d.phone, u.full_name as created_by_name
+         FROM dealer_settlements ds
+         JOIN dealers d ON ds.dealer_id = d.id
+         LEFT JOIN users u ON ds.created_by = u.id
+         WHERE ds.id = $1
+         FOR UPDATE OF ds, d`,
+        [id]
+      );
+      if (setRes.rows.length === 0) {
+        throw new NotFoundError('Settlement record not found');
+      }
+      const settlement = setRes.rows[0];
+
+      // Idempotency: If already COMPLETED, return current state safely
+      if (settlement.status === 'COMPLETED') {
+        return this.getSettlementById(id, user);
+      }
+
+      if (settlement.status !== 'PENDING_APPROVAL') {
+        throw new AppError(`Cannot approve settlement with current status '${settlement.status}'`, 400);
+      }
+
+      const settlementAmount = new Decimal(settlement.amount);
+
+      // 2. Query and Lock eligible collection payments for this dealer
+      const eligiblePaymentsRes = await client.query(
+        `SELECT
+           p.id,
+           p.amount::numeric as amount_collected,
+           p.receipt_number,
+           p.payment_timestamp,
+           COALESCE((
+             SELECT SUM(dsa.amount_allocated)
+             FROM dealer_settlement_allocations dsa
+             JOIN dealer_settlements ds ON dsa.settlement_id = ds.id
+             WHERE dsa.payment_id = p.id AND ds.status = 'COMPLETED'
+           ), 0)::numeric as amount_settled
+         FROM payments p
+         WHERE p.dealer_id = $1
+           AND p.collection_source = 'DEALER'
+           AND p.status = 'SUCCESS'
+           AND p.is_reversal = FALSE
+         ORDER BY p.payment_timestamp ASC
+         FOR UPDATE OF p`,
+        [settlement.dealer_id]
+      );
+
+      const eligiblePayments = eligiblePaymentsRes.rows.map((p) => {
+        const col = new Decimal(p.amount_collected);
+        const set = new Decimal(p.amount_settled);
+        const rem = col.minus(set);
+        return {
+          id: p.id,
+          receiptNumber: p.receipt_number,
+          amountCollected: col,
+          amountSettled: set,
+          amountRemaining: rem,
+        };
+      }).filter((p) => p.amountRemaining.greaterThan(0));
+
+      // 3. Allocate oldest-first
+      const finalAllocations: Array<{ paymentId: string; amountAllocated: Decimal }> = [];
+      let remainingToAllocate = new Decimal(settlementAmount);
+
+      for (const ep of eligiblePayments) {
+        if (remainingToAllocate.isZero()) break;
+        const allocForThis = Decimal.min(remainingToAllocate, ep.amountRemaining);
+        finalAllocations.push({
+          paymentId: ep.id,
+          amountAllocated: allocForThis,
+        });
+        remainingToAllocate = remainingToAllocate.minus(allocForThis);
+      }
+
+      if (remainingToAllocate.greaterThan(0)) {
+        throw new BadRequestError('Failed to allocate full settlement amount across available collection receipts');
+      }
+
+      // 4. Insert allocations
+      for (const alloc of finalAllocations) {
+        const allocId = uuidv4();
+        await client.query(
+          `INSERT INTO dealer_settlement_allocations (
+             id, settlement_id, payment_id, amount_allocated, created_at
+           ) VALUES ($1, $2, $3, $4, NOW())`,
+          [allocId, id, alloc.paymentId, alloc.amountAllocated.toNumber()]
+        );
+      }
+
+      // 5. Update settlement row to COMPLETED
+      await client.query(
+        `UPDATE dealer_settlements
+         SET status = 'COMPLETED',
+             approved_by = $1,
+             approved_at = NOW(),
+             updated_at = NOW()
+         WHERE id = $2`,
+        [user.id, id]
+      );
+
+      // 6. Audit Log
+      await AuditService.logWithClient(client, {
+        userId: user.id,
+        action: 'DEALER_SETTLEMENT_APPROVED',
+        entity: 'DealerSettlement',
+        entityId: id,
+        previousState: { status: 'PENDING_APPROVAL' },
+        newState: {
+          status: 'COMPLETED',
+          approvedBy: user.id,
+          allocationsCount: finalAllocations.length,
+        },
+      });
+
+      return {
+        id,
+        settlementNumber: settlement.settlement_number,
+        dealerId: settlement.dealer_id,
+        dealerStoreName: settlement.store_name,
+        dealerCode: settlement.dealer_code,
+        amount: settlementAmount.toNumber(),
+        settlementDate: settlement.settlement_date ? new Date(settlement.settlement_date).toISOString().slice(0, 10) : '',
+        paymentMethod: settlement.payment_method as SettlementPaymentMethod,
+        referenceNumber: settlement.reference_number || null,
+        notes: settlement.notes || null,
+        status: SettlementStatus.COMPLETED,
+        isReversal: false,
+        approvedBy: user.id,
+        approvedByName: user.fullName || 'Admin',
+        approvedAt: new Date().toISOString(),
+        createdBy: settlement.created_by,
+        createdByName: settlement.created_by_name || 'Partner Store',
+        createdAt: settlement.created_at,
+        updatedAt: new Date().toISOString(),
+        allocationsCount: finalAllocations.length,
+      };
+    });
+  }
+
+  /**
+   * Admin rejects a pending dealer settlement request with mandatory reason.
+   */
+  public static async rejectSettlement(
+    id: string,
+    reason: string,
+    user: AuthenticatedUser
+  ): Promise<IDealerSettlement> {
+    if (
+      user.role !== UserRole.SUPER_ADMIN &&
+      user.role !== UserRole.ADMIN &&
+      user.role !== UserRole.BRANCH_MANAGER
+    ) {
+      throw new ForbiddenError('Only authorized administrators can reject settlements');
+    }
+
+    if (!reason || !reason.trim() || reason.trim().length < 3) {
+      throw new BadRequestError('Rejection reason is required (minimum 3 characters)');
+    }
+
+    return await runPostgresTransaction(async (client) => {
+      const setRes = await client.query(
+        `SELECT ds.*, d.store_name, d.dealer_code, u.full_name as created_by_name
+         FROM dealer_settlements ds
+         JOIN dealers d ON ds.dealer_id = d.id
+         LEFT JOIN users u ON ds.created_by = u.id
+         WHERE ds.id = $1
+         FOR UPDATE OF ds, d`,
+        [id]
+      );
+      if (setRes.rows.length === 0) {
+        throw new NotFoundError('Settlement record not found');
+      }
+      const settlement = setRes.rows[0];
+
+      if (settlement.status === 'REJECTED') {
+        return this.getSettlementById(id, user);
+      }
+
+      if (settlement.status !== 'PENDING_APPROVAL') {
+        throw new AppError(`Cannot reject settlement with current status '${settlement.status}'`, 400);
+      }
+
+      await client.query(
+        `UPDATE dealer_settlements
+         SET status = 'REJECTED',
+             rejected_by = $1,
+             rejected_at = NOW(),
+             reversal_reason = $2,
+             updated_at = NOW()
+         WHERE id = $3`,
+        [user.id, reason.trim(), id]
+      );
+
+      await AuditService.logWithClient(client, {
+        userId: user.id,
+        action: 'DEALER_SETTLEMENT_REJECTED',
+        entity: 'DealerSettlement',
+        entityId: id,
+        previousState: { status: 'PENDING_APPROVAL' },
+        newState: {
+          status: 'REJECTED',
+          rejectedBy: user.id,
+          reason: reason.trim(),
+        },
+      });
+
+      return {
+        id,
+        settlementNumber: settlement.settlement_number,
+        dealerId: settlement.dealer_id,
+        dealerStoreName: settlement.store_name,
+        dealerCode: settlement.dealer_code,
+        amount: Number(settlement.amount),
+        settlementDate: settlement.settlement_date ? new Date(settlement.settlement_date).toISOString().slice(0, 10) : '',
+        paymentMethod: settlement.payment_method as SettlementPaymentMethod,
+        referenceNumber: settlement.reference_number || null,
+        notes: settlement.notes || null,
+        status: SettlementStatus.REJECTED,
+        isReversal: false,
+        reversalReason: reason.trim(),
+        rejectedBy: user.id,
+        rejectedByName: user.fullName || 'Admin',
+        rejectedAt: new Date().toISOString(),
+        createdBy: settlement.created_by,
+        createdByName: settlement.created_by_name || 'Partner Store',
+        createdAt: settlement.created_at,
+        updatedAt: new Date().toISOString(),
+        allocationsCount: 0,
       };
     });
   }

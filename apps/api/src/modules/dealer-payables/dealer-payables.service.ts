@@ -365,6 +365,114 @@ export class DealerPayablesService {
   }
 
   /**
+   * Retrieve single company payout details by ID with allocated loan details.
+   */
+  public static async getDealerPayablePaymentById(
+    id: string,
+    user: AuthenticatedUser
+  ): Promise<IDealerPayablePayment & { allocations: any[] }> {
+    this.checkAccess(user);
+
+    const sql = `
+      SELECT
+        dpp.id,
+        dpp.payout_number,
+        dpp.dealer_id,
+        dpp.amount::numeric,
+        dpp.payment_date,
+        dpp.payment_method,
+        dpp.reference_number,
+        dpp.notes,
+        dpp.status,
+        dpp.is_reversal,
+        dpp.reversal_reason,
+        dpp.reversed_at,
+        dpp.created_by,
+        dpp.created_at,
+        dpp.updated_at,
+        d.store_name as dealer_store_name,
+        d.dealer_code,
+        d.owner_name,
+        d.phone,
+        u.full_name as created_by_name
+      FROM dealer_payable_payments dpp
+      JOIN dealers d ON dpp.dealer_id = d.id
+      LEFT JOIN users u ON dpp.created_by = u.id
+      WHERE dpp.id = $1
+    `;
+
+    const res = await queryPostgres(sql, [id]);
+    if (res.rows.length === 0) {
+      throw new NotFoundError('Company payout record not found');
+    }
+    const r = res.rows[0];
+
+    // Dealer tenant isolation: dealer can only see their own store's payouts
+    if (user.role === UserRole.DEALER && r.dealer_id !== user.dealerId) {
+      throw new ForbiddenError('You do not have access to another dealer\'s company payment details');
+    }
+
+    // Fetch allocations with loan and customer details
+    const allocSql = `
+      SELECT
+        dpa.id,
+        dpa.payout_id,
+        dpa.loan_id,
+        dpa.amount_allocated::numeric,
+        dpa.created_at,
+        l.loan_account_no,
+        l.device_name,
+        l.device_brand,
+        l.device_model,
+        c.full_name as customer_name,
+        c.customer_code
+      FROM dealer_payable_allocations dpa
+      JOIN loans l ON dpa.loan_id = l.id
+      JOIN customers c ON l.customer_id = c.id
+      WHERE dpa.payout_id = $1
+      ORDER BY dpa.created_at ASC
+    `;
+    const allocRes = await queryPostgres(allocSql, [id]);
+
+    const allocations = allocRes.rows.map((a: any) => ({
+      id: a.id,
+      payoutId: a.payout_id,
+      loanId: a.loan_id,
+      amountAllocated: Number(a.amount_allocated),
+      loanAccountNo: a.loan_account_no,
+      deviceName: a.device_name || (a.device_brand && a.device_model ? `${a.device_brand} ${a.device_model}` : null),
+      customerName: a.customer_name,
+      customerCode: a.customer_code,
+      createdAt: a.created_at,
+    }));
+
+    return {
+      id: r.id,
+      payoutNumber: r.payout_number,
+      dealerId: r.dealer_id,
+      dealerStoreName: r.dealer_store_name,
+      dealerCode: r.dealer_code,
+      ownerName: r.owner_name,
+      phone: r.phone,
+      amount: Number(r.amount),
+      paymentDate: r.payment_date ? new Date(r.payment_date).toISOString().slice(0, 10) : '',
+      paymentMethod: r.payment_method,
+      referenceNumber: r.reference_number,
+      notes: r.notes,
+      status: r.status,
+      isReversal: Boolean(r.is_reversal),
+      reversalReason: r.reversal_reason,
+      reversedAt: r.reversed_at,
+      createdBy: r.created_by,
+      createdByName: r.created_by_name || 'Administrator',
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+      allocationsCount: allocations.length,
+      allocations,
+    };
+  }
+
+  /**
    * Record a company payment to a dealer for eligible financed products.
    * Transactional, concurrency-safe, overpayment prevention, audit logged.
    */

@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs';
 import { queryPostgres, runPostgresTransaction } from '../../database/postgres';
 import { db } from '../../database/db';
 import { DealerStatus, UserRole, UserStatus } from '@crm/shared';
-import { AppError, NotFoundError, ForbiddenError } from '../../middlewares/error.middleware';
+import { AppError, NotFoundError, ForbiddenError, BadRequestError } from '../../middlewares/error.middleware';
 import { AuthenticatedUser } from '../../middlewares/auth.middleware';
 import { AuditService } from '../audit/audit.service';
 
@@ -860,31 +860,40 @@ export class DealerService {
    * message advising deactivation instead.
    */
   public static async deleteDealer(id: string, currentUser: AuthenticatedUser) {
+    // Validate UUID format upfront to return 400 Bad Request instead of Postgres 22P02 500 error
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!id || !UUID_REGEX.test(id)) {
+      throw new BadRequestError('Invalid partner store identifier format');
+    }
+
     const dealerRes = await queryPostgres('SELECT * FROM dealers WHERE id = $1', [id]);
     if (dealerRes.rows.length === 0) {
       throw new NotFoundError('Dealer not found');
     }
     const dealer = dealerRes.rows[0];
 
-    // Check all linked financial and operational records
-    const [custRes, loansRes, paymentsRes, settlementsRes] = await Promise.all([
+    // Check all linked financial and operational records across loans, payments, settlements, and payables
+    const [custRes, loansRes, paymentsRes, settlementsRes, payablesRes] = await Promise.all([
       queryPostgres('SELECT COUNT(DISTINCT customer_id)::int as count FROM loans WHERE dealer_id = $1', [id]),
       queryPostgres('SELECT COUNT(*)::int as count FROM loans WHERE dealer_id = $1', [id]),
       queryPostgres('SELECT COUNT(*)::int as count FROM payments WHERE dealer_id = $1', [id]),
       queryPostgres('SELECT COUNT(*)::int as count FROM dealer_settlements WHERE dealer_id = $1', [id]),
+      queryPostgres('SELECT COUNT(*)::int as count FROM dealer_payable_payments WHERE dealer_id = $1', [id]),
     ]);
 
     const linkedCustomers = parseInt(custRes.rows[0]?.count || '0', 10);
     const linkedLoans = parseInt(loansRes.rows[0]?.count || '0', 10);
     const linkedPayments = parseInt(paymentsRes.rows[0]?.count || '0', 10);
     const linkedSettlements = parseInt(settlementsRes.rows[0]?.count || '0', 10);
+    const linkedPayables = parseInt(payablesRes.rows[0]?.count || '0', 10);
 
-    if (linkedCustomers > 0 || linkedLoans > 0 || linkedPayments > 0 || linkedSettlements > 0) {
+    if (linkedCustomers > 0 || linkedLoans > 0 || linkedPayments > 0 || linkedSettlements > 0 || linkedPayables > 0) {
       const reasons: string[] = [];
       if (linkedCustomers > 0) reasons.push(`${linkedCustomers} linked customer(s)`);
       if (linkedLoans > 0) reasons.push(`${linkedLoans} loan agreement(s)`);
       if (linkedPayments > 0) reasons.push(`${linkedPayments} payment record(s)`);
       if (linkedSettlements > 0) reasons.push(`${linkedSettlements} settlement(s)`);
+      if (linkedPayables > 0) reasons.push(`${linkedPayables} company payout(s)`);
 
       throw new AppError(
         `Cannot delete partner store "${dealer.store_name}" because active financial history exists (${reasons.join(', ')}). Please deactivate the store instead to preserve financial records and regulatory audit history.`,
@@ -892,9 +901,35 @@ export class DealerService {
       );
     }
 
-    // Safe to delete cleanly: remove user account if any and dealer record
+    // Safe to delete cleanly: zero financial dependencies.
+    // Break circular foreign key constraints (dealers.user_id <-> users.dealer_id)
     await runPostgresTransaction(async (client) => {
-      await client.query('DELETE FROM users WHERE dealer_id = $1', [id]);
+      // 1. Break foreign key from dealers -> users
+      await client.query('UPDATE dealers SET user_id = NULL WHERE id = $1', [id]);
+
+      // 2. Find any user accounts associated with this partner store
+      const userRes = await client.query('SELECT id FROM users WHERE dealer_id = $1', [id]);
+      const userIds = userRes.rows.map((r: { id: string }) => r.id);
+
+      for (const uid of userIds) {
+        // Disassociate user from dealer
+        await client.query('UPDATE users SET dealer_id = NULL WHERE id = $1', [uid]);
+
+        // Check if user has immutable audit trail records
+        const auditRes = await client.query('SELECT COUNT(*)::int as count FROM audit_logs WHERE user_id = $1', [uid]);
+        const auditCount = parseInt(auditRes.rows[0]?.count || '0', 10);
+
+        if (auditCount > 0) {
+          // Preserve user for regulatory audit compliance, but permanently deactivate and decouple
+          await client.query("UPDATE users SET status = 'INACTIVE' WHERE id = $1", [uid]);
+        } else {
+          // Cleanly remove notifications and login user account
+          await client.query('DELETE FROM notifications WHERE recipient_user_id = $1', [uid]);
+          await client.query('DELETE FROM users WHERE id = $1', [uid]);
+        }
+      }
+
+      // 3. Delete dealer record
       await client.query('DELETE FROM dealers WHERE id = $1', [id]);
     });
 

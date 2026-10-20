@@ -5,7 +5,7 @@ import jwt from 'jsonwebtoken';
 import { KYCService } from './kyc.service';
 import { authenticate, requireRole, authenticateMediaView, JWT_SECRET } from '../../middlewares/auth.middleware';
 import { validateBody } from '../../middlewares/validate.middleware';
-import { kycUploadInitSchema, kycConfirmSchema, UserRole } from '@crm/shared';
+import { kycUploadInitSchema, kycConfirmSchema, kycDirectUploadSchema, UserRole } from '@crm/shared';
 
 const router = Router();
 
@@ -204,15 +204,10 @@ router.post(
 // Direct authenticated KYC upload endpoint (bypasses browser CORS issues with third-party S3 buckets)
 router.post(
   '/direct-upload',
+  validateBody(kycDirectUploadSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { customerId, docType, docNumber, fileName, mimeType, fileBase64 } = req.body;
-      if (!customerId || !docType || !fileName || !fileBase64) {
-        return res.status(400).json({
-          success: false,
-          error: { code: 'BAD_REQUEST', message: 'Missing required upload parameters (customerId, docType, fileName, fileBase64)' },
-        });
-      }
       const fileBuffer = Buffer.from(fileBase64, 'base64');
       const result = await KYCService.directUploadKYCDocument(
         {
@@ -220,7 +215,7 @@ router.post(
           docType,
           docNumber: docNumber || null,
           fileName,
-          mimeType: mimeType || 'application/octet-stream',
+          mimeType,
           fileBuffer,
         },
         req.user!

@@ -1331,6 +1331,34 @@ export class ApiClient {
     });
   }
 
+  public static async requestDealerSettlement(data: {
+    dealerId: string;
+    amount: number;
+    settlementDate: string;
+    paymentMethod: string;
+    referenceNumber?: string | null;
+    notes?: string | null;
+  }) {
+    return this.request<IDealerSettlement>('/dealer-settlements/request', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  public static async approveDealerSettlement(id: string) {
+    return this.request<IDealerSettlement>(`/dealer-settlements/${id}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
+  public static async rejectDealerSettlement(id: string, reason: string) {
+    return this.request<IDealerSettlement>(`/dealer-settlements/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
   public static async reverseDealerSettlement(id: string, reason: string) {
     return this.request<IDealerSettlement>(`/dealer-settlements/${id}/reverse`, {
       method: 'POST',
@@ -1419,6 +1447,10 @@ export class ApiClient {
       method: 'POST',
       body: JSON.stringify({ reason }),
     });
+  }
+
+  public static async getDealerPayablePaymentDetail(id: string) {
+    return this.request<IDealerPayablePayment & { allocations: any[] }>(`/dealer-payables/${id}`);
   }
 
   // Trigger automated jobs

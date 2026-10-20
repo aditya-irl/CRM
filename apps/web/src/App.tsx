@@ -164,7 +164,7 @@ export const App: React.FC = () => {
     // If dealer attempts to access unauthorized admin view, redirect to store dashboard
     if (
       isDealer &&
-      !['dashboard', 'customers', 'devices', 'loans', 'dealer-payables', 'dealer-collections', 'dealer-settlements'].includes(activeTab)
+      !['dashboard', 'customers', 'devices', 'dealer-payables', 'dealer-collections', 'dealer-settlements'].includes(activeTab)
     ) {
       return <DealerDashboardView onNavigateToTab={(t) => setActiveTab(t as NavTab)} />;
     }

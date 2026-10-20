@@ -645,6 +645,12 @@ export interface IDealerSettlement {
   isReversal: boolean;
   reversalReason?: string | null;
   reversedAt?: string | null;
+  approvedBy?: string | null;
+  approvedByName?: string | null;
+  approvedAt?: string | null;
+  rejectedBy?: string | null;
+  rejectedByName?: string | null;
+  rejectedAt?: string | null;
   createdBy?: string | null;
   createdByName?: string | null;
   createdAt: string;

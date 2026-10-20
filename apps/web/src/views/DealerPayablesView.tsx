@@ -93,6 +93,22 @@ export const DealerPayablesView: React.FC<DealerPayablesViewProps> = ({
   const [submittingReversal, setSubmittingReversal] = useState(false);
   const [reversalError, setReversalError] = useState<string | null>(null);
 
+  // Payout Details Modal
+  const [viewingPayoutDetail, setViewingPayoutDetail] = useState<(IDealerPayablePayment & { allocations: any[] }) | null>(null);
+  const [loadingPayoutDetail, setLoadingPayoutDetail] = useState(false);
+
+  const handleOpenPayoutDetail = async (payoutId: string) => {
+    setLoadingPayoutDetail(true);
+    try {
+      const detail = await ApiClient.getDealerPayablePaymentDetail(payoutId);
+      setViewingPayoutDetail(detail);
+    } catch (err: any) {
+      alert(err.message || 'Failed to load company payout details');
+    } finally {
+      setLoadingPayoutDetail(false);
+    }
+  };
+
   // Load Dealers
   useEffect(() => {
     if (!isDealer) {
@@ -554,19 +570,19 @@ export const DealerPayablesView: React.FC<DealerPayablesViewProps> = ({
                   <th>UTR / Reference</th>
                   <th>Status</th>
                   <th>Recorded By</th>
-                  {canManagePayables && <th style={{ textAlign: 'right' }}>Actions</th>}
+                  <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={canManagePayables ? 9 : 8} style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>
+                    <td colSpan={9} style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>
                       Loading payout history...
                     </td>
                   </tr>
                 ) : payments.length === 0 ? (
                   <tr>
-                    <td colSpan={canManagePayables ? 9 : 8} style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>
+                    <td colSpan={9} style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>
                       No payout records found.
                     </td>
                   </tr>
@@ -610,9 +626,17 @@ export const DealerPayablesView: React.FC<DealerPayablesViewProps> = ({
                           </span>
                         </td>
                         <td style={{ fontSize: 12 }}>{p.createdByName || 'System'}</td>
-                        {canManagePayables && (
-                          <td style={{ textAlign: 'right' }}>
-                            {!isReversed && (
+                        <td style={{ textAlign: 'right' }}>
+                          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
+                            <button
+                              onClick={() => handleOpenPayoutDetail(p.id)}
+                              className="btn btn-secondary btn-sm"
+                              title="View Payout Allocations & Details"
+                            >
+                              <Eye size={12} style={{ marginRight: 4 }} />
+                              <span>View</span>
+                            </button>
+                            {canManagePayables && !isReversed && (
                               <button
                                 onClick={() => {
                                   setReversingPayment(p);
@@ -627,8 +651,8 @@ export const DealerPayablesView: React.FC<DealerPayablesViewProps> = ({
                                 <span>Reverse</span>
                               </button>
                             )}
-                          </td>
-                        )}
+                          </div>
+                        </td>
                       </tr>
                     );
                   })
@@ -954,6 +978,136 @@ export const DealerPayablesView: React.FC<DealerPayablesViewProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* PAYOUT DETAILS MODAL */}
+      {viewingPayoutDetail && (
+        <div className="crm-modal-overlay">
+          <div className="crm-modal" style={{ maxWidth: 700, width: '95%' }}>
+            <div className="crm-modal-header">
+              <div>
+                <h3 style={{ fontSize: 17, fontWeight: 700 }}>
+                  Company Payout Details — {viewingPayoutDetail.payoutNumber}
+                </h3>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                  Disbursement payout to partner store for financed mobile products.
+                </p>
+              </div>
+              <button onClick={() => setViewingPayoutDetail(null)} className="btn-icon">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="crm-modal-body" style={{ maxHeight: '70vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* Summary KPIs */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                  gap: 12,
+                  padding: 14,
+                  background: 'var(--bg-surface-secondary, rgba(255,255,255,0.03))',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--border-default)',
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Partner Store</div>
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>{viewingPayoutDetail.dealerStoreName}</div>
+                  <div className="mono" style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{viewingPayoutDetail.dealerCode}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Payout Amount</div>
+                  <div className="mono" style={{ fontWeight: 800, fontSize: 16, color: 'var(--success)' }}>
+                    {formatINR(viewingPayoutDetail.amount)}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Payment Date</div>
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>{formatDateDDMMYYYY(viewingPayoutDetail.paymentDate)}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Payment Mode</div>
+                  <div className="badge badge-route" style={{ marginTop: 2 }}>{viewingPayoutDetail.paymentMethod}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>UTR / Reference</div>
+                  <div className="mono font-semibold" style={{ fontSize: 12 }}>{viewingPayoutDetail.referenceNumber || '—'}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Status</div>
+                  <div className={`badge ${viewingPayoutDetail.status === 'COMPLETED' ? 'badge-paid' : 'badge-danger'}`} style={{ marginTop: 2 }}>
+                    {viewingPayoutDetail.status}
+                  </div>
+                </div>
+              </div>
+
+              {viewingPayoutDetail.notes && (
+                <div style={{ fontSize: 12, padding: '8px 12px', background: 'var(--bg-surface)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)' }}>
+                  <span style={{ fontWeight: 600, color: 'var(--text-muted)' }}>Notes: </span>
+                  <span>{viewingPayoutDetail.notes}</span>
+                </div>
+              )}
+
+              {viewingPayoutDetail.isReversal && (
+                <div className="crm-alert crm-alert-danger" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <AlertCircle size={16} />
+                  <span>Reversed on {formatDateDDMMYYYY(viewingPayoutDetail.reversedAt)}: {viewingPayoutDetail.reversalReason || 'No reason provided'}</span>
+                </div>
+              )}
+
+              {/* Allocated Loans Breakdown */}
+              <div>
+                <h4 style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>
+                  Allocated Financed Products ({viewingPayoutDetail.allocations?.length || 0})
+                </h4>
+                {viewingPayoutDetail.allocations?.length === 0 ? (
+                  <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                    No specific product allocations recorded for this payout.
+                  </div>
+                ) : (
+                  <div className="table-container">
+                    <table className="crm-table">
+                      <thead>
+                        <tr>
+                          <th>Loan Account</th>
+                          <th>Borrower</th>
+                          <th>Device / Model</th>
+                          <th style={{ textAlign: 'right' }}>Amount Allocated</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {viewingPayoutDetail.allocations?.map((alloc) => (
+                          <tr key={alloc.id}>
+                            <td className="mono font-bold" style={{ color: 'var(--primary)' }}>
+                              {alloc.loanAccountNo}
+                            </td>
+                            <td>
+                              <div style={{ fontWeight: 600 }}>{alloc.customerName}</div>
+                              {alloc.customerCode && <div className="mono" style={{ fontSize: 10, color: 'var(--text-muted)' }}>{alloc.customerCode}</div>}
+                            </td>
+                            <td>{alloc.deviceName || 'Financed Product'}</td>
+                            <td className="mono font-bold" style={{ textAlign: 'right', color: 'var(--success)' }}>
+                              {formatINR(alloc.amountAllocated)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="crm-modal-footer">
+              <button
+                type="button"
+                onClick={() => setViewingPayoutDetail(null)}
+                className="btn btn-secondary"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

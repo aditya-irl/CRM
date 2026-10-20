@@ -98,6 +98,19 @@ export function errorHandler(err: Error, req: Request, res: Response, _next: Nex
     });
   }
 
+  // Handle PostgreSQL syntax/format error (e.g., invalid UUID 22P02)
+  if ((err as any).code === '22P02') {
+    return res.status(400).json({
+      success: false,
+      error: {
+        code: 'BAD_REQUEST',
+        message: 'Invalid identifier format or syntax in request parameters',
+        traceId,
+      },
+      timestamp,
+    });
+  }
+
   console.error('[Unhandled Server Error]', err);
   const isProduction = process.env.NODE_ENV === 'production';
   return res.status(500).json({
