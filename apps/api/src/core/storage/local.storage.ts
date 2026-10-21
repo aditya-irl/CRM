@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import { StorageProvider, UploadParams, PresignedUrlParams, MAX_KYC_URL_EXPIRY_SECONDS } from './storage.provider';
+import { StorageProvider, UploadParams, PresignedUrlParams, MAX_KYC_URL_EXPIRY_SECONDS, StorageOptions } from './storage.provider';
 
 export class LocalStorageProvider implements StorageProvider {
   private baseDir: string;
@@ -144,7 +144,7 @@ export class LocalStorageProvider implements StorageProvider {
     return this.getSafePath(this.baseDir, key);
   }
 
-  public async upload(params: UploadParams): Promise<{ key: string; location?: string }> {
+  public async upload(params: UploadParams, _options?: StorageOptions): Promise<{ key: string; location?: string }> {
     const fullPath = this.getSafePath(this.baseDir, params.key);
     const parent = path.dirname(fullPath);
     if (!fs.existsSync(parent)) {
@@ -158,7 +158,7 @@ export class LocalStorageProvider implements StorageProvider {
     return { key: cleanKey, location: fullPath };
   }
 
-  public async delete(key: string): Promise<void> {
+  public async delete(key: string, _options?: StorageOptions): Promise<void> {
     const candidateDirs = this.getCandidateBaseDirs();
     for (const dir of candidateDirs) {
       const fullPath = this.getSafePath(dir, key);
@@ -185,7 +185,7 @@ export class LocalStorageProvider implements StorageProvider {
     return `/api/v1/kyc/local-vault?key=${encodeURIComponent(cleanKey)}&operation=${params.operation}&X-Dev-Expires=${effectiveExpiry}&X-Dev-Token=${token}${mimeQuery}`;
   }
 
-  public async exists(key: string): Promise<boolean> {
+  public async exists(key: string, _options?: StorageOptions): Promise<boolean> {
     if (!key || typeof key !== 'string') return false;
     try {
       const candidateDirs = this.getCandidateBaseDirs();
@@ -201,7 +201,7 @@ export class LocalStorageProvider implements StorageProvider {
     }
   }
 
-  public async getStream(key: string): Promise<{ stream: NodeJS.ReadableStream; contentType?: string; contentLength?: number }> {
+  public async getStream(key: string, _options?: StorageOptions): Promise<{ stream: NodeJS.ReadableStream; contentType?: string; contentLength?: number }> {
     const fullPath = this.resolvePath(key);
     if (!fs.existsSync(fullPath)) {
       throw new Error('Document file not found in storage vault');

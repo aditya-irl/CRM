@@ -31,6 +31,8 @@ import { BackgroundScheduler } from './jobs/scheduler';
 import { AuditService } from './modules/audit/audit.service';
 import { authenticate, requireRole } from './middlewares/auth.middleware';
 import { UserRole } from '@crm/shared';
+import rateLimit from 'express-rate-limit';
+import { storageDiagnosticGate, runStorageDiagnostic } from './modules/system/storage-diagnostic';
 
 const app = express();
 
@@ -124,6 +126,27 @@ app.use('/api/v1/audit-logs', auditRoutes);
 app.use('/api/v1/portal', portalRoutes);
 app.use('/api/v1/settings', settingsRoutes);
 app.use('/api/v1/notifications', notificationRoutes);
+
+const diagnosticLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: process.env.NODE_ENV === 'test' ? 100 : 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: { code: 'RATE_LIMIT_EXCEEDED', message: 'Too many diagnostic requests. Please retry in a minute.' },
+  },
+});
+
+// Temporary live storage diagnostic endpoint (Strictly gated by feature flag & SUPER_ADMIN)
+app.post(
+  '/api/v1/system/diagnostic-storage-ping',
+  storageDiagnosticGate,
+  authenticate,
+  requireRole(UserRole.SUPER_ADMIN),
+  diagnosticLimiter,
+  runStorageDiagnostic
+);
 
 // Admin trigger endpoint for manual execution of background jobs (Midnight Engine)
 app.post(

@@ -12,12 +12,16 @@ export interface PresignedUrlParams {
   mimeType?: string;
 }
 
+export interface StorageOptions {
+  abortSignal?: AbortSignal;
+}
+
 export interface StorageProvider {
-  upload(params: UploadParams): Promise<{ key: string; location?: string }>;
-  delete(key: string): Promise<void>;
+  upload(params: UploadParams, options?: StorageOptions): Promise<{ key: string; location?: string }>;
+  delete(key: string, options?: StorageOptions): Promise<void>;
   getSignedUrl(params: PresignedUrlParams): Promise<string>;
-  exists(key: string): Promise<boolean>;
-  getStream?(key: string): Promise<{ stream: NodeJS.ReadableStream; contentType?: string; contentLength?: number }>;
+  exists(key: string, options?: StorageOptions): Promise<boolean>;
+  getStream?(key: string, options?: StorageOptions): Promise<{ stream: NodeJS.ReadableStream; contentType?: string; contentLength?: number }>;
 }
 
 export const MAX_KYC_URL_EXPIRY_SECONDS = 300;

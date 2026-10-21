@@ -6,7 +6,7 @@ import {
   GetObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { StorageProvider, UploadParams, PresignedUrlParams, MAX_KYC_URL_EXPIRY_SECONDS } from './storage.provider';
+import { StorageProvider, UploadParams, PresignedUrlParams, MAX_KYC_URL_EXPIRY_SECONDS, StorageOptions } from './storage.provider';
 import { env } from '../../config/env';
 
 export class S3StorageProvider implements StorageProvider {
@@ -71,7 +71,7 @@ export class S3StorageProvider implements StorageProvider {
     this.client = new S3Client(config);
   }
 
-  public async upload(params: UploadParams): Promise<{ key: string; location?: string }> {
+  public async upload(params: UploadParams, options?: StorageOptions): Promise<{ key: string; location?: string }> {
     const cleanKey = params.key.trim().replace(/^[\/\\]+/, '');
     const cmdParams: any = {
       Bucket: this.bucket,
@@ -84,17 +84,17 @@ export class S3StorageProvider implements StorageProvider {
     }
     const cmd = new PutObjectCommand(cmdParams);
 
-    await this.client.send(cmd);
+    await this.client.send(cmd, options?.abortSignal ? { abortSignal: options.abortSignal } : undefined);
     return { key: cleanKey };
   }
 
-  public async delete(key: string): Promise<void> {
+  public async delete(key: string, options?: StorageOptions): Promise<void> {
     const cleanKey = key.trim().replace(/^[\/\\]+/, '');
     const cmd = new DeleteObjectCommand({
       Bucket: this.bucket,
       Key: cleanKey,
     });
-    await this.client.send(cmd);
+    await this.client.send(cmd, options?.abortSignal ? { abortSignal: options.abortSignal } : undefined);
   }
 
   public async getSignedUrl(params: PresignedUrlParams): Promise<string> {
@@ -128,7 +128,7 @@ export class S3StorageProvider implements StorageProvider {
     }
   }
 
-  public async exists(key: string): Promise<boolean> {
+  public async exists(key: string, options?: StorageOptions): Promise<boolean> {
     if (!key) return false;
     const cleanKey = key.trim().replace(/^[\/\\]+/, '');
     try {
@@ -136,7 +136,7 @@ export class S3StorageProvider implements StorageProvider {
         Bucket: this.bucket,
         Key: cleanKey,
       });
-      await this.client.send(cmd);
+      await this.client.send(cmd, options?.abortSignal ? { abortSignal: options.abortSignal } : undefined);
       return true;
     } catch (err: any) {
       // Distinguish object genuinely missing (404 / NotFound / NoSuchKey) from provider failure
@@ -158,13 +158,13 @@ export class S3StorageProvider implements StorageProvider {
     }
   }
 
-  public async getStream(key: string): Promise<{ stream: NodeJS.ReadableStream; contentType?: string; contentLength?: number }> {
+  public async getStream(key: string, options?: StorageOptions): Promise<{ stream: NodeJS.ReadableStream; contentType?: string; contentLength?: number }> {
     const cleanKey = key.trim().replace(/^[\/\\]+/, '');
     const cmd = new GetObjectCommand({
       Bucket: this.bucket,
       Key: cleanKey,
     });
-    const res = await this.client.send(cmd);
+    const res = await this.client.send(cmd, options?.abortSignal ? { abortSignal: options.abortSignal } : undefined);
     return {
       stream: res.Body as any,
       contentType: res.ContentType,

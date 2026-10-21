@@ -64,6 +64,9 @@ export const envSchema = z.object({
   AWS_S3_BUCKET: z.string().default('crm-kyc-vault-private'),
   AWS_S3_ENDPOINT: z.string().optional(), // For Cloudflare R2 or MinIO
 
+  // Temporary live storage diagnostic flag (defaults to disabled 'false')
+  ENABLE_STORAGE_DIAGNOSTIC: z.enum(['true', 'false']).default('false'),
+
   // Timezone & Localization
   BUSINESS_TIMEZONE: z.string().default('Asia/Kolkata'),
 
