@@ -13,16 +13,32 @@ export class S3StorageProvider implements StorageProvider {
   private client: S3Client;
   private bucket: string;
 
-  constructor(customConfig?: { bucket?: string; region?: string; endpoint?: string }) {
-    this.bucket = customConfig?.bucket || process.env.AWS_S3_BUCKET || env.AWS_S3_BUCKET;
+  constructor(customConfig?: { bucket?: string; region?: string; endpoint?: string; accessKeyId?: string; secretAccessKey?: string }) {
+    this.bucket = customConfig?.bucket || process.env.AWS_S3_BUCKET || process.env.B2_BUCKET_NAME || process.env.B2_BUCKET || env.AWS_S3_BUCKET;
 
-    let region = customConfig?.region || process.env.AWS_REGION || env.AWS_REGION;
-    let endpoint = (customConfig?.endpoint || process.env.AWS_S3_ENDPOINT || env.AWS_S3_ENDPOINT)?.trim();
+    let region = customConfig?.region || process.env.AWS_REGION || process.env.B2_REGION || env.AWS_REGION;
+    let endpoint = (customConfig?.endpoint || process.env.AWS_S3_ENDPOINT || process.env.B2_ENDPOINT || env.AWS_S3_ENDPOINT)?.trim();
 
     if (endpoint) {
+      // Auto-correct common Backblaze B2 endpoint typos (e.g. .co instead of .com)
+      endpoint = endpoint.replace(/\.backblazeb2\.co(\/.*)?$/i, '.backblazeb2.com$1');
+
       // Ensure endpoint has protocol
       if (!/^https?:\/\//i.test(endpoint)) {
         endpoint = `https://${endpoint}`;
+      }
+
+      // Validate URL parsing, protocol, and hostname
+      try {
+        const parsed = new URL(endpoint);
+        if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+          throw new Error(`Invalid protocol ${parsed.protocol}. Only http: and https: are supported.`);
+        }
+        if (!parsed.hostname || parsed.hostname.includes(' ')) {
+          throw new Error(`Invalid hostname ${parsed.hostname}.`);
+        }
+      } catch (err: any) {
+        throw new Error(`[FATAL] Malformed storage endpoint "${endpoint}": ${err.message}`);
       }
 
       // Auto-detect region for Backblaze B2 endpoints (e.g. s3.us-east-005.backblazeb2.com -> us-east-005)
@@ -43,8 +59,8 @@ export class S3StorageProvider implements StorageProvider {
       config.endpoint = endpoint;
     }
 
-    const accessKeyId = process.env.AWS_ACCESS_KEY_ID || env.AWS_ACCESS_KEY_ID;
-    const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY || env.AWS_SECRET_ACCESS_KEY;
+    const accessKeyId = customConfig?.accessKeyId || process.env.AWS_ACCESS_KEY_ID || process.env.B2_APPLICATION_KEY_ID || process.env.B2_KEY_ID || env.AWS_ACCESS_KEY_ID;
+    const secretAccessKey = customConfig?.secretAccessKey || process.env.AWS_SECRET_ACCESS_KEY || process.env.B2_APPLICATION_KEY || process.env.B2_KEY || env.AWS_SECRET_ACCESS_KEY;
     if (accessKeyId && secretAccessKey) {
       config.credentials = {
         accessKeyId,

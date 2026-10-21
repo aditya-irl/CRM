@@ -97,6 +97,7 @@ export const EditCustomerModal: React.FC<EditCustomerModalProps> = ({
       });
 
       // 2. Process any new KYC document uploads if provided
+      const failedKycDocs: string[] = [];
       for (const item of docAttachments) {
         if (item.file) {
           try {
@@ -114,10 +115,15 @@ export const EditCustomerModal: React.FC<EditCustomerModalProps> = ({
               docType: docTypeEnum,
               docNumber: item.title || null,
             });
-          } catch (docErr) {
+          } catch (docErr: any) {
             console.warn('Doc registration notice:', docErr);
+            failedKycDocs.push(`${item.category || 'Document'}: ${docErr.message || 'Upload failed'}`);
           }
         }
+      }
+
+      if (failedKycDocs.length > 0) {
+        alert(`Customer details updated, but ${failedKycDocs.length} KYC document(s) failed to upload to storage vault:\n\n${failedKycDocs.join('\n')}\n\nPlease retry uploading them.`);
       }
 
       onSuccess(updated);

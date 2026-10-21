@@ -6,6 +6,7 @@ import { Sidebar, NavTab } from './components/Sidebar';
 import { LoginView } from './views/LoginView';
 import { ChangePasswordView } from './views/ChangePasswordView';
 import { DealerDashboardView } from './views/DealerDashboardView';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 // Route-level code splitting for optimized bundle delivery
 const DashboardView = lazy(() => import('./views/DashboardView').then((m) => ({ default: m.DashboardView })));
@@ -26,6 +27,17 @@ const CustomerPortalView = lazy(() => import('./views/CustomerPortalView').then(
 const AgentDashboardView = lazy(() => import('./views/AgentDashboardView').then((m) => ({ default: m.AgentDashboardView })));
 const AgentsView = lazy(() => import('./views/AgentsView').then((m) => ({ default: m.AgentsView })));
 const DealerPayablesView = lazy(() => import('./views/DealerPayablesView').then((m) => ({ default: m.DealerPayablesView })));
+
+const getTabFromHash = (): NavTab | null => {
+  if (typeof window === 'undefined') return null;
+  const hash = window.location.hash.replace(/^#/, '').trim();
+  const validTabs: NavTab[] = [
+    'dashboard', 'dealers', 'agents', 'dealer-collections', 'dealer-settlements',
+    'dealer-payables', 'agent-collections', 'direct-collections', 'customers',
+    'devices', 'queue', 'loans', 'payments', 'reports', 'audit',
+  ];
+  return validTabs.includes(hash as NavTab) ? (hash as NavTab) : null;
+};
 
 const ViewFallback: React.FC = () => (
   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 320, color: 'var(--text-muted)' }}>
@@ -50,7 +62,7 @@ export const App: React.FC = () => {
   }
 
   const [user, setUser] = useState<IUser | null>(ApiClient.getUser());
-  const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
+  const [activeTab, setActiveTab] = useState<NavTab>(() => getTabFromHash() || 'dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [selectedDealerIdForCollections, setSelectedDealerIdForCollections] = useState<string | null>(null);
   const [selectedDealerIdForSettlements, setSelectedDealerIdForSettlements] = useState<string | null>(null);
@@ -61,6 +73,42 @@ export const App: React.FC = () => {
   const [focusedLoanParams, setFocusedLoanParams] = useState<{ statusTab?: any; loanId?: string; search?: string } | null>(null);
   const [focusedDealerId, setFocusedDealerId] = useState<string | null>(null);
 
+  const selectTab = (tab: NavTab, pushHistory = true) => {
+    setActiveTab(tab);
+    if (pushHistory && typeof window !== 'undefined') {
+      if (window.location.hash !== `#${tab}`) {
+        window.history.pushState({ tab }, '', `#${tab}`);
+      }
+    }
+  };
+
+  useEffect(() => {
+    const handlePopState = (e: PopStateEvent) => {
+      const targetTab = (e.state?.tab as NavTab) || getTabFromHash();
+      if (targetTab) {
+        setActiveTab(targetTab);
+      }
+    };
+    const handleHashChange = () => {
+      const targetTab = getTabFromHash();
+      if (targetTab) {
+        setActiveTab(targetTab);
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('popstate', handlePopState);
+      window.addEventListener('hashchange', handleHashChange);
+      if (!window.location.hash && activeTab) {
+        window.history.replaceState({ tab: activeTab }, '', `#${activeTab}`);
+      }
+      return () => {
+        window.removeEventListener('popstate', handlePopState);
+        window.removeEventListener('hashchange', handleHashChange);
+      };
+    }
+  }, [activeTab]);
+
   useEffect(() => {
     const handleAuthExpired = () => {
       setUser(null);
@@ -70,12 +118,6 @@ export const App: React.FC = () => {
       return () => window.removeEventListener('crm_auth_expired', handleAuthExpired);
     }
   }, []);
-
-  useEffect(() => {
-    if (user) {
-      setActiveTab('dashboard');
-    }
-  }, [user]);
 
   const handleLogout = () => {
     ApiClient.logout();
@@ -88,7 +130,7 @@ export const App: React.FC = () => {
 
   const handlePasswordChangeSuccess = (updatedUser: IUser) => {
     setUser(updatedUser);
-    setActiveTab('dashboard');
+    selectTab('dashboard');
   };
 
   const handleNotificationNavigate = (
@@ -101,33 +143,33 @@ export const App: React.FC = () => {
         loanId: params?.loanId,
         search: params?.search,
       });
-      setActiveTab('loans');
+      selectTab('loans');
     } else if (tab === 'dealers') {
       setFocusedDealerId(params?.dealerId || null);
-      setActiveTab('dealers');
+      selectTab('dealers');
     } else {
-      setActiveTab(tab as NavTab);
+      selectTab(tab as NavTab);
     }
   };
 
   const handleNavigateToDealerCollections = (dealerId?: string) => {
     setSelectedDealerIdForCollections(dealerId || null);
-    setActiveTab('dealer-collections');
+    selectTab('dealer-collections');
   };
 
   const handleNavigateToDealerSettlements = (dealerId?: string) => {
     setSelectedDealerIdForSettlements(dealerId || null);
-    setActiveTab('dealer-settlements');
+    selectTab('dealer-settlements');
   };
 
   const handleNavigateToDealerPayables = (dealerId?: string) => {
     setSelectedDealerIdForPayables(dealerId || null);
-    setActiveTab('dealer-payables');
+    selectTab('dealer-payables');
   };
 
   const handleNavigateToAgentCollections = (agentId?: string) => {
     setSelectedAgentIdForCollections(agentId || null);
-    setActiveTab('agent-collections');
+    selectTab('agent-collections');
   };
 
   if (!user) {
@@ -166,26 +208,26 @@ export const App: React.FC = () => {
       isDealer &&
       !['dashboard', 'customers', 'devices', 'dealer-payables', 'dealer-collections', 'dealer-settlements'].includes(activeTab)
     ) {
-      return <DealerDashboardView onNavigateToTab={(t) => setActiveTab(t as NavTab)} />;
+      return <DealerDashboardView onNavigateToTab={(t) => selectTab(t as NavTab)} />;
     }
 
     // If collection agent attempts to access admin-only tabs, redirect to agent dashboard
     const agentAllowedTabs: NavTab[] = ['dashboard', 'queue', 'customers', 'devices', 'loans', 'agent-collections'];
     if (isAgent && !agentAllowedTabs.includes(activeTab)) {
-      return <AgentDashboardView onNavigateToTab={(t) => setActiveTab(t as NavTab)} />;
+      return <AgentDashboardView onNavigateToTab={(t) => selectTab(t as NavTab)} />;
     }
 
     switch (activeTab) {
       case 'dashboard':
         if (isAgent) {
-          return <AgentDashboardView onNavigateToTab={(t) => setActiveTab(t as NavTab)} />;
+          return <AgentDashboardView onNavigateToTab={(t) => selectTab(t as NavTab)} />;
         }
         return isDealer ? (
-          <DealerDashboardView onNavigateToTab={(t) => setActiveTab(t as NavTab)} />
+          <DealerDashboardView onNavigateToTab={(t) => selectTab(t as NavTab)} />
         ) : (
           <DashboardView
             onOpenAddCustomer={() => setShowAddCustomerWizard(true)}
-            onNavigateToTab={(t) => setActiveTab(t as NavTab)}
+            onNavigateToTab={(t) => selectTab(t as NavTab)}
           />
         );
       case 'dealers':
@@ -202,21 +244,21 @@ export const App: React.FC = () => {
         return (
           <DealerPayablesView
             initialDealerId={isDealer ? (user.dealerId || undefined) : selectedDealerIdForPayables}
-            onNavigateToDealers={!isDealer ? () => setActiveTab('dealers') : undefined}
+            onNavigateToDealers={!isDealer ? () => selectTab('dealers') : undefined}
           />
         );
       case 'dealer-collections':
         return (
           <DealerCollectionsView
             initialDealerId={isDealer ? (user.dealerId || undefined) : selectedDealerIdForCollections}
-            onNavigateToDealers={!isDealer ? () => setActiveTab('dealers') : undefined}
+            onNavigateToDealers={!isDealer ? () => selectTab('dealers') : undefined}
           />
         );
       case 'dealer-settlements':
         return (
           <DealerSettlementsView
             initialDealerId={isDealer ? (user.dealerId || undefined) : selectedDealerIdForSettlements}
-            onNavigateToDealers={!isDealer ? () => setActiveTab('dealers') : undefined}
+            onNavigateToDealers={!isDealer ? () => selectTab('dealers') : undefined}
             onNavigateToCollections={handleNavigateToDealerCollections}
           />
         );
@@ -231,7 +273,7 @@ export const App: React.FC = () => {
       case 'customers':
         return <CustomersView refreshTrigger={customersRefreshTrigger} />;
       case 'devices':
-        return <DevicesView onNavigateToTab={(t) => setActiveTab(t as NavTab)} />;
+        return <DevicesView onNavigateToTab={(t) => selectTab(t as NavTab)} />;
       case 'queue':
         return <QueueView />;
       case 'loans':
@@ -266,7 +308,7 @@ export const App: React.FC = () => {
         <Sidebar
           activeTab={activeTab}
           onSelectTab={(tab) => {
-            setActiveTab(tab);
+            selectTab(tab);
             setMobileMenuOpen(false);
           }}
           user={user}
@@ -274,9 +316,11 @@ export const App: React.FC = () => {
           onCloseMobile={() => setMobileMenuOpen(false)}
         />
         <main className="main-content-container" style={{ flex: 1, padding: 24, overflowY: 'auto', background: 'var(--bg-app)' }}>
-          <Suspense fallback={<ViewFallback />}>
-            {renderView()}
-          </Suspense>
+          <ErrorBoundary fallbackTitle="Workflow View Interrupted" onReset={() => selectTab('dashboard')}>
+            <Suspense fallback={<ViewFallback />}>
+              {renderView()}
+            </Suspense>
+          </ErrorBoundary>
         </main>
       </div>
 

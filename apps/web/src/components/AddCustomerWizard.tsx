@@ -181,6 +181,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
   const [photoUploadError, setPhotoUploadError] = useState<string | null>(null);
   const [retryingPhoto, setRetryingPhoto] = useState(false);
   const [photoUploadSuccess, setPhotoUploadSuccess] = useState(false);
+  const [kycUploadErrors, setKycUploadErrors] = useState<string[]>([]);
   const [idempotencyKey, setIdempotencyKey] = useState<string>(() => 'onb_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 9));
 
   const resetWizard = () => {
@@ -190,6 +191,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
     setPhotoUploadError(null);
     setRetryingPhoto(false);
     setPhotoUploadSuccess(false);
+    setKycUploadErrors([]);
     setIdempotencyKey('onb_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 9));
     setCreatedResult(null);
     setPreviewSchedule(null);
@@ -492,6 +494,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
       }
 
       // 3. Upload / Confirm KYC Documents for the newly created customer
+      const failedKycDocs: string[] = [];
       for (const kyc of kycAttachments) {
         if (kyc.file) {
           try {
@@ -508,10 +511,15 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
               docNumber: kyc.title || null,
               file: kyc.file,
             });
-          } catch (e) {
+          } catch (e: any) {
             console.warn('KYC item registration note:', e);
+            failedKycDocs.push(`${kyc.category || 'Document'}: ${e.message || 'Upload failed'}`);
           }
         }
+      }
+
+      if (failedKycDocs.length > 0) {
+        setKycUploadErrors(failedKycDocs);
       }
 
       setCreatedResult({ customer: newCustomer, loan: newLoan! });
@@ -651,6 +659,37 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
               >
                 <CheckCircle2 size={16} />
                 <span>Customer live photo successfully uploaded to vault & linked to profile!</span>
+              </div>
+            )}
+
+            {kycUploadErrors.length > 0 && (
+              <div
+                style={{
+                  marginTop: 16,
+                  padding: 16,
+                  background: 'rgba(234, 88, 12, 0.08)',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid rgba(234, 88, 12, 0.3)',
+                  width: '100%',
+                  maxWidth: 460,
+                  textAlign: 'left',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#c2410c', fontWeight: 700, fontSize: 13 }}>
+                  <AlertCircle size={16} />
+                  <span>{kycUploadErrors.length} KYC Document(s) Pending Storage Upload</span>
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 6, lineHeight: 1.4 }}>
+                  The borrower profile and loan were created, but the following documents could not be stored in the vault:
+                  <ul style={{ margin: '6px 0 0 16px', padding: 0 }}>
+                    {kycUploadErrors.map((err, idx) => (
+                      <li key={idx} style={{ color: '#c2410c', fontWeight: 500 }}>{err}</li>
+                    ))}
+                  </ul>
+                  <div style={{ marginTop: 8, color: 'var(--text-muted)' }}>
+                    You can retry uploading these documents from the Customer Details profile at any time.
+                  </div>
+                </div>
               </div>
             )}
 

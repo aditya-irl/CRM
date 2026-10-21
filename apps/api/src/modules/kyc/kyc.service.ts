@@ -186,6 +186,25 @@ export class KYCService {
       throw new ValidationError('Uploaded document file not found in storage vault. Please ensure file upload completed successfully before confirming.');
     }
 
+    // Idempotent retry check: if this customer and storageKey was already confirmed, return the existing record
+    const existingDoc = await queryPostgres(
+      `SELECT id, customer_id, doc_type, doc_number_masked, status, created_at
+       FROM kyc_documents
+       WHERE customer_id = $1 AND storage_key = $2`,
+      [data.customerId, data.storageKey]
+    );
+    if (existingDoc.rows.length > 0) {
+      const row = existingDoc.rows[0];
+      return {
+        id: row.id,
+        customerId: row.customer_id,
+        docType: row.doc_type,
+        docNumberMasked: row.doc_number_masked,
+        status: row.status as KYCStatus,
+        createdAt: row.created_at,
+      };
+    }
+
     const docId = uuidv4();
     let maskedNumber: string | null = null;
     let numberHash: string | null = null;
@@ -310,6 +329,41 @@ export class KYCService {
       }
     }
 
+    let maskedNumber: string | null = null;
+    let numberHash: string | null = null;
+
+    if (data.docNumber) {
+      const raw = data.docNumber.trim();
+      if (data.docType === KYCType.AADHAAR) {
+        maskedNumber = maskAadhaar(raw);
+      } else if (data.docType === KYCType.PAN) {
+        maskedNumber = maskPan(raw);
+      } else {
+        maskedNumber = raw.length > 6 ? `${raw.slice(0, 3)}****${raw.slice(-3)}` : '******';
+      }
+
+      numberHash = crypto.createHash('sha256').update(raw.toUpperCase()).digest('hex');
+
+      // Idempotent retry: if document with identical docNumber was uploaded within 30 seconds
+      const recentDoc = await queryPostgres(
+        `SELECT id, customer_id, doc_type, doc_number_masked, status, created_at
+         FROM kyc_documents
+         WHERE customer_id = $1 AND doc_type = $2 AND doc_number_hash = $3 AND created_at > NOW() - INTERVAL '30 seconds'`,
+        [data.customerId, data.docType, numberHash]
+      );
+      if (recentDoc.rows.length > 0) {
+        const row = recentDoc.rows[0];
+        return {
+          id: row.id,
+          customerId: row.customer_id,
+          docType: row.doc_type,
+          docNumberMasked: row.doc_number_masked,
+          status: row.status as KYCStatus,
+          createdAt: row.created_at,
+        };
+      }
+    }
+
     const rawExt = data.fileName.split('.').pop()?.toLowerCase() || 'bin';
     const fileExt = rawExt.replace(/[^a-z0-9]/g, '') || 'bin';
     const storageKey = `kyc/${data.customerId}/${uuidv4()}.${fileExt}`;
@@ -328,21 +382,6 @@ export class KYCService {
     }
 
     const docId = uuidv4();
-    let maskedNumber: string | null = null;
-    let numberHash: string | null = null;
-
-    if (data.docNumber) {
-      const raw = data.docNumber.trim();
-      if (data.docType === KYCType.AADHAAR) {
-        maskedNumber = maskAadhaar(raw);
-      } else if (data.docType === KYCType.PAN) {
-        maskedNumber = maskPan(raw);
-      } else {
-        maskedNumber = raw.length > 6 ? `${raw.slice(0, 3)}****${raw.slice(-3)}` : '******';
-      }
-
-      numberHash = crypto.createHash('sha256').update(raw.toUpperCase()).digest('hex');
-    }
 
     const sql = `
       INSERT INTO kyc_documents (
@@ -682,7 +721,7 @@ export class KYCService {
       const dealerAccess = await queryPostgres(
         `SELECT id FROM loans WHERE dealer_id = $1 AND customer_id = $2
          UNION
-         SELECT id FROM customers WHERE id = $2 AND created_by = $3`,
+         SELECT id FROM customers WHERE id = $2 AND (created_by = $3 OR created_by IN (SELECT id FROM users WHERE dealer_id = $1))`,
         [user.dealerId, customer.id, user.id]
       );
       if (dealerAccess.rows.length === 0) {

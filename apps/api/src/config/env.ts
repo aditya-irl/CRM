@@ -6,6 +6,30 @@ import { z } from 'zod';
 dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
 dotenv.config();
 
+// Support Backblaze B2 environment variable aliases seamlessly
+if (!process.env.AWS_ACCESS_KEY_ID && (process.env.B2_APPLICATION_KEY_ID || process.env.B2_KEY_ID)) {
+  process.env.AWS_ACCESS_KEY_ID = process.env.B2_APPLICATION_KEY_ID || process.env.B2_KEY_ID;
+}
+if (!process.env.AWS_SECRET_ACCESS_KEY && (process.env.B2_APPLICATION_KEY || process.env.B2_KEY)) {
+  process.env.AWS_SECRET_ACCESS_KEY = process.env.B2_APPLICATION_KEY || process.env.B2_KEY;
+}
+if (!process.env.AWS_S3_BUCKET && (process.env.B2_BUCKET_NAME || process.env.B2_BUCKET)) {
+  process.env.AWS_S3_BUCKET = process.env.B2_BUCKET_NAME || process.env.B2_BUCKET;
+}
+if (!process.env.AWS_S3_ENDPOINT && process.env.B2_ENDPOINT) {
+  process.env.AWS_S3_ENDPOINT = process.env.B2_ENDPOINT;
+}
+if ((!process.env.AWS_REGION || process.env.AWS_REGION === 'ap-south-1') && process.env.B2_REGION) {
+  process.env.AWS_REGION = process.env.B2_REGION;
+}
+
+// Auto-correct common Backblaze B2 endpoint typos (e.g. .co instead of .com) and ensure clean protocol
+if (process.env.AWS_S3_ENDPOINT) {
+  let ep = process.env.AWS_S3_ENDPOINT.trim();
+  ep = ep.replace(/\.backblazeb2\.co(\/.*)?$/i, '.backblazeb2.com$1');
+  process.env.AWS_S3_ENDPOINT = ep;
+}
+
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().int().positive().default(4000),
@@ -112,21 +136,52 @@ export const envSchema = z.object({
       });
     }
 
-    // S3 storage credentials
+    // S3 storage credentials & endpoint validation
     if (data.STORAGE_PROVIDER === 's3') {
-      if (!data.AWS_ACCESS_KEY_ID) {
+      const accessKeyId = data.AWS_ACCESS_KEY_ID || process.env.B2_APPLICATION_KEY_ID || process.env.B2_KEY_ID;
+      const secretAccessKey = data.AWS_SECRET_ACCESS_KEY || process.env.B2_APPLICATION_KEY || process.env.B2_KEY;
+      if (!accessKeyId) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['AWS_ACCESS_KEY_ID'],
-          message: 'AWS_ACCESS_KEY_ID is required in production when STORAGE_PROVIDER=s3',
+          message: 'AWS_ACCESS_KEY_ID (or B2_APPLICATION_KEY_ID) is required in production when STORAGE_PROVIDER=s3',
         });
       }
-      if (!data.AWS_SECRET_ACCESS_KEY) {
+      if (!secretAccessKey) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['AWS_SECRET_ACCESS_KEY'],
-          message: 'AWS_SECRET_ACCESS_KEY is required in production when STORAGE_PROVIDER=s3',
+          message: 'AWS_SECRET_ACCESS_KEY (or B2_APPLICATION_KEY) is required in production when STORAGE_PROVIDER=s3',
         });
+      }
+
+      if (data.AWS_S3_ENDPOINT) {
+        try {
+          const epToTest = /^https?:\/\//i.test(data.AWS_S3_ENDPOINT)
+            ? data.AWS_S3_ENDPOINT
+            : `https://${data.AWS_S3_ENDPOINT}`;
+          const parsed = new URL(epToTest);
+          if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['AWS_S3_ENDPOINT'],
+              message: 'AWS_S3_ENDPOINT must use http: or https: protocol',
+            });
+          }
+          if (!parsed.hostname || parsed.hostname.includes(' ')) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['AWS_S3_ENDPOINT'],
+              message: 'AWS_S3_ENDPOINT must contain a valid hostname without spaces',
+            });
+          }
+        } catch {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['AWS_S3_ENDPOINT'],
+            message: 'AWS_S3_ENDPOINT is not a valid URL or hostname',
+          });
+        }
       }
     }
 

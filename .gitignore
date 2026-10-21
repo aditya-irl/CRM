@@ -22,6 +22,9 @@ apps/data/*.db*
 *.db
 *.db-shm
 *.db-wal
+data/backups/
+data/*.sql
+data/**/*.sql
 data/storage_vault/*
 apps/data/storage_vault/*
 apps/api/data/*

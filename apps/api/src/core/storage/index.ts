@@ -27,13 +27,15 @@ export function getStorageProvider(): StorageProvider {
           'Set STORAGE_PROVIDER=s3 and configure AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_S3_BUCKET.'
         );
       }
-      if (!env.AWS_ACCESS_KEY_ID || !env.AWS_SECRET_ACCESS_KEY) {
+      const accessKeyId = env.AWS_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID || process.env.B2_APPLICATION_KEY_ID || process.env.B2_KEY_ID;
+      const secretAccessKey = env.AWS_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY || process.env.B2_APPLICATION_KEY || process.env.B2_KEY;
+      if (!accessKeyId || !secretAccessKey) {
         throw new Error(
-          '[FATAL] AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required when STORAGE_PROVIDER=s3 in production.'
+          '[FATAL] AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY (or B2_APPLICATION_KEY_ID and B2_APPLICATION_KEY) are required when STORAGE_PROVIDER=s3 in production.'
         );
       }
       storageInstance = new S3StorageProvider();
-    } else if (env.STORAGE_PROVIDER === 's3' && env.AWS_ACCESS_KEY_ID) {
+    } else if (env.STORAGE_PROVIDER === 's3' && (env.AWS_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID || process.env.B2_APPLICATION_KEY_ID || process.env.B2_KEY_ID)) {
       storageInstance = new S3StorageProvider();
     } else {
       storageInstance = new LocalStorageProvider();

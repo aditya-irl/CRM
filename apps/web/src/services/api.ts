@@ -147,6 +147,25 @@ export interface IPortalLinkResult {
   isActive: boolean;
 }
 
+export interface IAssignLoanAgentResult {
+  loanId: string;
+  loanAccountNo: string;
+  assignedAgentId: string;
+  assignedAgentName: string;
+  assignedAgentPhone?: string | null;
+  assignmentId: string;
+  isReassignment: boolean;
+  assignedAt: string;
+}
+
+export interface IUnassignLoanAgentResult {
+  loanId: string;
+  loanAccountNo: string;
+  previousAgentId?: string | null;
+  previousAgentName?: string | null;
+  unassignedAt: string;
+}
+
 export class ApiClient {
   private static refreshPromise: Promise<string> | null = null;
 
@@ -1200,14 +1219,14 @@ export class ApiClient {
   }
 
   public static async assignLoanAgent(loanId: string, agentId: string, notes?: string) {
-    return this.request<{ success: boolean; data: any }>(`/loans/${loanId}/assign`, {
+    return this.request<IAssignLoanAgentResult>(`/loans/${loanId}/assign`, {
       method: 'POST',
       body: JSON.stringify({ agentId, notes }),
     });
   }
 
   public static async unassignLoanAgent(loanId: string, reason?: string) {
-    return this.request<{ success: boolean; data: any }>(`/loans/${loanId}/unassign`, {
+    return this.request<IUnassignLoanAgentResult>(`/loans/${loanId}/unassign`, {
       method: 'POST',
       body: JSON.stringify({ reason }),
     });
