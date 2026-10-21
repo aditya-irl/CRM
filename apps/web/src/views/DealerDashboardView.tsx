@@ -501,6 +501,14 @@ export const DealerDashboardView: React.FC<DealerDashboardViewProps> = ({ onNavi
                 <ArrowUpRight size={13} />
               </button>
               <button
+                onClick={() => onNavigateToTab('dealer-payables')}
+                className="btn btn-secondary btn-sm"
+                style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+              >
+                <span>Company Payments</span>
+                <ArrowUpRight size={13} />
+              </button>
+              <button
                 onClick={() => onNavigateToTab('customers')}
                 className="btn btn-secondary btn-sm"
                 style={{ display: 'flex', alignItems: 'center', gap: 4 }}

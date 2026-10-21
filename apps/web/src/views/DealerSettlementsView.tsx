@@ -1152,157 +1152,150 @@ export const DealerSettlementsView: React.FC<DealerSettlementsViewProps> = ({
 
       {/* RECORD SETTLEMENT MODAL */}
       {showRecordModal && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0, 0, 0, 0.45)',
-            backdropFilter: 'blur(3px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: 16,
-          }}
-        >
-          <div className="crm-card" style={{ width: '100%', maxWidth: 540, maxHeight: '90vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+        <div className="crm-modal-overlay" onClick={() => !submittingSettlement && setShowRecordModal(false)}>
+          <div className="crm-modal" style={{ width: '100%', maxWidth: 540 }} onClick={(e) => e.stopPropagation()}>
+            <div className="crm-modal-header">
               <div>
                 <h3 style={{ fontSize: 16, fontWeight: 700 }}>Record Dealer Settlement</h3>
-                <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
                   Record a lump-sum funds handover from a partner retail store.
                 </p>
               </div>
               <button
+                type="button"
                 onClick={() => setShowRecordModal(false)}
                 className="btn btn-secondary btn-sm"
-                style={{ border: 'none' }}
+                disabled={submittingSettlement}
+                style={{ padding: 6 }}
               >
                 <X size={16} />
               </button>
             </div>
 
-            {modalError && (
-              <div style={{ background: '#fef2f2', border: '1px solid #fee2e2', color: '#b91c1c', padding: '8px 12px', borderRadius: 'var(--radius-sm)', fontSize: 12, marginBottom: 12 }}>
-                {modalError}
-              </div>
-            )}
-
-            <form onSubmit={handleSubmitRecordSettlement} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div>
-                <label className="form-label" style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
-                  Partner Retail Store *
-                </label>
-                <select
-                  className="form-input"
-                  style={{ width: '100%' }}
-                  value={modalDealerId}
-                  onChange={(e) => handleModalDealerChange(e.target.value)}
-                  required
-                >
-                  <option value="">Select a retail store</option>
-                  {dealers.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.storeName} ({d.dealerCode})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {modalDealerId && (
-                <div style={{ background: 'var(--bg-surface-secondary)', padding: '10px 12px', borderRadius: 'var(--radius-sm)', fontSize: 12 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <span style={{ color: 'var(--text-muted)' }}>Unsettled Collections Available:</span>
-                    <span className="mono font-bold">{loadingUnsettled ? 'Loading...' : modalUnsettled.length} receipt(s)</span>
+            <form onSubmit={handleSubmitRecordSettlement} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+              <div className="crm-modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {modalError && (
+                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', padding: '10px 14px', borderRadius: 'var(--radius-md)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <AlertCircle size={15} style={{ flexShrink: 0 }} />
+                    <span>{modalError}</span>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>Total Outstanding Remittance:</span>
-                    <span className="mono font-bold" style={{ color: 'var(--primary)' }}>
-                      {loadingUnsettled ? '...' : formatINR(totalAvailableForModal)}
-                    </span>
-                  </div>
-                </div>
-              )}
+                )}
 
-              <div>
-                <label className="form-label" style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
-                  Settlement Amount (INR) *
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="1"
-                  max={totalAvailableForModal > 0 ? totalAvailableForModal : undefined}
-                  className="form-input"
-                  style={{ width: '100%' }}
-                  placeholder="Enter amount"
-                  value={modalAmount}
-                  onChange={(e) => setModalAmount(e.target.value)}
-                  required
-                />
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div>
-                  <label className="form-label" style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
-                    Settlement Date *
-                  </label>
-                  <input
-                    type="date"
-                    className="form-input"
-                    style={{ width: '100%' }}
-                    value={modalDate}
-                    onChange={(e) => setModalDate(e.target.value)}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="form-label" style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
-                    Payment Method *
+                  <label className="form-label" style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 5 }}>
+                    Partner Retail Store *
                   </label>
                   <select
                     className="form-input"
                     style={{ width: '100%' }}
-                    value={modalPaymentMethod}
-                    onChange={(e) => setModalPaymentMethod(e.target.value)}
+                    value={modalDealerId}
+                    onChange={(e) => handleModalDealerChange(e.target.value)}
                     required
                   >
-                    <option value="BANK_TRANSFER">Bank Transfer (NEFT/RTGS)</option>
-                    <option value="CHEQUE">Cheque</option>
-                    <option value="UPI">UPI</option>
-                    <option value="CASH">Cash</option>
+                    <option value="">Select a retail store</option>
+                    {dealers.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.storeName} ({d.dealerCode})
+                      </option>
+                    ))}
                   </select>
+                </div>
+
+                {modalDealerId && (
+                  <div style={{ background: 'var(--bg-surface-secondary)', border: '1px solid var(--border-subtle)', padding: '12px 14px', borderRadius: 'var(--radius-md)', fontSize: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Unsettled Collections Available:</span>
+                      <span className="mono font-bold">{loadingUnsettled ? 'Loading...' : modalUnsettled.length} receipt(s)</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Total Outstanding Remittance:</span>
+                      <span className="mono font-bold" style={{ fontSize: 15, color: 'var(--primary)' }}>
+                        {loadingUnsettled ? '...' : formatINR(totalAvailableForModal)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="form-label" style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 5 }}>
+                    Settlement Amount (INR) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="1"
+                    max={totalAvailableForModal > 0 ? totalAvailableForModal : undefined}
+                    className="form-input"
+                    style={{ width: '100%' }}
+                    placeholder="Enter amount"
+                    value={modalAmount}
+                    onChange={(e) => setModalAmount(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <label className="form-label" style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 5 }}>
+                      Settlement Date *
+                    </label>
+                    <input
+                      type="date"
+                      className="form-input"
+                      style={{ width: '100%' }}
+                      value={modalDate}
+                      onChange={(e) => setModalDate(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label" style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 5 }}>
+                      Payment Method *
+                    </label>
+                    <select
+                      className="form-input"
+                      style={{ width: '100%' }}
+                      value={modalPaymentMethod}
+                      onChange={(e) => setModalPaymentMethod(e.target.value)}
+                      required
+                    >
+                      <option value="BANK_TRANSFER">Bank Transfer (NEFT/RTGS)</option>
+                      <option value="CHEQUE">Cheque</option>
+                      <option value="UPI">UPI</option>
+                      <option value="CASH">Cash</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="form-label" style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 5 }}>
+                    UTR / Reference Number
+                  </label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    style={{ width: '100%' }}
+                    placeholder="Optional bank transaction reference"
+                    value={modalReference}
+                    onChange={(e) => setModalReference(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label" style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 5 }}>
+                    Notes / Remarks
+                  </label>
+                  <textarea
+                    className="form-input"
+                    style={{ width: '100%', minHeight: 64, resize: 'vertical' }}
+                    placeholder="Optional settlement notes"
+                    value={modalNotes}
+                    onChange={(e) => setModalNotes(e.target.value)}
+                  />
                 </div>
               </div>
 
-              <div>
-                <label className="form-label" style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
-                  UTR / Reference Number
-                </label>
-                <input
-                  type="text"
-                  className="form-input"
-                  style={{ width: '100%' }}
-                  placeholder="Optional bank transaction reference"
-                  value={modalReference}
-                  onChange={(e) => setModalReference(e.target.value)}
-                />
-              </div>
-
-              <div>
-                <label className="form-label" style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
-                  Notes / Remarks
-                </label>
-                <textarea
-                  className="form-input"
-                  style={{ width: '100%', minHeight: 60 }}
-                  placeholder="Optional settlement notes"
-                  value={modalNotes}
-                  onChange={(e) => setModalNotes(e.target.value)}
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+              <div className="crm-modal-footer">
                 <button
                   type="button"
                   onClick={() => setShowRecordModal(false)}
@@ -1326,163 +1319,212 @@ export const DealerSettlementsView: React.FC<DealerSettlementsViewProps> = ({
 
       {/* DETAIL DRAWER */}
       {selectedSettlementId && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0, 0, 0, 0.45)',
-            backdropFilter: 'blur(3px)',
-            display: 'flex',
-            justifyContent: 'flex-end',
-            zIndex: 1000,
-          }}
-        >
-          <div
-            className="crm-card"
-            style={{
-              width: '100%',
-              maxWidth: 520,
-              height: '100%',
-              borderRadius: 0,
-              padding: 20,
-              overflowY: 'auto',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 16,
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="crm-drawer-overlay" onClick={() => setSelectedSettlementId(null)}>
+          <div className="crm-drawer" onClick={(e) => e.stopPropagation()}>
+            <div className="crm-drawer-header">
               <div>
-                <h3 style={{ fontSize: 16, fontWeight: 700 }}>Settlement Details</h3>
-                <span className="mono badge badge-terracotta" style={{ fontSize: 11 }}>
-                  {settlementDetail?.settlementNumber || 'Loading...'}
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <h3 style={{ fontSize: 16, fontWeight: 700 }}>Settlement Details</h3>
+                  <span className="mono badge badge-terracotta" style={{ fontSize: 11, fontWeight: 700 }}>
+                    {settlementDetail?.settlementNumber || 'Loading...'}
+                  </span>
+                </div>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                  Reconciled store remittance record and receipt breakdown.
+                </p>
               </div>
               <button
+                type="button"
                 onClick={() => setSelectedSettlementId(null)}
                 className="btn btn-secondary btn-sm"
-                style={{ border: 'none' }}
+                style={{ padding: 6 }}
               >
                 <X size={16} />
               </button>
             </div>
 
-            {loadingDetail ? (
-              <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
-                Loading details...
-              </div>
-            ) : settlementDetail ? (
-              <>
-                <div style={{ background: 'var(--bg-surface-secondary)', padding: 14, borderRadius: 'var(--radius-sm)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Store Partner</span>
-                    <span style={{ fontSize: 12, fontWeight: 700 }}>{settlementDetail.dealerStoreName}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Settlement Amount</span>
-                    <span className="mono font-bold" style={{ fontSize: 14, color: 'var(--success)' }}>
-                      {formatINR(settlementDetail.amount)}
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Date</span>
-                    <span style={{ fontSize: 12 }}>{formatDate(settlementDetail.settlementDate)}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Status</span>
-                    <span className={`badge ${settlementDetail.status === 'COMPLETED' ? 'badge-paid' : 'badge-overdue'}`}>
-                      {settlementDetail.status}
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Recorded By</span>
-                    <span style={{ fontSize: 12 }}>{settlementDetail.createdByName || 'System'}</span>
-                  </div>
+            <div className="crm-drawer-body">
+              {loadingDetail ? (
+                <div style={{ textAlign: 'center', padding: 48, color: 'var(--text-secondary)' }}>
+                  <div className="animate-spin" style={{ width: 24, height: 24, border: '2px solid var(--border-subtle)', borderTopColor: 'var(--primary)', borderRadius: '50%', margin: '0 auto 12px' }} />
+                  <span>Loading settlement details...</span>
                 </div>
+              ) : settlementDetail ? (
+                <>
+                  <div style={{ background: 'var(--bg-surface-secondary)', border: '1px solid var(--border-subtle)', padding: 16, borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Store Partner</span>
+                      <span style={{ fontSize: 13, fontWeight: 700 }}>{settlementDetail.dealerStoreName} ({settlementDetail.dealerCode})</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Settlement Amount</span>
+                      <span className="mono font-bold" style={{ fontSize: 16, color: 'var(--success)' }}>
+                        {formatINR(settlementDetail.amount)}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Date</span>
+                      <span style={{ fontSize: 12, fontWeight: 600 }}>{formatDate(settlementDetail.settlementDate)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Payment Method</span>
+                      <span className="badge badge-route">{settlementDetail.paymentMethod}</span>
+                    </div>
+                    {settlementDetail.referenceNumber && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>UTR / Reference</span>
+                        <span className="mono" style={{ fontSize: 12, fontWeight: 600 }}>{settlementDetail.referenceNumber}</span>
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Status</span>
+                      <span
+                        className={`badge ${
+                          settlementDetail.status === SettlementStatus.COMPLETED
+                            ? 'badge-paid'
+                            : settlementDetail.status === SettlementStatus.PENDING_APPROVAL
+                            ? 'badge-warning'
+                            : settlementDetail.status === SettlementStatus.REJECTED
+                            ? 'badge-danger'
+                            : 'badge-overdue'
+                        }`}
+                      >
+                        {settlementDetail.status}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Recorded By</span>
+                      <span style={{ fontSize: 12 }}>{settlementDetail.createdByName || 'System'}</span>
+                    </div>
+                    {settlementDetail.notes && (
+                      <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 8, marginTop: 2 }}>
+                        <span style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 700 }}>Notes</span>
+                        <p style={{ fontSize: 12, color: 'var(--text-primary)', marginTop: 2 }}>{settlementDetail.notes}</p>
+                      </div>
+                    )}
+                    {settlementDetail.status === 'REJECTED' && settlementDetail.reversalReason && (
+                      <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '8px 10px', borderRadius: 'var(--radius-sm)', marginTop: 4 }}>
+                        <span style={{ fontSize: 11, color: '#b91c1c', fontWeight: 700, textTransform: 'uppercase' }}>Rejection Reason:</span>
+                        <p style={{ fontSize: 12, color: '#991b1b', marginTop: 2 }}>{settlementDetail.reversalReason}</p>
+                      </div>
+                    )}
+                    {settlementDetail.status === 'REVERSED' && settlementDetail.reversalReason && (
+                      <div style={{ background: '#fffbeb', border: '1px solid #fde68a', padding: '8px 10px', borderRadius: 'var(--radius-sm)', marginTop: 4 }}>
+                        <span style={{ fontSize: 11, color: '#b45309', fontWeight: 700, textTransform: 'uppercase' }}>Reversal Reason:</span>
+                        <p style={{ fontSize: 12, color: '#92400e', marginTop: 2 }}>{settlementDetail.reversalReason}</p>
+                      </div>
+                    )}
+                  </div>
 
-                <div>
-                  <h4 style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Covered Customer Receipts</h4>
-                  <div className="table-container">
-                    <table className="crm-table">
-                      <thead>
-                        <tr>
-                          <th>Receipt #</th>
-                          <th>Borrower</th>
-                          <th>Allocated</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {settlementDetail.allocations?.map((alloc) => (
-                          <tr key={alloc.id}>
-                            <td className="mono">{alloc.receiptNumber || '—'}</td>
-                            <td>{alloc.customerName}</td>
-                            <td className="mono font-bold">{formatINR(alloc.amountAllocated)}</td>
+                  <div>
+                    <h4 style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span>Covered Customer Receipts</span>
+                      <span className="badge badge-secondary" style={{ fontSize: 11 }}>
+                        {settlementDetail.allocations?.length || 0} receipts
+                      </span>
+                    </h4>
+                    <div className="table-container" style={{ border: '1px solid var(--border-subtle)' }}>
+                      <table className="crm-table">
+                        <thead>
+                          <tr>
+                            <th>Receipt #</th>
+                            <th>Borrower</th>
+                            <th style={{ textAlign: 'right' }}>Allocated</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody>
+                          {(!settlementDetail.allocations || settlementDetail.allocations.length === 0) ? (
+                            <tr>
+                              <td colSpan={3} style={{ textAlign: 'center', padding: 20, color: 'var(--text-secondary)' }}>
+                                No individual receipt allocations recorded.
+                              </td>
+                            </tr>
+                          ) : (
+                            settlementDetail.allocations.map((alloc) => (
+                              <tr key={alloc.id}>
+                                <td>
+                                  <span className="mono font-semibold" style={{ color: 'var(--primary)', fontSize: 12 }}>
+                                    {alloc.receiptNumber || '—'}
+                                  </span>
+                                </td>
+                                <td>
+                                  <div style={{ fontWeight: 600, fontSize: 12 }}>{alloc.customerName}</div>
+                                </td>
+                                <td style={{ textAlign: 'right' }}>
+                                  <span className="mono font-bold" style={{ color: 'var(--success)' }}>
+                                    {formatINR(alloc.amountAllocated)}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                </div>
-              </>
-            ) : null}
+                </>
+              ) : null}
+            </div>
+
+            <div style={{ padding: '14px 20px', borderTop: '1px solid var(--border-subtle)', background: 'var(--bg-surface-secondary)', display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setSelectedSettlementId(null)}
+                className="btn btn-secondary"
+              >
+                Close Drawer
+              </button>
+            </div>
           </div>
         </div>
       )}
 
       {/* REVERSAL MODAL */}
       {reversingSettlement && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0, 0, 0, 0.45)',
-            backdropFilter: 'blur(3px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: 16,
-          }}
-        >
-          <div className="crm-card" style={{ width: '100%', maxWidth: 460 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+        <div className="crm-modal-overlay" onClick={() => !submittingReversal && setReversingSettlement(null)}>
+          <div className="crm-modal" style={{ width: '100%', maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
+            <div className="crm-modal-header">
               <h3 style={{ fontSize: 16, fontWeight: 700 }}>Reverse Settlement</h3>
               <button
+                type="button"
                 onClick={() => setReversingSettlement(null)}
                 className="btn btn-secondary btn-sm"
-                style={{ border: 'none' }}
+                disabled={submittingReversal}
+                style={{ padding: 6 }}
               >
                 <X size={16} />
               </button>
             </div>
 
-            {reversalError && (
-              <div style={{ background: '#fef2f2', border: '1px solid #fee2e2', color: '#b91c1c', padding: '8px 12px', borderRadius: 'var(--radius-sm)', fontSize: 12, marginBottom: 12 }}>
-                {reversalError}
+            <form onSubmit={handleSubmitReversal} style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+              <div className="crm-modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {reversalError && (
+                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', padding: '10px 14px', borderRadius: 'var(--radius-md)', fontSize: 12 }}>
+                    {reversalError}
+                  </div>
+                )}
+
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                  Are you sure you want to reverse settlement <strong className="mono">{reversingSettlement.settlementNumber}</strong> ({formatINR(reversingSettlement.amount)})?
+                  This will restore covered customer collections back to the unsettled state.
+                </p>
+
+                <div>
+                  <label className="form-label" style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 5 }}>
+                    Reason for Reversal *
+                  </label>
+                  <textarea
+                    className="form-input"
+                    style={{ width: '100%', minHeight: 70, resize: 'vertical' }}
+                    placeholder="State the reason for reversing this settlement"
+                    value={reversalReason}
+                    onChange={(e) => setReversalReason(e.target.value)}
+                    required
+                  />
+                </div>
               </div>
-            )}
 
-            <form onSubmit={handleSubmitReversal} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                Are you sure you want to reverse settlement <strong className="mono">{reversingSettlement.settlementNumber}</strong> ({formatINR(reversingSettlement.amount)})?
-                This will restore covered customer collections back to the unsettled state.
-              </p>
-
-              <div>
-                <label className="form-label" style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
-                  Reason for Reversal *
-                </label>
-                <textarea
-                  className="form-input"
-                  style={{ width: '100%', minHeight: 60 }}
-                  placeholder="State the reason for reversing this settlement"
-                  value={reversalReason}
-                  onChange={(e) => setReversalReason(e.target.value)}
-                  required
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+              <div className="crm-modal-footer">
                 <button
                   type="button"
                   onClick={() => setReversingSettlement(null)}
@@ -1506,57 +1548,49 @@ export const DealerSettlementsView: React.FC<DealerSettlementsViewProps> = ({
 
       {/* REJECTION MODAL */}
       {rejectingSettlement && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0, 0, 0, 0.45)',
-            backdropFilter: 'blur(3px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: 16,
-          }}
-        >
-          <div className="crm-card" style={{ width: '100%', maxWidth: 460 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+        <div className="crm-modal-overlay" onClick={() => !submittingReject && setRejectingSettlement(null)}>
+          <div className="crm-modal" style={{ width: '100%', maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
+            <div className="crm-modal-header">
               <h3 style={{ fontSize: 16, fontWeight: 700 }}>Reject Settlement Request</h3>
               <button
+                type="button"
                 onClick={() => setRejectingSettlement(null)}
                 className="btn btn-secondary btn-sm"
-                style={{ border: 'none' }}
+                disabled={submittingReject}
+                style={{ padding: 6 }}
               >
                 <X size={16} />
               </button>
             </div>
 
-            {rejectError && (
-              <div style={{ background: '#fef2f2', border: '1px solid #fee2e2', color: '#b91c1c', padding: '8px 12px', borderRadius: 'var(--radius-sm)', fontSize: 12, marginBottom: 12 }}>
-                {rejectError}
+            <form onSubmit={handleSubmitReject} style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+              <div className="crm-modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {rejectError && (
+                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', padding: '10px 14px', borderRadius: 'var(--radius-md)', fontSize: 12 }}>
+                    {rejectError}
+                  </div>
+                )}
+
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                  Are you sure you want to reject settlement request <strong className="mono">{rejectingSettlement.settlementNumber}</strong> ({formatINR(rejectingSettlement.amount)}) submitted by <strong>{rejectingSettlement.dealerStoreName}</strong>?
+                </p>
+
+                <div>
+                  <label className="form-label" style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 5 }}>
+                    Reason for Rejection *
+                  </label>
+                  <textarea
+                    className="form-input"
+                    style={{ width: '100%', minHeight: 70, resize: 'vertical' }}
+                    placeholder="State the reason for rejecting this settlement request (minimum 3 characters)"
+                    value={rejectReason}
+                    onChange={(e) => setRejectReason(e.target.value)}
+                    required
+                  />
+                </div>
               </div>
-            )}
 
-            <form onSubmit={handleSubmitReject} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                Are you sure you want to reject settlement request <strong className="mono">{rejectingSettlement.settlementNumber}</strong> ({formatINR(rejectingSettlement.amount)}) submitted by <strong>{rejectingSettlement.dealerStoreName}</strong>?
-              </p>
-
-              <div>
-                <label className="form-label" style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
-                  Reason for Rejection *
-                </label>
-                <textarea
-                  className="form-input"
-                  style={{ width: '100%', minHeight: 60 }}
-                  placeholder="State the reason for rejecting this settlement request"
-                  value={rejectReason}
-                  onChange={(e) => setRejectReason(e.target.value)}
-                  required
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+              <div className="crm-modal-footer">
                 <button
                   type="button"
                   onClick={() => setRejectingSettlement(null)}

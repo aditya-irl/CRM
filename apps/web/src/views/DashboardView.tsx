@@ -40,6 +40,7 @@ interface DashboardViewProps {
   onOpenAddCustomer?: () => void;
   onNavigateToTab?: (tab: string) => void;
   user?: IUser;
+  initialStats?: IFinanceDashboardStats | null;
 }
 
 /** Roles permitted to view the executive finance dashboard */
@@ -53,9 +54,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onOpenAddCustomer,
   onNavigateToTab,
   user: userProp,
+  initialStats,
 }) => {
-  const [stats, setStats] = useState<IFinanceDashboardStats | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState<IFinanceDashboardStats | null>(initialStats ?? null);
+  const [loading, setLoading] = useState(initialStats ? false : true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
@@ -923,13 +925,24 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               Tracking customer collections at partner stores vs. completed remittances to Finance Company
             </p>
           </div>
-          <button
-            onClick={() => onNavigateToTab && onNavigateToTab('dealer-settlements')}
-            className="btn btn-secondary btn-xs"
-          >
-            <span>Settlements View</span>
-            <ChevronRight size={12} />
-          </button>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              onClick={() => onNavigateToTab && onNavigateToTab('dealer-payables')}
+              className="btn btn-secondary btn-xs"
+              style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+            >
+              <span>Company Payables</span>
+              <ChevronRight size={12} />
+            </button>
+            <button
+              onClick={() => onNavigateToTab && onNavigateToTab('dealer-settlements')}
+              className="btn btn-secondary btn-xs"
+              style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+            >
+              <span>Settlements View</span>
+              <ChevronRight size={12} />
+            </button>
+          </div>
         </div>
 
         {/* Reconcile Metrics */}

@@ -27,6 +27,7 @@ import {
   Eye,
   EyeOff,
   Trash2,
+  CreditCard,
 } from 'lucide-react';
 import { CredentialModal } from '../components/CredentialModal';
 
@@ -90,7 +91,8 @@ export const DealersView: React.FC<DealersViewProps> = ({
   const [dealerDetail, setDealerDetail] = useState<{ dealer: IDealer; loans: any[] } | null>(null);
   const [dealerCollectionsData, setDealerCollectionsData] = useState<any | null>(null);
   const [dealerSettlementsData, setDealerSettlementsData] = useState<any | null>(null);
-  const [drawerTab, setDrawerTab] = useState<'loans' | 'collections' | 'settlements'>('loans');
+  const [dealerPayablesData, setDealerPayablesData] = useState<any | null>(null);
+  const [drawerTab, setDrawerTab] = useState<'loans' | 'collections' | 'settlements' | 'payables'>('loans');
   const [loadingDetail, setLoadingDetail] = useState(false);
 
   // Add / Edit Modal states
@@ -263,14 +265,16 @@ export const DealersView: React.FC<DealersViewProps> = ({
     setLoadingDetail(true);
     setDrawerTab('loans');
     try {
-      const [detail, collections, settlements] = await Promise.all([
+      const [detail, collections, settlements, payables] = await Promise.all([
         ApiClient.getDealerDetail(id),
         ApiClient.getSingleDealerCollections(id).catch(() => null),
         ApiClient.getDealerSettlements({ dealerId: id, limit: 10 }).catch(() => null),
+        ApiClient.getDealerPayablesSummary({ dealerId: id }).catch(() => null),
       ]);
       setDealerDetail(detail);
       setDealerCollectionsData(collections);
       setDealerSettlementsData(settlements);
+      setDealerPayablesData(payables);
     } catch (err) {
       alert('Failed to load dealer details');
     } finally {
@@ -646,6 +650,18 @@ export const DealersView: React.FC<DealersViewProps> = ({
                           <ExternalLink size={12} />
                           <span>View</span>
                         </button>
+                        {onNavigateToPayables && (
+                          <button
+                            type="button"
+                            onClick={() => onNavigateToPayables(dealer.id)}
+                            className="btn btn-secondary btn-sm"
+                            title="View Company Payables for this store"
+                            style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                          >
+                            <CreditCard size={12} />
+                            <span>Payables</span>
+                          </button>
+                        )}
                         <button
                           onClick={() => handleOpenEdit(dealer)}
                           className="btn btn-secondary btn-sm"
@@ -769,6 +785,8 @@ export const DealersView: React.FC<DealersViewProps> = ({
                         setSelectedDealerId(null);
                         setDealerDetail(null);
                         setDealerCollectionsData(null);
+                        setDealerSettlementsData(null);
+                        setDealerPayablesData(null);
                       }}
                       style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
                     >
@@ -947,6 +965,17 @@ export const DealersView: React.FC<DealersViewProps> = ({
                       <Banknote size={13} />
                       <span>
                         Settlements ({dealerSettlementsData?.records?.length || 0})
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDrawerTab('payables')}
+                      className={`btn btn-sm ${drawerTab === 'payables' ? 'btn-primary' : 'btn-secondary'}`}
+                      style={{ flex: 1, border: 'none', display: 'flex', justifyContent: 'center', gap: 6, fontSize: 12 }}
+                    >
+                      <CreditCard size={13} />
+                      <span>
+                        Payables ({dealerPayablesData?.dealers?.[0]?.eligibleLoansCount ?? dealerDetail.loans.length})
                       </span>
                     </button>
                   </div>
@@ -1267,6 +1296,85 @@ export const DealersView: React.FC<DealersViewProps> = ({
                           </table>
                         </div>
                       )}
+                    </div>
+                  )}
+
+                  {/* TAB 4: COMPANY PAYABLES */}
+                  {drawerTab === 'payables' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                      {/* Metric Cards */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+                        <div className="crm-card" style={{ padding: 12, textAlign: 'center' }}>
+                          <div style={{ fontSize: 10, color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase' }}>
+                            Total Payable
+                          </div>
+                          <div className="mono font-bold" style={{ fontSize: 16, marginTop: 4 }}>
+                            {formatINR(dealerPayablesData?.dealers?.[0]?.totalPayable ?? dealerPayablesData?.totalPayable ?? 0)}
+                          </div>
+                        </div>
+
+                        <div className="crm-card" style={{ padding: 12, textAlign: 'center' }}>
+                          <div style={{ fontSize: 10, color: 'var(--success-text)', fontWeight: 700, textTransform: 'uppercase' }}>
+                            Already Paid
+                          </div>
+                          <div className="mono font-bold" style={{ fontSize: 16, color: 'var(--success)', marginTop: 4 }}>
+                            {formatINR(dealerPayablesData?.dealers?.[0]?.alreadyPaid ?? dealerPayablesData?.totalPaid ?? 0)}
+                          </div>
+                        </div>
+
+                        <div className="crm-card" style={{ padding: 12, textAlign: 'center' }}>
+                          <div style={{ fontSize: 10, color: 'var(--warning-text)', fontWeight: 700, textTransform: 'uppercase' }}>
+                            Remaining Due
+                          </div>
+                          <div className="mono font-bold" style={{ fontSize: 16, color: 'var(--warning-text)', marginTop: 4 }}>
+                            {formatINR(dealerPayablesData?.dealers?.[0]?.remainingPayable ?? dealerPayablesData?.remainingPayable ?? 0)}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Header + View Company Payables Link */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                        <h4 style={{ fontSize: 13, fontWeight: 700 }}>Company Disbursal Payouts</h4>
+                        {onNavigateToPayables && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedDealerId(null);
+                              setDealerDetail(null);
+                              setDealerCollectionsData(null);
+                              setDealerSettlementsData(null);
+                              setDealerPayablesData(null);
+                              onNavigateToPayables(dealerDetail.dealer.id);
+                            }}
+                            className="btn btn-primary btn-sm"
+                            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                          >
+                            <span>Open Company Payables</span>
+                            <ArrowRight size={13} />
+                          </button>
+                        )}
+                      </div>
+
+                      <div style={{ background: 'var(--bg-surface-secondary)', border: '1px solid var(--border-subtle)', padding: 14, borderRadius: 'var(--radius-md)', fontSize: 12 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                          <span style={{ color: 'var(--text-secondary)' }}>Eligible Financed Devices:</span>
+                          <span className="mono font-bold">
+                            {dealerPayablesData?.dealers?.[0]?.eligibleLoansCount ?? dealerDetail.loans.length} device(s)
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                          <span style={{ color: 'var(--text-secondary)' }}>Payout Status:</span>
+                          <span className="badge badge-route">
+                            {dealerPayablesData?.dealers?.[0]?.payoutStatus || 'PENDING'}
+                          </span>
+                        </div>
+                        {dealerPayablesData?.dealers?.[0]?.lastPaymentDate && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <span style={{ color: 'var(--text-secondary)' }}>Last Payout Date:</span>
+                            <span className="mono font-semibold">{formatDate(dealerPayablesData.dealers[0].lastPaymentDate)}</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>

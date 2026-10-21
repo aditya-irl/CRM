@@ -62,12 +62,12 @@ export const DealerPayablesView: React.FC<DealerPayablesViewProps> = ({
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(25);
 
-  // Data states
   const [summary, setSummary] = useState<IDealerPayableSummary | null>(null);
   const [payments, setPayments] = useState<IDealerPayablePayment[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   // Eligible Loans Modal
   const [viewingLoansDealer, setViewingLoansDealer] = useState<IDealerPayableDealerBreakdown | null>(null);
@@ -109,6 +109,14 @@ export const DealerPayablesView: React.FC<DealerPayablesViewProps> = ({
     }
   };
 
+  // Keep selectedDealerId in sync if parent prop changes
+  useEffect(() => {
+    if (initialDealerId !== undefined) {
+      setSelectedDealerId(isDealer ? (currentUser?.dealerId || '') : (initialDealerId || ''));
+      setPage(1);
+    }
+  }, [initialDealerId, isDealer, currentUser?.dealerId]);
+
   // Load Dealers
   useEffect(() => {
     if (!isDealer) {
@@ -121,6 +129,7 @@ export const DealerPayablesView: React.FC<DealerPayablesViewProps> = ({
   // Load Payables Summary & Payments
   const fetchData = async () => {
     setLoading(true);
+    setFetchError(null);
     try {
       const effDealerId = isDealer ? (currentUser?.dealerId || undefined) : (selectedDealerId || undefined);
 
@@ -138,11 +147,12 @@ export const DealerPayablesView: React.FC<DealerPayablesViewProps> = ({
       ]);
 
       setSummary(summaryRes);
-      setPayments(paymentsRes.records);
-      setTotalCount(paymentsRes.totalCount);
-      setTotalPages(paymentsRes.totalPages);
-    } catch (err) {
+      setPayments(paymentsRes.records || []);
+      setTotalCount(paymentsRes.totalCount || 0);
+      setTotalPages(paymentsRes.totalPages || 1);
+    } catch (err: any) {
       console.error('Failed to load dealer payables', err);
+      setFetchError(err.message || 'Failed to load company payables. Please verify your connection.');
     } finally {
       setLoading(false);
     }
@@ -309,6 +319,24 @@ export const DealerPayablesView: React.FC<DealerPayablesViewProps> = ({
         </div>
       </div>
 
+      {/* Global Error Banner */}
+      {fetchError && (
+        <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', padding: '12px 16px', borderRadius: 'var(--radius-md)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <AlertCircle size={16} style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: 13, fontWeight: 500 }}>{fetchError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={fetchData}
+            className="btn btn-secondary btn-sm"
+            style={{ borderColor: '#fca5a5', color: '#b91c1c', padding: '4px 12px' }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* 4 Summary KPI Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
         <div className="crm-card" style={{ padding: 16 }}>
@@ -409,10 +437,17 @@ export const DealerPayablesView: React.FC<DealerPayablesViewProps> = ({
                 </tr>
               </thead>
               <tbody>
-                {!summary?.dealers || summary.dealers.length === 0 ? (
+                {loading ? (
                   <tr>
-                    <td colSpan={8} style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>
-                      No dealer payables records found.
+                    <td colSpan={8} style={{ textAlign: 'center', padding: 36, color: 'var(--text-secondary)' }}>
+                      <div className="animate-spin" style={{ width: 22, height: 22, border: '2px solid var(--border-subtle)', borderTopColor: 'var(--primary)', borderRadius: '50%', margin: '0 auto 10px' }} />
+                      <span>Loading dealer payables breakdown...</span>
+                    </td>
+                  </tr>
+                ) : (!summary?.dealers || summary.dealers.length === 0) ? (
+                  <tr>
+                    <td colSpan={8} style={{ textAlign: 'center', padding: 28, color: 'var(--text-secondary)' }}>
+                      No dealer payables records found for this criteria.
                     </td>
                   </tr>
                 ) : (
@@ -690,19 +725,24 @@ export const DealerPayablesView: React.FC<DealerPayablesViewProps> = ({
 
       {/* ELIGIBLE LOANS MODAL */}
       {viewingLoansDealer && (
-        <div className="crm-modal-overlay">
-          <div className="crm-modal" style={{ maxWidth: 780, width: '95%' }}>
+        <div className="crm-modal-overlay" onClick={() => setViewingLoansDealer(null)}>
+          <div className="crm-modal" style={{ maxWidth: 780, width: '95%' }} onClick={(e) => e.stopPropagation()}>
             <div className="crm-modal-header">
               <div>
-                <h3 style={{ fontSize: 17, fontWeight: 700 }}>
+                <h3 style={{ fontSize: 16, fontWeight: 700 }}>
                   Eligible Financed Products — {viewingLoansDealer.storeName}
                 </h3>
-                <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
                   Active & closed loans originated by this store. Payable equals net disbursed amount.
                 </p>
               </div>
-              <button onClick={() => setViewingLoansDealer(null)} className="btn-icon">
-                <X size={18} />
+              <button
+                type="button"
+                onClick={() => setViewingLoansDealer(null)}
+                className="btn btn-secondary btn-sm"
+                style={{ padding: 6 }}
+              >
+                <X size={16} />
               </button>
             </div>
             <div className="crm-modal-body" style={{ maxHeight: '65vh', overflowY: 'auto' }}>
@@ -770,17 +810,23 @@ export const DealerPayablesView: React.FC<DealerPayablesViewProps> = ({
 
       {/* RECORD COMPANY PAYMENT MODAL */}
       {showRecordModal && (
-        <div className="crm-modal-overlay">
-          <div className="crm-modal" style={{ maxWidth: 540, width: '95%' }}>
+        <div className="crm-modal-overlay" onClick={() => !submittingPayment && setShowRecordModal(false)}>
+          <div className="crm-modal" style={{ maxWidth: 540, width: '95%' }} onClick={(e) => e.stopPropagation()}>
             <div className="crm-modal-header">
               <div>
-                <h3 style={{ fontSize: 17, fontWeight: 700 }}>Record Company Payout to Partner Store</h3>
-                <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                <h3 style={{ fontSize: 16, fontWeight: 700 }}>Record Company Payout to Partner Store</h3>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
                   Record an authorized payout from the finance company to the partner store for eligible financed products.
                 </p>
               </div>
-              <button onClick={() => setShowRecordModal(false)} className="btn-icon">
-                <X size={18} />
+              <button
+                type="button"
+                onClick={() => setShowRecordModal(false)}
+                className="btn btn-secondary btn-sm"
+                disabled={submittingPayment}
+                style={{ padding: 6 }}
+              >
+                <X size={16} />
               </button>
             </div>
             <form onSubmit={handleSubmitRecordPayment}>
@@ -926,12 +972,18 @@ export const DealerPayablesView: React.FC<DealerPayablesViewProps> = ({
 
       {/* REVERSAL MODAL */}
       {reversingPayment && (
-        <div className="crm-modal-overlay">
-          <div className="crm-modal" style={{ maxWidth: 440, width: '95%' }}>
+        <div className="crm-modal-overlay" onClick={() => !submittingReversal && setReversingPayment(null)}>
+          <div className="crm-modal" style={{ maxWidth: 440, width: '95%' }} onClick={(e) => e.stopPropagation()}>
             <div className="crm-modal-header">
               <h3 style={{ fontSize: 16, fontWeight: 700 }}>Reverse Company Payout</h3>
-              <button onClick={() => setReversingPayment(null)} className="btn-icon">
-                <X size={18} />
+              <button
+                type="button"
+                onClick={() => setReversingPayment(null)}
+                className="btn btn-secondary btn-sm"
+                disabled={submittingReversal}
+                style={{ padding: 6 }}
+              >
+                <X size={16} />
               </button>
             </div>
             <form onSubmit={handleSubmitReversal}>
@@ -984,19 +1036,24 @@ export const DealerPayablesView: React.FC<DealerPayablesViewProps> = ({
 
       {/* PAYOUT DETAILS MODAL */}
       {viewingPayoutDetail && (
-        <div className="crm-modal-overlay">
-          <div className="crm-modal" style={{ maxWidth: 700, width: '95%' }}>
+        <div className="crm-modal-overlay" onClick={() => setViewingPayoutDetail(null)}>
+          <div className="crm-modal" style={{ maxWidth: 700, width: '95%' }} onClick={(e) => e.stopPropagation()}>
             <div className="crm-modal-header">
               <div>
-                <h3 style={{ fontSize: 17, fontWeight: 700 }}>
+                <h3 style={{ fontSize: 16, fontWeight: 700 }}>
                   Company Payout Details — {viewingPayoutDetail.payoutNumber}
                 </h3>
-                <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
                   Disbursement payout to partner store for financed mobile products.
                 </p>
               </div>
-              <button onClick={() => setViewingPayoutDetail(null)} className="btn-icon">
-                <X size={18} />
+              <button
+                type="button"
+                onClick={() => setViewingPayoutDetail(null)}
+                className="btn btn-secondary btn-sm"
+                style={{ padding: 6 }}
+              >
+                <X size={16} />
               </button>
             </div>
             <div className="crm-modal-body" style={{ maxHeight: '70vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
