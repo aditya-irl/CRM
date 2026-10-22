@@ -370,6 +370,22 @@ h1, h2, h3, h4, h5, h6 {
   -webkit-overflow-scrolling: touch;
 }
 
+/* Customer Details / Profile Modal Scroll & Layout */
+.modal-content.customer-detail-modal-container {
+  padding: 0 !important;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.customer-detail-tab-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* Drawer overlay and structures */
 .crm-drawer-overlay {
   position: fixed;
@@ -576,7 +592,8 @@ h1, h2, h3, h4, h5, h6 {
     border-radius: var(--radius-lg) !important;
   }
 
-  .modal-content.wizard-modal-container {
+  .modal-content.wizard-modal-container,
+  .modal-content.customer-detail-modal-container {
     padding: 0 !important;
     max-height: 94vh !important;
   }
@@ -599,7 +616,8 @@ h1, h2, h3, h4, h5, h6 {
     justify-content: center !important;
   }
 
-  .wizard-step-content {
+  .wizard-step-content,
+  .customer-detail-tab-content {
     padding: 16px !important;
   }
 

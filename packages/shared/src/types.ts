@@ -19,6 +19,8 @@ import {
   SettlementPaymentMethod,
   PenaltyStatus,
   DealerPayableStatus,
+  CustomerVerificationStatus,
+  VerificationSection,
 } from './enums';
 
 export interface IDealer {
@@ -1249,4 +1251,70 @@ export interface IDealerSettlementCollectionsResponse {
   page: number;
   limit: number;
   totalPages: number;
+}
+
+export interface ICustomerCorrectionRequest {
+  id: string;
+  customerId: string;
+  loanId?: string | null;
+  requestType: 'CONFIRMATION' | 'CORRECTION_REQUEST';
+  section: VerificationSection;
+  explanation: string;
+  status: 'PENDING' | 'UNDER_REVIEW' | 'RESOLVED' | 'REJECTED';
+  resolutionNotes?: string | null;
+  reviewedBy?: string | null;
+  reviewedByName?: string | null;
+  reviewedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  customerName?: string;
+  customerCode?: string;
+  loanAccountNo?: string;
+}
+
+export interface ICustomerVerification {
+  id: string;
+  customerId: string;
+  loanId?: string | null;
+  status: CustomerVerificationStatus;
+  confirmedAt?: string | null;
+  lastReviewedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ICustomerPortalProfile {
+  customerId: string;
+  customerCode: string;
+  fullName: string;
+  dob?: string | null;
+  gender?: string | null;
+  primaryPhone: string;
+  alternatePhone?: string | null;
+  email?: string | null;
+  addressLine1: string;
+  addressLine2?: string | null;
+  landmark?: string | null;
+  city: string;
+  state: string;
+  pincode: string;
+  areaRoute: string;
+  photoUrl?: string | null;
+  photoDocId?: string | null;
+  hasPhoto: boolean;
+  loanAccountNo: string;
+  loanId: string;
+  kycDocuments: Array<{
+    id: string;
+    docType: string;
+    docNumberMasked: string;
+    status: string;
+    fileMimeType: string;
+    fileSizeBytes: number;
+    createdAt: string;
+    verifiedAt?: string | null;
+  }>;
+  verificationStatus: CustomerVerificationStatus;
+  confirmedAt?: string | null;
+  correctionRequests: ICustomerCorrectionRequest[];
 }

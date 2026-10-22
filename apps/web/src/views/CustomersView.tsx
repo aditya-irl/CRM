@@ -10,6 +10,10 @@ import {
   PaymentMode,
   KYCType,
   UserRole,
+  ICustomerCorrectionRequest,
+  ICustomerVerification,
+  CustomerVerificationStatus,
+  VerificationSection,
 } from '@crm/shared';
 import { AddCustomerWizard } from '../components/AddCustomerWizard';
 import { EditCustomerModal } from '../components/EditCustomerModal';
@@ -40,6 +44,9 @@ import {
   UserCheck,
   Building2,
   Printer,
+  CheckCircle2,
+  AlertTriangle,
+  Clock,
 } from 'lucide-react';
 
 interface CustomersViewProps {
@@ -66,7 +73,16 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
   } | null>(null);
   const [customerPayments, setCustomerPayments] = useState<IPayment[]>([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const [activeProfileTab, setActiveProfileTab] = useState<'contact' | 'photos' | 'documents' | 'product' | 'finance' | 'payments' | 'calls'>('contact');
+  const [activeProfileTab, setActiveProfileTab] = useState<'contact' | 'photos' | 'documents' | 'product' | 'finance' | 'payments' | 'calls' | 'verification'>('contact');
+
+  // Verification & Correction Requests State
+  const [verifData, setVerifData] = useState<{
+    customer: any;
+    verification: ICustomerVerification;
+    requests: ICustomerCorrectionRequest[];
+  } | null>(null);
+  const [reviewingReqId, setReviewingReqId] = useState<string | null>(null);
+  const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
 
   // New inline documents/photos state for customer profile
   const [newDocAttachments, setNewDocAttachments] = useState<AttachmentItem[]>([]);
@@ -118,6 +134,18 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
     }
   }, [refreshTrigger]);
 
+  // Lock body scroll when Customer Details / Profile modal is open, restoring on close or unmount
+  useEffect(() => {
+    if (!selectedCustomerId || !customerDetail || typeof document === 'undefined') return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [selectedCustomerId, customerDetail]);
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     loadData();
@@ -131,16 +159,41 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
     setNewCustomerPhotos([]);
     setNewProductPhotos([]);
     try {
-      const [data, pays] = await Promise.all([
+      const [data, pays, verifs] = await Promise.all([
         ApiClient.getCustomerDetail(id),
         ApiClient.listPayments(undefined, 1, 50, id).catch(() => []),
+        ApiClient.getCustomerVerifications(id).catch(() => null),
       ]);
       setCustomerDetail(data);
       setCustomerPayments(pays);
+      setVerifData(verifs);
     } catch (err: any) {
       alert(err.message || 'Failed to load customer profile');
     } finally {
       setLoadingDetail(false);
+    }
+  };
+
+  const handleReviewCorrection = async (
+    requestId: string,
+    status: 'UNDER_REVIEW' | 'RESOLVED' | 'REJECTED'
+  ) => {
+    if (!selectedCustomerId || reviewingReqId) return;
+    setReviewingReqId(requestId);
+    try {
+      const notes = reviewNotes[requestId] || '';
+      await ApiClient.reviewCustomerCorrectionRequest(requestId, status, notes);
+      const updatedVerifs = await ApiClient.getCustomerVerifications(selectedCustomerId);
+      setVerifData(updatedVerifs);
+      setReviewNotes((prev) => {
+        const next = { ...prev };
+        delete next[requestId];
+        return next;
+      });
+    } catch (err: any) {
+      alert(err.message || 'Failed to review correction request');
+    } finally {
+      setReviewingReqId(null);
     }
   };
 
@@ -345,9 +398,14 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
       {/* Central Customer Profile Modal with Clear [ Edit Customer ] Action */}
       {selectedCustomerId && customerDetail && (
         <div className="modal-overlay">
-          <div className="modal-content" style={{ width: '100%', maxWidth: 860, padding: 0 }}>
+          <div
+            className="modal-content customer-detail-modal-container"
+            style={{ width: '100%', maxWidth: 860, padding: 0 }}
+            data-testid="customer-detail-modal"
+          >
             {/* Modal Header */}
             <div
+              data-testid="customer-detail-modal-header"
               style={{
                 padding: '18px 24px',
                 borderBottom: '1px solid var(--border-subtle)',
@@ -355,6 +413,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 background: 'var(--bg-surface-secondary)',
+                flexShrink: 0,
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -436,6 +495,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
 
             {/* Profile Navigation Tabs */}
             <div
+              data-testid="customer-detail-tabs-bar"
               style={{
                 display: 'flex',
                 gap: 4,
@@ -443,6 +503,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
                 borderBottom: '1px solid var(--border-subtle)',
                 background: '#ffffff',
                 overflowX: 'auto',
+                flexShrink: 0,
               }}
             >
               <button
@@ -487,10 +548,20 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
               >
                 Recovery Calls ({customerDetail.callLogs.length})
               </button>
+              <button
+                onClick={() => setActiveProfileTab('verification')}
+                className={`crm-tab ${activeProfileTab === 'verification' ? 'active' : ''}`}
+              >
+                Self-Verification ({verifData?.requests?.length || 0})
+              </button>
             </div>
 
             {/* Profile Tab Contents */}
-            <div style={{ padding: 22 }}>
+            <div
+              className="customer-detail-tab-content"
+              data-testid="customer-detail-tab-content"
+              style={{ padding: 22 }}
+            >
               {/* TAB 1: CONTACT & ADDRESS */}
               {activeProfileTab === 'contact' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -1176,10 +1247,206 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
                   )}
                 </div>
               )}
+
+              {/* TAB 8: SELF-VERIFICATION & CORRECTION REQUESTS */}
+              {activeProfileTab === 'verification' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  {/* Status Banner */}
+                  <div
+                    style={{
+                      padding: 16,
+                      background: 'var(--bg-surface-secondary)',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: 'var(--radius-lg, 12px)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: 12,
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 4 }}>
+                        CUSTOMER SELF-VERIFICATION STATUS
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span
+                          style={{
+                            padding: '4px 10px',
+                            borderRadius: 14,
+                            fontSize: 12,
+                            fontWeight: 700,
+                            background:
+                              verifData?.verification.status === CustomerVerificationStatus.CONFIRMED
+                                ? '#ecfdf5'
+                                : verifData?.verification.status === CustomerVerificationStatus.CORRECTION_REQUESTED
+                                ? '#fffbeb'
+                                : verifData?.verification.status === CustomerVerificationStatus.UNDER_REVIEW
+                                ? '#eff6ff'
+                                : '#f1f5f9',
+                            color:
+                              verifData?.verification.status === CustomerVerificationStatus.CONFIRMED
+                                ? '#065f46'
+                                : verifData?.verification.status === CustomerVerificationStatus.CORRECTION_REQUESTED
+                                ? '#92400e'
+                                : verifData?.verification.status === CustomerVerificationStatus.UNDER_REVIEW
+                                ? '#1e40af'
+                                : '#475569',
+                          }}
+                        >
+                          {verifData?.verification.status || CustomerVerificationStatus.NOT_REVIEWED}
+                        </span>
+                        {verifData?.verification.confirmedAt && (
+                          <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                            Confirmed by customer: {formatDateDDMMYYYY(verifData.verification.confirmedAt)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', maxWidth: 400 }}>
+                      Customer Self-Verification records borrower confirmation of their registered details. Regulatory KYC approval is managed separately under Documents.
+                    </div>
+                  </div>
+
+                  {/* Correction Requests List */}
+                  <div>
+                    <h4 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 10px 0' }}>
+                      Customer Issues & Correction Requests ({verifData?.requests?.length || 0})
+                    </h4>
+
+                    {(!verifData?.requests || verifData.requests.length === 0) ? (
+                      <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)', fontSize: 13, border: '1px dashed var(--border-subtle)', borderRadius: 8 }}>
+                        No correction requests reported by this customer.
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        {verifData.requests.map((req) => {
+                          const canReview =
+                            (currentUser?.role === UserRole.SUPER_ADMIN ||
+                              currentUser?.role === UserRole.ADMIN ||
+                              currentUser?.role === UserRole.BRANCH_MANAGER) &&
+                            (req.status === 'PENDING' || req.status === 'UNDER_REVIEW');
+
+                          return (
+                            <div
+                              key={req.id}
+                              style={{
+                                padding: 14,
+                                background: '#ffffff',
+                                border: '1px solid var(--border-subtle)',
+                                borderRadius: 'var(--radius-md, 8px)',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 10,
+                              }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>
+                                    {req.section.replace(/_/g, ' ')}
+                                  </span>
+                                  <span
+                                    style={{
+                                      fontSize: 10,
+                                      fontWeight: 700,
+                                      padding: '2px 8px',
+                                      borderRadius: 10,
+                                      background:
+                                        req.status === 'RESOLVED'
+                                          ? '#ecfdf5'
+                                          : req.status === 'UNDER_REVIEW'
+                                          ? '#eff6ff'
+                                          : req.status === 'REJECTED'
+                                          ? '#fef2f2'
+                                          : '#fffbeb',
+                                      color:
+                                        req.status === 'RESOLVED'
+                                          ? '#065f46'
+                                          : req.status === 'UNDER_REVIEW'
+                                          ? '#1e40af'
+                                          : req.status === 'REJECTED'
+                                          ? '#991b1b'
+                                          : '#92400e',
+                                    }}
+                                  >
+                                    {req.status}
+                                  </span>
+                                </div>
+                                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                  Submitted: {formatDateDDMMYYYY(req.createdAt)}
+                                </span>
+                              </div>
+
+                              <div style={{ fontSize: 13, color: 'var(--text-secondary)', background: 'var(--bg-subtle, #f8fafc)', padding: 10, borderRadius: 6 }}>
+                                <strong>Borrower Explanation:</strong> {req.explanation}
+                              </div>
+
+                              {req.resolutionNotes && (
+                                <div style={{ fontSize: 12, color: '#1e40af', background: '#eff6ff', padding: 8, borderRadius: 6 }}>
+                                  <strong>Resolution Notes:</strong> {req.resolutionNotes}
+                                  {req.reviewedByName && <span> (Reviewed by: {req.reviewedByName})</span>}
+                                </div>
+                              )}
+
+                              {canReview && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: '1px solid var(--border-subtle)', paddingTop: 10 }}>
+                                  <input
+                                    type="text"
+                                    placeholder="Enter review / resolution notes (optional)..."
+                                    value={reviewNotes[req.id] || ''}
+                                    onChange={(e) =>
+                                      setReviewNotes((prev) => ({ ...prev, [req.id]: e.target.value }))
+                                    }
+                                    className="crm-input"
+                                    style={{ fontSize: 12, padding: '6px 10px', borderRadius: 6 }}
+                                  />
+                                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                                    {req.status === 'PENDING' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleReviewCorrection(req.id, 'UNDER_REVIEW')}
+                                        disabled={reviewingReqId === req.id}
+                                        className="btn btn-secondary btn-sm"
+                                        style={{ fontSize: 11 }}
+                                      >
+                                        Mark Under Review
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleReviewCorrection(req.id, 'RESOLVED')}
+                                      disabled={reviewingReqId === req.id}
+                                      className="btn btn-primary btn-sm"
+                                      style={{ fontSize: 11, background: '#059669', borderColor: '#059669' }}
+                                    >
+                                      Mark Resolved
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleReviewCorrection(req.id, 'REJECTED')}
+                                      disabled={reviewingReqId === req.id}
+                                      className="btn btn-danger btn-sm"
+                                      style={{ fontSize: 11 }}
+                                    >
+                                      Reject
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Modal Footer */}
             <div
+              data-testid="customer-detail-modal-footer"
               style={{
                 padding: '12px 24px',
                 borderTop: '1px solid var(--border-subtle)',
@@ -1187,6 +1454,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
+                flexShrink: 0,
               }}
             >
               <button

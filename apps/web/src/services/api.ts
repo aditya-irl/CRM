@@ -32,6 +32,11 @@ import {
   IDealerDashboardMetrics,
   IDealerLoginAccountResponse,
   INotification,
+  ICustomerPortalProfile,
+  ICustomerCorrectionRequest,
+  ICustomerVerification,
+  CustomerVerificationStatus,
+  VerificationSection,
 } from '@crm/shared';
 
 export function isValidTrustedApiBase(rawUrl: string): boolean {
@@ -423,6 +428,133 @@ export class ApiClient {
   public static async revokePortalLink(loanId: string): Promise<{ success: boolean; revokedCount: number }> {
     return this.request<{ success: boolean; revokedCount: number }>(`/portal/loans/${loanId}/revoke`, {
       method: 'POST',
+    });
+  }
+
+  /**
+   * Public Customer Portal - fetch borrower profile and KYC verification info.
+   */
+  public static async getCustomerPortalProfile(token: string): Promise<ICustomerPortalProfile> {
+    const url = buildApiUrl(`/portal/profile?token=${encodeURIComponent(token)}`);
+    const res = await fetch(url, {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    let json: any;
+    try {
+      json = await res.json();
+    } catch {
+      throw new Error(`Unable to reach the customer portal server (HTTP ${res.status}).`);
+    }
+
+    if (!res.ok || !json.success) {
+      throw new Error(json.error?.message || 'Failed to load profile details');
+    }
+
+    return json.data as ICustomerPortalProfile;
+  }
+
+  /**
+   * Public Customer Portal - borrower confirms that displayed details are correct.
+   */
+  public static async confirmCustomerPortalProfile(
+    token: string,
+    section: VerificationSection = VerificationSection.ALL
+  ): Promise<{ success: boolean; status: CustomerVerificationStatus; confirmedAt: string; message: string }> {
+    const url = buildApiUrl(`/portal/verify/confirm?token=${encodeURIComponent(token)}`);
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ section }),
+    });
+
+    let json: any;
+    try {
+      json = await res.json();
+    } catch {
+      throw new Error(`Unable to submit confirmation (HTTP ${res.status}).`);
+    }
+
+    if (!res.ok || !json.success) {
+      throw new Error(json.error?.message || 'Failed to submit verification confirmation');
+    }
+
+    return json.data;
+  }
+
+  /**
+   * Public Customer Portal - borrower reports an issue / requests correction.
+   */
+  public static async reportCustomerPortalIssue(
+    token: string,
+    section: VerificationSection,
+    explanation: string
+  ): Promise<{ success: boolean; requestId: string; status: CustomerVerificationStatus; message: string }> {
+    const url = buildApiUrl(`/portal/verify/report-issue?token=${encodeURIComponent(token)}`);
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ section, explanation }),
+    });
+
+    let json: any;
+    try {
+      json = await res.json();
+    } catch {
+      throw new Error(`Unable to submit issue report (HTTP ${res.status}).`);
+    }
+
+    if (!res.ok || !json.success) {
+      throw new Error(json.error?.message || 'Failed to submit issue report');
+    }
+
+    return json.data;
+  }
+
+  // Staff Review Methods (Protected by Admin JWT)
+  public static async getPortalVerificationRequests(params?: {
+    status?: string;
+    section?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{
+    requests: ICustomerCorrectionRequest[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  }> {
+    const query = new URLSearchParams();
+    if (params?.status) query.set('status', params.status);
+    if (params?.section) query.set('section', params.section);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return this.request(`/portal/verification-requests${qs}`);
+  }
+
+  public static async getCustomerVerifications(customerId: string): Promise<{
+    customer: { id: string; customerCode: string; fullName: string };
+    verification: ICustomerVerification;
+    requests: ICustomerCorrectionRequest[];
+  }> {
+    return this.request(`/portal/customers/${customerId}/verifications`);
+  }
+
+  public static async reviewCustomerCorrectionRequest(
+    requestId: string,
+    status: 'UNDER_REVIEW' | 'RESOLVED' | 'REJECTED',
+    resolutionNotes?: string
+  ): Promise<{ success: boolean; requestId: string; status: string; customerVerificationStatus: string; message: string }> {
+    return this.request(`/portal/verification-requests/${requestId}/review`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status, resolutionNotes }),
     });
   }
 

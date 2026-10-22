@@ -1,6 +1,13 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { ApiClient, ICustomerPortalLoanData } from '../services/api';
-import { formatINR, formatDateDDMMYYYY } from '@crm/shared';
+import {
+  formatINR,
+  formatDateDDMMYYYY,
+  CustomerVerificationStatus,
+  VerificationSection,
+  ICustomerPortalProfile,
+  ICustomerCorrectionRequest,
+} from '@crm/shared';
 import {
   ShieldCheck,
   Calendar,
@@ -19,6 +26,14 @@ import {
   PhoneCall,
   X,
   Languages,
+  User,
+  MapPin,
+  Mail,
+  Camera,
+  AlertTriangle,
+  CheckCheck,
+  Info,
+  Send,
 } from 'lucide-react';
 import { BrandLogo } from '../components/BrandLogo';
 import { DocumentViewerModal } from '../components/DocumentViewerModal';
@@ -35,7 +50,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
   const [error, setError] = useState<string | null>(
     !initialData && (!token || !token.trim()) ? 'A valid customer portal token is required in the link.' : null
   );
-  const [activeTab, setActiveTab] = useState<'schedule' | 'history' | 'kyc'>('schedule');
+  const [activeTab, setActiveTab] = useState<'schedule' | 'history' | 'kyc' | 'profile'>('schedule');
   const [kycDocs, setKycDocs] = useState<any[]>([]);
   const [loadingKyc, setLoadingKyc] = useState<boolean>(false);
   const [kycError, setKycError] = useState<string | null>(null);
@@ -45,6 +60,19 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
     docType: string;
     fileMimeType?: string;
   } | null>(null);
+
+  // Profile & Verification state
+  const [profileData, setProfileData] = useState<ICustomerPortalProfile | null>(null);
+  const [loadingProfile, setLoadingProfile] = useState<boolean>(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [confirmingProfile, setConfirmingProfile] = useState<boolean>(false);
+  const [confirmSuccessMsg, setConfirmSuccessMsg] = useState<string | null>(null);
+  const [showIssueModal, setShowIssueModal] = useState<boolean>(false);
+  const [issueSection, setIssueSection] = useState<VerificationSection>(VerificationSection.PERSONAL_DETAILS);
+  const [issueExplanation, setIssueExplanation] = useState<string>('');
+  const [submittingIssue, setSubmittingIssue] = useState<boolean>(false);
+  const [issueError, setIssueError] = useState<string | null>(null);
+  const [issueSuccessMsg, setIssueSuccessMsg] = useState<string | null>(null);
 
   // Language selection (English / Hindi)
   const [lang, setLang] = useState<'en' | 'hi'>(() => {
@@ -116,11 +144,87 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
     }
   }, [token]);
 
+  const fetchProfile = useCallback(async () => {
+    if (!token || !token.trim()) return;
+    setLoadingProfile(true);
+    setProfileError(null);
+    try {
+      const profile = await ApiClient.getCustomerPortalProfile(token);
+      setProfileData(profile);
+    } catch (err: any) {
+      console.error('Failed to load portal profile:', err);
+      setProfileError(err.message || 'Unable to load profile details.');
+    } finally {
+      setLoadingProfile(false);
+    }
+  }, [token]);
+
   useEffect(() => {
     if (token) {
       fetchKycDocuments();
+      fetchProfile();
     }
-  }, [token, fetchKycDocuments]);
+  }, [token, fetchKycDocuments, fetchProfile]);
+
+  const handleConfirmProfile = async (section: VerificationSection = VerificationSection.ALL) => {
+    if (!token || confirmingProfile) return;
+    setConfirmingProfile(true);
+    setConfirmSuccessMsg(null);
+    try {
+      const res = await ApiClient.confirmCustomerPortalProfile(token, section);
+      setConfirmSuccessMsg(
+        lang === 'hi'
+          ? 'आपके विवरण की पुष्टि सफलतापूर्वक दर्ज कर ली गई है।'
+          : res.message || 'Thank you! Your confirmation has been recorded successfully.'
+      );
+      await fetchProfile();
+    } catch (err: any) {
+      alert(err.message || 'Failed to confirm details. Please try again.');
+    } finally {
+      setConfirmingProfile(false);
+    }
+  };
+
+  const handleOpenReportIssue = (section: VerificationSection = VerificationSection.PERSONAL_DETAILS) => {
+    setIssueSection(section);
+    setIssueExplanation('');
+    setIssueError(null);
+    setIssueSuccessMsg(null);
+    setShowIssueModal(true);
+  };
+
+  const handleSubmitIssue = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token || submittingIssue) return;
+    if (!issueExplanation.trim() || issueExplanation.trim().length < 5) {
+      setIssueError(
+        lang === 'hi'
+          ? 'कृपया समस्या का संक्षिप्त विवरण दें (कम से कम 5 अक्षर)।'
+          : 'Please provide a short explanation (minimum 5 characters).'
+      );
+      return;
+    }
+
+    setSubmittingIssue(true);
+    setIssueError(null);
+    try {
+      const res = await ApiClient.reportCustomerPortalIssue(token, issueSection, issueExplanation.trim());
+      setIssueSuccessMsg(
+        lang === 'hi'
+          ? 'आपकी समस्या रिपोर्ट सफलतापूर्वक सबमिट हो गई है। हमारी टीम इसकी समीक्षा करेगी।'
+          : res.message || 'Issue reported successfully. Our operations team will review your report.'
+      );
+      setIssueExplanation('');
+      await fetchProfile();
+      setTimeout(() => {
+        setShowIssueModal(false);
+      }, 1800);
+    } catch (err: any) {
+      setIssueError(err.message || 'Failed to submit issue report.');
+    } finally {
+      setSubmittingIssue(false);
+    }
+  };
 
   // Fetch portal data using token only (never writes to localStorage)
   const fetchPortalData = useCallback(async (isSilent = false) => {
@@ -1027,6 +1131,45 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                   <ShieldCheck size={14} />
                   <span>KYC Documents ({kycDocs.length})</span>
                 </button>
+                <button
+                  onClick={() => setActiveTab('profile')}
+                  style={{
+                    background: activeTab === 'profile' ? 'var(--primary-subtle)' : 'transparent',
+                    color: activeTab === 'profile' ? 'var(--primary)' : 'var(--text-secondary)',
+                    border: activeTab === 'profile' ? '1px solid var(--primary-border)' : '1px solid transparent',
+                    fontWeight: 700,
+                    fontSize: 14,
+                    padding: '8px 16px',
+                    borderRadius: 'var(--radius-md)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                  }}
+                >
+                  <User size={14} />
+                  <span>{lang === 'hi' ? 'मेरी जानकारी व सत्यापन' : 'Verify My Details'}</span>
+                  {profileData && (
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        padding: '2px 6px',
+                        borderRadius: 10,
+                        background:
+                          profileData.verificationStatus === CustomerVerificationStatus.CONFIRMED
+                            ? '#ecfdf5'
+                            : '#fef3c7',
+                        color:
+                          profileData.verificationStatus === CustomerVerificationStatus.CONFIRMED
+                            ? '#065f46'
+                            : '#92400e',
+                      }}
+                    >
+                      {profileData.verificationStatus === CustomerVerificationStatus.CONFIRMED ? '✓' : '!'}
+                    </span>
+                  )}
+                </button>
               </div>
 
               {/* Tab 1: EMI Schedule */}
@@ -1237,6 +1380,891 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                   )}
                 </div>
               )}
+
+              {/* Tab 4: Verify My Details / My Profile */}
+              {activeTab === 'profile' && (
+                <div>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: 16,
+                      flexWrap: 'wrap',
+                      gap: 12,
+                    }}
+                  >
+                    <div>
+                      <h4 style={{ margin: '0 0 4px 0', fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>
+                        {lang === 'hi' ? 'मेरी पंजीकृत जानकारी और सत्यापन' : 'My Registered Information & Self-Verification'}
+                      </h4>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                        {lang === 'hi'
+                          ? 'कृपया जांचें कि CRM में आपके पंजीकृत नाम, संपर्क, पता, फोटो और पहचान विवरण सही हैं।'
+                          : 'Review your registered identity, contact, address, photograph, and document details.'}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={fetchProfile}
+                      disabled={loadingProfile}
+                      className="btn btn-secondary btn-sm"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                    >
+                      <RefreshCw size={12} className={loadingProfile ? 'spin' : ''} />
+                      <span>{lang === 'hi' ? 'ताज़ा करें' : 'Refresh'}</span>
+                    </button>
+                  </div>
+
+                  {loadingProfile && !profileData && (
+                    <div style={{ textAlign: 'center', padding: '40px 16px', color: 'var(--text-muted)' }}>
+                      <RefreshCw size={24} className="spin" color="var(--primary)" style={{ marginBottom: 8 }} />
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>
+                        {lang === 'hi' ? 'प्रोफ़ाइल लोड हो रही है...' : 'Loading profile details...'}
+                      </div>
+                    </div>
+                  )}
+
+                  {profileError && !loadingProfile && (
+                    <div
+                      style={{
+                        padding: 16,
+                        background: 'var(--danger-bg)',
+                        borderRadius: 'var(--radius-md)',
+                        color: 'var(--danger)',
+                        fontSize: 13,
+                        marginBottom: 16,
+                      }}
+                    >
+                      <div style={{ fontWeight: 600 }}>
+                        {lang === 'hi' ? 'प्रोफ़ाइल विवरण लोड करने में असमर्थ' : 'Unable to load profile'}
+                      </div>
+                      <div style={{ fontSize: 12, marginTop: 4 }}>{profileError}</div>
+                    </div>
+                  )}
+
+                  {confirmSuccessMsg && (
+                    <div
+                      style={{
+                        padding: '12px 16px',
+                        background: '#ecfdf5',
+                        border: '1px solid #a7f3d0',
+                        borderRadius: 'var(--radius-md)',
+                        color: '#065f46',
+                        fontSize: 13,
+                        fontWeight: 600,
+                        marginBottom: 16,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                      }}
+                    >
+                      <CheckCircle2 size={16} />
+                      <span>{confirmSuccessMsg}</span>
+                    </div>
+                  )}
+
+                  {profileData && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                      {/* ─── Verification Status & Overall Actions Card ─── */}
+                      <div
+                        style={{
+                          background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.03) 0%, rgba(30, 41, 59, 0.08) 100%)',
+                          border: '1px solid var(--border-subtle)',
+                          borderRadius: 'var(--radius-lg, 12px)',
+                          padding: 18,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 14,
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'flex-start',
+                            flexWrap: 'wrap',
+                            gap: 12,
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 4 }}>
+                              {lang === 'hi' ? 'सत्यापन स्थिति' : 'Verification Status'}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                              {(() => {
+                                switch (profileData.verificationStatus) {
+                                  case CustomerVerificationStatus.CONFIRMED:
+                                    return (
+                                      <span
+                                        style={{
+                                          background: '#ecfdf5',
+                                          color: '#065f46',
+                                          border: '1px solid #a7f3d0',
+                                          borderRadius: 20,
+                                          padding: '4px 12px',
+                                          fontSize: 13,
+                                          fontWeight: 700,
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: 6,
+                                        }}
+                                      >
+                                        <CheckCheck size={14} />
+                                        {lang === 'hi' ? 'ग्राहक द्वारा पुष्टीकृत' : 'Confirmed by Customer'}
+                                      </span>
+                                    );
+                                  case CustomerVerificationStatus.CORRECTION_REQUESTED:
+                                    return (
+                                      <span
+                                        style={{
+                                          background: '#fffbeb',
+                                          color: '#92400e',
+                                          border: '1px solid #fde68a',
+                                          borderRadius: 20,
+                                          padding: '4px 12px',
+                                          fontSize: 13,
+                                          fontWeight: 700,
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: 6,
+                                        }}
+                                      >
+                                        <AlertTriangle size={14} />
+                                        {lang === 'hi' ? 'सुधार का अनुरोध किया गया' : 'Correction Requested'}
+                                      </span>
+                                    );
+                                  case CustomerVerificationStatus.UNDER_REVIEW:
+                                    return (
+                                      <span
+                                        style={{
+                                          background: '#eff6ff',
+                                          color: '#1e40af',
+                                          border: '1px solid #bfdbfe',
+                                          borderRadius: 20,
+                                          padding: '4px 12px',
+                                          fontSize: 13,
+                                          fontWeight: 700,
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: 6,
+                                        }}
+                                      >
+                                        <Clock size={14} />
+                                        {lang === 'hi' ? 'समीक्षाधीन' : 'Under Review'}
+                                      </span>
+                                    );
+                                  case CustomerVerificationStatus.RESOLVED:
+                                    return (
+                                      <span
+                                        style={{
+                                          background: '#f0fdf4',
+                                          color: '#166534',
+                                          border: '1px solid #bbf7d0',
+                                          borderRadius: 20,
+                                          padding: '4px 12px',
+                                          fontSize: 13,
+                                          fontWeight: 700,
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: 6,
+                                        }}
+                                      >
+                                        <CheckCircle2 size={14} />
+                                        {lang === 'hi' ? 'समाधान हुआ' : 'Resolved'}
+                                      </span>
+                                    );
+                                  case CustomerVerificationStatus.REJECTED:
+                                    return (
+                                      <span
+                                        style={{
+                                          background: '#fef2f2',
+                                          color: '#991b1b',
+                                          border: '1px solid #fecaca',
+                                          borderRadius: 20,
+                                          padding: '4px 12px',
+                                          fontSize: 13,
+                                          fontWeight: 700,
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: 6,
+                                        }}
+                                      >
+                                        <X size={14} />
+                                        {lang === 'hi' ? 'सुधार अनुरोध अस्वीकृत' : 'Correction Rejected'}
+                                      </span>
+                                    );
+                                  default:
+                                    return (
+                                      <span
+                                        style={{
+                                          background: '#f1f5f9',
+                                          color: '#475569',
+                                          border: '1px solid #cbd5e1',
+                                          borderRadius: 20,
+                                          padding: '4px 12px',
+                                          fontSize: 13,
+                                          fontWeight: 700,
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: 6,
+                                        }}
+                                      >
+                                        <Info size={14} />
+                                        {lang === 'hi' ? 'समीक्षा नहीं की गई' : 'Not Reviewed'}
+                                      </span>
+                                    );
+                                }
+                              })()}
+
+                              {profileData.confirmedAt && (
+                                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                                  ({lang === 'hi' ? 'पुष्टि तिथि: ' : 'Confirmed: '}
+                                  {formatDateDDMMYYYY(profileData.confirmedAt)})
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Action Buttons */}
+                          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                            <button
+                              type="button"
+                              onClick={() => handleConfirmProfile(VerificationSection.ALL)}
+                              disabled={confirmingProfile}
+                              className="btn btn-primary btn-sm"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                background: '#059669',
+                                borderColor: '#059669',
+                                color: '#ffffff',
+                                padding: '8px 16px',
+                                fontWeight: 700,
+                              }}
+                            >
+                              <CheckCircle2 size={15} />
+                              <span>
+                                {confirmingProfile
+                                  ? lang === 'hi' ? 'पुष्टि हो रही है...' : 'Confirming...'
+                                  : lang === 'hi' ? 'विवरण सही हैं' : 'Details Are Correct'}
+                              </span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleOpenReportIssue(VerificationSection.ALL)}
+                              className="btn btn-secondary btn-sm"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                padding: '8px 16px',
+                                fontWeight: 700,
+                              }}
+                            >
+                              <AlertCircle size={15} />
+                              <span>{lang === 'hi' ? 'समस्या रिपोर्ट करें' : 'Report an Issue'}</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Statutory / Regulatory Distinction Notice */}
+                        <div
+                          style={{
+                            background: '#ffffff',
+                            border: '1px solid var(--border-subtle)',
+                            borderRadius: 'var(--radius-md, 8px)',
+                            padding: '10px 14px',
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: 10,
+                            fontSize: 12,
+                            color: 'var(--text-secondary)',
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          <Info size={16} color="var(--primary)" style={{ flexShrink: 0, marginTop: 2 }} />
+                          <div>
+                            <strong>
+                              {lang === 'hi' ? 'महत्वपूर्ण नियामक सूचना: ' : 'Important Notice: '}
+                            </strong>
+                            {lang === 'hi'
+                              ? 'ग्राहक पुष्टि यह सुनिश्चित करती है कि CRM में आपके पंजीकृत नाम, संपर्क, पता और दस्तावेज़ सही दर्ज हैं। यह पुष्टि केवल रिकॉर्ड सटीकता और ग्राहक अभिपुष्टि के लिए है, और यह आधिकारिक विनियामक KYC अनुमोदन या अनुपालन का गठन नहीं करती है।'
+                              : 'Customer confirmation verifies that our CRM contains your accurate identity, contact, address, and document details. Customer confirmation is for record accuracy only and does not constitute or imply official regulatory KYC approval.'}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* ─── Cards Grid ─── */}
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+                          gap: 16,
+                        }}
+                      >
+                        {/* 1. Personal Details */}
+                        <div
+                          className="crm-card"
+                          style={{
+                            padding: 16,
+                            background: 'var(--bg-primary, #ffffff)',
+                            border: '1px solid var(--border-subtle)',
+                            borderRadius: 'var(--radius-lg, 12px)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'space-between',
+                          }}
+                        >
+                          <div>
+                            <div
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                borderBottom: '1px solid var(--border-subtle)',
+                                paddingBottom: 10,
+                                marginBottom: 12,
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 14 }}>
+                                <User size={16} color="var(--primary)" />
+                                <span>{lang === 'hi' ? 'व्यक्तिगत विवरण' : 'Personal Details'}</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenReportIssue(VerificationSection.PERSONAL_DETAILS)}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  color: 'var(--primary)',
+                                  fontSize: 12,
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  padding: 0,
+                                }}
+                              >
+                                {lang === 'hi' ? 'समस्या रिपोर्ट करें' : 'Report Issue'}
+                              </button>
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 }}>
+                              <div>
+                                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: 11, fontWeight: 600 }}>
+                                  {lang === 'hi' ? 'पूरा नाम' : 'FULL NAME'}
+                                </span>
+                                <strong style={{ color: 'var(--text-primary)' }}>{profileData.fullName}</strong>
+                              </div>
+                              <div>
+                                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: 11, fontWeight: 600 }}>
+                                  {lang === 'hi' ? 'जन्म तिथि' : 'DATE OF BIRTH'}
+                                </span>
+                                {profileData.dob ? (
+                                  <strong>{profileData.dob}</strong>
+                                ) : (
+                                  <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                    {lang === 'hi' ? 'उपलब्ध नहीं' : 'Not Provided'}
+                                  </span>
+                                )}
+                              </div>
+                              <div>
+                                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: 11, fontWeight: 600 }}>
+                                  {lang === 'hi' ? 'लिंग' : 'GENDER'}
+                                </span>
+                                {profileData.gender ? (
+                                  <strong>{profileData.gender}</strong>
+                                ) : (
+                                  <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                    {lang === 'hi' ? 'उपलब्ध नहीं' : 'Not Provided'}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 2. Contact Details */}
+                        <div
+                          className="crm-card"
+                          style={{
+                            padding: 16,
+                            background: 'var(--bg-primary, #ffffff)',
+                            border: '1px solid var(--border-subtle)',
+                            borderRadius: 'var(--radius-lg, 12px)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'space-between',
+                          }}
+                        >
+                          <div>
+                            <div
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                borderBottom: '1px solid var(--border-subtle)',
+                                paddingBottom: 10,
+                                marginBottom: 12,
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 14 }}>
+                                <Phone size={16} color="var(--primary)" />
+                                <span>{lang === 'hi' ? 'संपर्क विवरण' : 'Contact Details'}</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenReportIssue(VerificationSection.CONTACT_DETAILS)}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  color: 'var(--primary)',
+                                  fontSize: 12,
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  padding: 0,
+                                }}
+                              >
+                                {lang === 'hi' ? 'समस्या रिपोर्ट करें' : 'Report Issue'}
+                              </button>
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 }}>
+                              <div>
+                                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: 11, fontWeight: 600 }}>
+                                  {lang === 'hi' ? 'पंजीकृत मोबाइल' : 'REGISTERED MOBILE'}
+                                </span>
+                                <strong style={{ color: 'var(--text-primary)', fontFamily: 'monospace' }}>
+                                  {profileData.primaryPhone}
+                                </strong>
+                              </div>
+                              <div>
+                                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: 11, fontWeight: 600 }}>
+                                  {lang === 'hi' ? 'वैकल्पिक मोबाइल' : 'ALTERNATE MOBILE'}
+                                </span>
+                                {profileData.alternatePhone ? (
+                                  <strong style={{ fontFamily: 'monospace' }}>{profileData.alternatePhone}</strong>
+                                ) : (
+                                  <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                    {lang === 'hi' ? 'उपलब्ध नहीं' : 'Not Provided'}
+                                  </span>
+                                )}
+                              </div>
+                              <div>
+                                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: 11, fontWeight: 600 }}>
+                                  {lang === 'hi' ? 'ईमेल' : 'EMAIL ADDRESS'}
+                                </span>
+                                {profileData.email ? (
+                                  <strong>{profileData.email}</strong>
+                                ) : (
+                                  <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                    {lang === 'hi' ? 'उपलब्ध नहीं' : 'Not Provided'}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 3. Registered Address */}
+                        <div
+                          className="crm-card"
+                          style={{
+                            padding: 16,
+                            background: 'var(--bg-primary, #ffffff)',
+                            border: '1px solid var(--border-subtle)',
+                            borderRadius: 'var(--radius-lg, 12px)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'space-between',
+                          }}
+                        >
+                          <div>
+                            <div
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                borderBottom: '1px solid var(--border-subtle)',
+                                paddingBottom: 10,
+                                marginBottom: 12,
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 14 }}>
+                                <MapPin size={16} color="var(--primary)" />
+                                <span>{lang === 'hi' ? 'पंजीकृत पता' : 'Registered Address'}</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenReportIssue(VerificationSection.ADDRESS)}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  color: 'var(--primary)',
+                                  fontSize: 12,
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  padding: 0,
+                                }}
+                              >
+                                {lang === 'hi' ? 'समस्या रिपोर्ट करें' : 'Report Issue'}
+                              </button>
+                            </div>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
+                              <div>
+                                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: 11, fontWeight: 600 }}>
+                                  {lang === 'hi' ? 'सड़क / मकान' : 'STREET / ADDRESS'}
+                                </span>
+                                <strong style={{ color: 'var(--text-primary)' }}>{profileData.addressLine1}</strong>
+                                {profileData.addressLine2 && <div>{profileData.addressLine2}</div>}
+                                {profileData.landmark && (
+                                  <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                                    Landmark: {profileData.landmark}
+                                  </div>
+                                )}
+                              </div>
+                              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                                <div>
+                                  <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: 11, fontWeight: 600 }}>
+                                    {lang === 'hi' ? 'शहर और राज्य' : 'CITY & STATE'}
+                                  </span>
+                                  <strong>{profileData.city}, {profileData.state}</strong>
+                                </div>
+                                <div>
+                                  <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: 11, fontWeight: 600 }}>
+                                    {lang === 'hi' ? 'पिन कोड' : 'PIN CODE'}
+                                  </span>
+                                  <strong style={{ fontFamily: 'monospace' }}>{profileData.pincode}</strong>
+                                </div>
+                              </div>
+                              <div>
+                                <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: 11, fontWeight: 600 }}>
+                                  {lang === 'hi' ? 'रूट / क्षेत्र' : 'COLLECTION ROUTE / AREA'}
+                                </span>
+                                <span style={{ color: 'var(--text-secondary)' }}>{profileData.areaRoute}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 4. Customer Photograph */}
+                        <div
+                          className="crm-card"
+                          style={{
+                            padding: 16,
+                            background: 'var(--bg-primary, #ffffff)',
+                            border: '1px solid var(--border-subtle)',
+                            borderRadius: 'var(--radius-lg, 12px)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'space-between',
+                          }}
+                        >
+                          <div>
+                            <div
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                borderBottom: '1px solid var(--border-subtle)',
+                                paddingBottom: 10,
+                                marginBottom: 12,
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 14 }}>
+                                <Camera size={16} color="var(--primary)" />
+                                <span>{lang === 'hi' ? 'ग्राहक का फोटो' : 'Customer Photograph'}</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenReportIssue(VerificationSection.PHOTOGRAPH)}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  color: 'var(--primary)',
+                                  fontSize: 12,
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  padding: 0,
+                                }}
+                              >
+                                {lang === 'hi' ? 'समस्या रिपोर्ट करें' : 'Report Issue'}
+                              </button>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                              {profileData.hasPhoto && profileData.photoUrl ? (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                                  <img
+                                    src={profileData.photoUrl}
+                                    alt="Registered Customer"
+                                    style={{
+                                      width: 90,
+                                      height: 90,
+                                      borderRadius: 'var(--radius-md, 8px)',
+                                      objectFit: 'cover',
+                                      border: '2px solid var(--primary-border)',
+                                      boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                                    }}
+                                    onError={(e) => {
+                                      (e.currentTarget as HTMLElement).style.display = 'none';
+                                    }}
+                                  />
+                                  <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                                    <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>
+                                      {lang === 'hi' ? 'पंजीकृत फ़ोटो उपलब्ध' : 'Official Photograph on File'}
+                                    </div>
+                                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                      {lang === 'hi'
+                                        ? 'सुरक्षित भंडारण से प्रदर्शित'
+                                        : 'Securely retrieved via CRM storage'}
+                                    </span>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div
+                                  style={{
+                                    width: '100%',
+                                    padding: '24px 16px',
+                                    borderRadius: 'var(--radius-md, 8px)',
+                                    border: '1px dashed var(--border-subtle)',
+                                    background: 'var(--bg-subtle, #f8fafc)',
+                                    textAlign: 'center',
+                                    color: 'var(--text-muted)',
+                                  }}
+                                >
+                                  <Camera size={28} style={{ opacity: 0.4, marginBottom: 6 }} />
+                                  <div style={{ fontSize: 13, fontWeight: 600 }}>
+                                    {lang === 'hi' ? 'फोटो उपलब्ध नहीं है' : 'Photograph Not Provided'}
+                                  </div>
+                                  <div style={{ fontSize: 11, marginTop: 2 }}>
+                                    {lang === 'hi'
+                                      ? 'CRM में कोई तस्वीर पंजीकृत नहीं है।'
+                                      : 'No official photograph is currently stored in CRM records.'}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 5. Registered Identity & KYC Documents Card */}
+                      <div
+                        className="crm-card"
+                        style={{
+                          padding: 16,
+                          background: 'var(--bg-primary, #ffffff)',
+                          border: '1px solid var(--border-subtle)',
+                          borderRadius: 'var(--radius-lg, 12px)',
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            borderBottom: '1px solid var(--border-subtle)',
+                            paddingBottom: 10,
+                            marginBottom: 12,
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 14 }}>
+                            <ShieldCheck size={16} color="var(--primary)" />
+                            <span>{lang === 'hi' ? 'पहचान दस्तावेज (KYC)' : 'Identity & KYC Documents'}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenReportIssue(VerificationSection.IDENTITY_DOCUMENTS)}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: 'var(--primary)',
+                              fontSize: 12,
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              padding: 0,
+                            }}
+                          >
+                            {lang === 'hi' ? 'समस्या रिपोर्ट करें' : 'Report Issue'}
+                          </button>
+                        </div>
+
+                        {profileData.kycDocuments && profileData.kycDocuments.length > 0 ? (
+                          <div style={{ overflowX: 'auto' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, textAlign: 'left' }}>
+                              <thead>
+                                <tr style={{ borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-secondary)' }}>
+                                  <th style={{ padding: '8px 10px' }}>{lang === 'hi' ? 'दस्तावेज़ का प्रकार' : 'Document Type'}</th>
+                                  <th style={{ padding: '8px 10px' }}>{lang === 'hi' ? 'मास्क्ड पहचान संख्या' : 'Masked Identifier'}</th>
+                                  <th style={{ padding: '8px 10px' }}>{lang === 'hi' ? 'सत्यापन स्थिति' : 'Status'}</th>
+                                  <th style={{ padding: '8px 10px', textAlign: 'center' }}>{lang === 'hi' ? 'देखें' : 'Action'}</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {profileData.kycDocuments.map((doc) => (
+                                  <tr key={doc.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                                    <td style={{ padding: '10px', fontWeight: 600 }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                        <FileText size={14} color="var(--primary)" />
+                                        <span>{doc.docType}</span>
+                                      </div>
+                                    </td>
+                                    <td style={{ padding: '10px', fontFamily: 'monospace', fontSize: 12 }}>
+                                      {doc.docNumberMasked || 'Verified Customer File'}
+                                    </td>
+                                    <td style={{ padding: '10px' }}>
+                                      <span className="badge badge-paid">{doc.status || 'VERIFIED'}</span>
+                                    </td>
+                                    <td style={{ padding: '10px', textAlign: 'center' }}>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setViewingKycDoc({
+                                            id: doc.id,
+                                            title: `${doc.docType} (${doc.docNumberMasked || 'Borrower KYC'})`,
+                                            docType: doc.docType,
+                                            fileMimeType: doc.fileMimeType,
+                                          })
+                                        }
+                                        className="btn btn-secondary btn-sm"
+                                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                                      >
+                                        <Eye size={12} />
+                                        <span>{lang === 'hi' ? 'दस्तावेज़ देखें' : 'View'}</span>
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <div style={{ textAlign: 'center', padding: '24px 16px', color: 'var(--text-muted)', fontSize: 13 }}>
+                            {lang === 'hi' ? 'कोई पहचान दस्तावेज़ पंजीकृत नहीं है।' : 'No identity documents registered.'}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 6. Account & Loan Reference Card */}
+                      <div
+                        style={{
+                          padding: '12px 16px',
+                          background: 'var(--bg-subtle, #f8fafc)',
+                          borderRadius: 'var(--radius-md, 8px)',
+                          border: '1px solid var(--border-subtle)',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          flexWrap: 'wrap',
+                          gap: 12,
+                          fontSize: 12,
+                        }}
+                      >
+                        <div>
+                          <span style={{ color: 'var(--text-muted)' }}>{lang === 'hi' ? 'ऋण खाता: ' : 'Loan Account: '}</span>
+                          <strong>{profileData.loanAccountNo}</strong>
+                        </div>
+                        <div>
+                          <span style={{ color: 'var(--text-muted)' }}>{lang === 'hi' ? 'ग्राहक कोड: ' : 'Customer Code: '}</span>
+                          <strong style={{ fontFamily: 'monospace' }}>{profileData.customerCode}</strong>
+                        </div>
+                      </div>
+
+                      {/* 7. Previous Correction Requests History */}
+                      {profileData.correctionRequests && profileData.correctionRequests.length > 0 && (
+                        <div
+                          className="crm-card"
+                          style={{
+                            padding: 16,
+                            background: 'var(--bg-primary, #ffffff)',
+                            border: '1px solid var(--border-subtle)',
+                            borderRadius: 'var(--radius-lg, 12px)',
+                          }}
+                        >
+                          <h4 style={{ margin: '0 0 12px 0', fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>
+                            {lang === 'hi' ? 'हाल की समस्या और सुधार अनुरोध' : 'Your Past Correction Requests'}
+                          </h4>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            {profileData.correctionRequests
+                              .filter((r) => r.requestType === 'CORRECTION_REQUEST')
+                              .map((req) => (
+                                <div
+                                  key={req.id}
+                                  style={{
+                                    padding: '10px 14px',
+                                    borderRadius: 'var(--radius-md, 8px)',
+                                    border: '1px solid var(--border-subtle)',
+                                    background: 'var(--bg-subtle, #f8fafc)',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 6,
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                                    <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>
+                                      {req.section.replace(/_/g, ' ')}
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                      <span
+                                        style={{
+                                          fontSize: 11,
+                                          fontWeight: 700,
+                                          padding: '2px 8px',
+                                          borderRadius: 12,
+                                          background:
+                                            req.status === 'RESOLVED'
+                                              ? '#ecfdf5'
+                                              : req.status === 'UNDER_REVIEW'
+                                              ? '#eff6ff'
+                                              : req.status === 'REJECTED'
+                                              ? '#fef2f2'
+                                              : '#fffbeb',
+                                          color:
+                                            req.status === 'RESOLVED'
+                                              ? '#065f46'
+                                              : req.status === 'UNDER_REVIEW'
+                                              ? '#1e40af'
+                                              : req.status === 'REJECTED'
+                                              ? '#991b1b'
+                                              : '#92400e',
+                                        }}
+                                      >
+                                        {req.status}
+                                      </span>
+                                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                        {formatDateDDMMYYYY(req.createdAt)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                                    {req.explanation}
+                                  </div>
+                                  {req.resolutionNotes && (
+                                    <div
+                                      style={{
+                                        fontSize: 12,
+                                        color: '#1e40af',
+                                        background: '#eff6ff',
+                                        padding: '6px 10px',
+                                        borderRadius: 6,
+                                        marginTop: 4,
+                                      }}
+                                    >
+                                      <strong>CRM Note:</strong> {req.resolutionNotes}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* ─── Footer Assistance Note ─────────────────────────────────── */}
@@ -1342,6 +2370,216 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                 {lang === 'hi' ? 'समझ गया' : 'Understood'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Report an Issue / Request Correction Modal ─── */}
+      {showIssueModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.55)',
+            backdropFilter: 'blur(3px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: 16,
+          }}
+        >
+          <div
+            className="crm-card"
+            style={{
+              width: '100%',
+              maxWidth: 520,
+              background: '#ffffff',
+              borderRadius: 'var(--radius-lg, 12px)',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
+              padding: 24,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 16,
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: '50%',
+                    background: '#fef3c7',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#d97706',
+                  }}
+                >
+                  <AlertCircle size={20} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
+                    {lang === 'hi' ? 'समस्या या सुधार की रिपोर्ट करें' : 'Report an Issue / Correction Request'}
+                  </h3>
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                    {data?.loanAccountNo} • Alpha Mobile Gallery
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowIssueModal(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                title="Close"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {issueSuccessMsg ? (
+              <div
+                style={{
+                  padding: 16,
+                  background: '#ecfdf5',
+                  border: '1px solid #a7f3d0',
+                  borderRadius: 'var(--radius-md)',
+                  color: '#065f46',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  textAlign: 'center',
+                }}
+              >
+                <CheckCircle2 size={24} style={{ margin: '0 auto 8px auto', display: 'block' }} />
+                <div>{issueSuccessMsg}</div>
+              </div>
+            ) : (
+              <form onSubmit={handleSubmitIssue} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {issueError && (
+                  <div
+                    style={{
+                      padding: 12,
+                      background: 'var(--danger-bg)',
+                      borderRadius: 'var(--radius-md)',
+                      color: 'var(--danger)',
+                      fontSize: 13,
+                    }}
+                  >
+                    {issueError}
+                  </div>
+                )}
+
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                    {lang === 'hi' ? 'संबंधित अनुभाग चुनें *' : 'Affected Section *'}
+                  </label>
+                  <select
+                    value={issueSection}
+                    onChange={(e) => setIssueSection(e.target.value as VerificationSection)}
+                    className="crm-input"
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--border-subtle)',
+                      fontSize: 14,
+                    }}
+                  >
+                    <option value={VerificationSection.PERSONAL_DETAILS}>
+                      {lang === 'hi' ? 'व्यक्तिगत विवरण (नाम / जन्म तिथि / लिंग)' : 'Personal Details (Name / DOB / Gender)'}
+                    </option>
+                    <option value={VerificationSection.CONTACT_DETAILS}>
+                      {lang === 'hi' ? 'संपर्क विवरण (मोबाइल नंबर / ईमेल)' : 'Contact Details (Phone / Email)'}
+                    </option>
+                    <option value={VerificationSection.ADDRESS}>
+                      {lang === 'hi' ? 'पंजीकृत पता (सड़क / शहर / पिन कोड)' : 'Registered Address (Street / City / Pincode)'}
+                    </option>
+                    <option value={VerificationSection.IDENTITY_DOCUMENTS}>
+                      {lang === 'hi' ? 'पहचान दस्तावेज (आधार / पैन / वोटर आईडी)' : 'Identity Documents (Aadhaar / PAN / etc.)'}
+                    </option>
+                    <option value={VerificationSection.PHOTOGRAPH}>
+                      {lang === 'hi' ? 'ग्राहक का फोटो' : 'Customer Photograph'}
+                    </option>
+                    <option value={VerificationSection.OTHER}>
+                      {lang === 'hi' ? 'अन्य कोई विसंगति' : 'Other / General Discrepancy'}
+                    </option>
+                  </select>
+                </div>
+
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                      {lang === 'hi' ? 'समस्या का स्पष्टीकरण दें *' : 'Explanation of Discrepancy *'}
+                    </label>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                      {issueExplanation.length}/1000
+                    </span>
+                  </div>
+                  <textarea
+                    rows={4}
+                    value={issueExplanation}
+                    onChange={(e) => setIssueExplanation(e.target.value)}
+                    placeholder={
+                      lang === 'hi'
+                        ? 'कृपया विस्तार से बताएं कि कौन सा विवरण गलत है और क्या सही होना चाहिए...'
+                        : 'Explain the discrepancy and what should be corrected (e.g. spelling mistake in address, new contact number)...'
+                    }
+                    maxLength={1000}
+                    className="crm-input"
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--border-subtle)',
+                      fontSize: 13,
+                      fontFamily: 'inherit',
+                      resize: 'vertical',
+                    }}
+                  />
+                </div>
+
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: 'var(--text-muted)',
+                    background: 'var(--bg-subtle, #f8fafc)',
+                    padding: '8px 12px',
+                    borderRadius: 6,
+                  }}
+                >
+                  {lang === 'hi'
+                    ? 'कृपया पासवर्ड, ओटीपी या पूर्ण संवेदनशील पिन दर्ज न करें। प्रस्तुत अनुरोध की समीक्षा अधिकृत स्टाफ द्वारा की जाएगी।'
+                    : 'Do not enter passwords, OTPs, or confidential pins. Submission creates a reviewable request for authorized CRM operations staff.'}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowIssueModal(false)}
+                    className="btn btn-secondary btn-sm"
+                    disabled={submittingIssue}
+                  >
+                    {lang === 'hi' ? 'रद्द करें' : 'Cancel'}
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn btn-primary btn-sm"
+                    disabled={submittingIssue || !issueExplanation.trim() || issueExplanation.trim().length < 5}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                  >
+                    <Send size={13} />
+                    <span>
+                      {submittingIssue
+                        ? lang === 'hi' ? 'सबमिट हो रहा है...' : 'Submitting...'
+                        : lang === 'hi' ? 'अनुरोध भेजें' : 'Submit Report'}
+                    </span>
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

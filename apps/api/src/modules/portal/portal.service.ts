@@ -1,11 +1,22 @@
 import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { queryPostgres, runPostgresTransaction } from '../../database/postgres';
-import { AppError, NotFoundError, UnauthorizedError, ForbiddenError } from '../../middlewares/error.middleware';
+import { AppError, NotFoundError, UnauthorizedError, ForbiddenError, ValidationError, ConflictError } from '../../middlewares/error.middleware';
 import { AuthenticatedUser } from '../../middlewares/auth.middleware';
 import { AuditService } from '../audit/audit.service';
 import { env } from '../../config/env';
-import { computeEmiStatus, getBusinessDate, EMIStatus } from '@crm/shared';
+import {
+  computeEmiStatus,
+  getBusinessDate,
+  EMIStatus,
+  CustomerVerificationStatus,
+  VerificationSection,
+  ICustomerPortalProfile,
+  ICustomerCorrectionRequest,
+  ICustomerVerification,
+  KYCType,
+  UserRole,
+} from '@crm/shared';
 import { getStorageProvider, MAX_KYC_URL_EXPIRY_SECONDS } from '../../core/storage';
 
 const PORTAL_BASE_URL = env?.PORTAL_BASE_URL || process.env.PORTAL_BASE_URL || 'http://localhost:5173/portal';
@@ -617,6 +628,587 @@ export class PortalService {
       contentLength: streamResult.contentLength,
       docType: doc.doc_type,
       docNumberMasked: doc.doc_number_masked,
+    };
+  }
+
+  /**
+   * Public Customer Portal Profile & KYC Details Resolver.
+   * Derives customer identity solely from validated high-entropy portal token context.
+   * Never accepts customer_id or loan_id from client.
+   * Masks sensitive identifiers and returns strictly scoped customer profile.
+   */
+  public static async getPortalCustomerProfile(rawToken: string): Promise<ICustomerPortalProfile> {
+    const context = await this.validatePortalTokenContext(rawToken);
+
+    // 1. Fetch registered customer details
+    const custRes = await queryPostgres(
+      `SELECT id, customer_code, full_name, primary_phone, alternate_phone,
+              address_line1, address_line2, landmark, city, state, pincode, area_route,
+              photo_url
+       FROM customers
+       WHERE id = $1 AND deleted_at IS NULL`,
+      [context.customerId]
+    );
+
+    if (custRes.rows.length === 0) {
+      throw new NotFoundError('Customer account not found');
+    }
+
+    const customer = custRes.rows[0];
+
+    // 2. Fetch borrower's own KYC documents (masked)
+    const docsRes = await queryPostgres(
+      `SELECT id, doc_type, doc_number_masked, status, file_mime_type, file_size_bytes, verified_at, created_at
+       FROM kyc_documents
+       WHERE customer_id = $1
+       ORDER BY created_at DESC`,
+      [context.customerId]
+    );
+
+    const photoDoc = docsRes.rows.find((d: any) => d.doc_type === KYCType.PHOTO || d.doc_type === 'PHOTO');
+    const hasPhoto = Boolean(photoDoc || (customer.photo_url && String(customer.photo_url).trim().length > 0));
+
+    // 3. Fetch verification record
+    const verifRes = await queryPostgres(
+      `SELECT id, status, confirmed_at, last_reviewed_at, created_at, updated_at
+       FROM customer_kyc_verifications
+       WHERE customer_id = $1`,
+      [context.customerId]
+    );
+
+    const verifRow = verifRes.rows[0];
+    const verificationStatus: CustomerVerificationStatus = verifRow
+      ? (verifRow.status as CustomerVerificationStatus)
+      : CustomerVerificationStatus.NOT_REVIEWED;
+
+    // 4. Fetch correction / issue reports
+    const corrRes = await queryPostgres(
+      `SELECT cr.id, cr.customer_id, cr.loan_id, cr.request_type, cr.section, cr.explanation,
+              cr.status, cr.resolution_notes, cr.reviewed_by, cr.reviewed_at, cr.created_at, cr.updated_at,
+              u.full_name as reviewer_name
+       FROM customer_kyc_correction_requests cr
+       LEFT JOIN users u ON u.id = cr.reviewed_by
+       WHERE cr.customer_id = $1
+       ORDER BY cr.created_at DESC
+       LIMIT 20`,
+      [context.customerId]
+    );
+
+    const correctionRequests: ICustomerCorrectionRequest[] = corrRes.rows.map((r: any) => ({
+      id: r.id,
+      customerId: r.customer_id,
+      loanId: r.loan_id,
+      requestType: r.request_type,
+      section: r.section as VerificationSection,
+      explanation: r.explanation,
+      status: r.status,
+      resolutionNotes: r.resolution_notes,
+      reviewedBy: r.reviewed_by,
+      reviewedByName: r.reviewer_name || null,
+      reviewedAt: r.reviewed_at ? (r.reviewed_at instanceof Date ? r.reviewed_at.toISOString() : String(r.reviewed_at)) : null,
+      createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+      updatedAt: r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at),
+    }));
+
+    return {
+      customerId: customer.id,
+      customerCode: customer.customer_code,
+      fullName: customer.full_name,
+      dob: null, // Explicit null: DOB not captured in current schema
+      gender: null, // Explicit null: Gender not captured in current schema
+      primaryPhone: maskPhoneNumber(customer.primary_phone),
+      alternatePhone: customer.alternate_phone ? maskPhoneNumber(customer.alternate_phone) : null,
+      email: null, // Explicit null: Email not captured in current schema
+      addressLine1: customer.address_line1,
+      addressLine2: customer.address_line2 || null,
+      landmark: customer.landmark || null,
+      city: customer.city,
+      state: customer.state,
+      pincode: customer.pincode,
+      areaRoute: customer.area_route,
+      photoUrl: hasPhoto ? `/api/v1/portal/photo?token=${encodeURIComponent(rawToken.trim())}` : null,
+      photoDocId: photoDoc ? photoDoc.id : null,
+      hasPhoto,
+      loanAccountNo: context.loanAccountNo,
+      loanId: context.loanId,
+      kycDocuments: docsRes.rows.map((d: any) => ({
+        id: d.id,
+        docType: d.doc_type,
+        docNumberMasked: d.doc_number_masked,
+        status: d.status,
+        fileMimeType: d.file_mime_type,
+        fileSizeBytes: Number(d.file_size_bytes),
+        createdAt: d.created_at instanceof Date ? d.created_at.toISOString() : String(d.created_at),
+        verifiedAt: d.verified_at ? (d.verified_at instanceof Date ? d.verified_at.toISOString() : String(d.verified_at)) : null,
+      })),
+      verificationStatus,
+      confirmedAt: verifRow?.confirmed_at ? (verifRow.confirmed_at instanceof Date ? verifRow.confirmed_at.toISOString() : String(verifRow.confirmed_at)) : null,
+      correctionRequests,
+    };
+  }
+
+  /**
+   * Stream customer's photograph securely.
+   * Authenticated solely via validated portal token.
+   * Never exposes raw bucket credentials or internal storage paths.
+   */
+  public static async streamPortalCustomerPhoto(rawToken: string) {
+    const context = await this.validatePortalTokenContext(rawToken);
+
+    // 1. Check if customer has a PHOTO KYC document
+    const photoDocRes = await queryPostgres(
+      `SELECT * FROM kyc_documents
+       WHERE customer_id = $1 AND doc_type = $2
+       ORDER BY created_at DESC LIMIT 1`,
+      [context.customerId, KYCType.PHOTO]
+    );
+
+    let storageKey: string | null = null;
+    let mimeType = 'image/jpeg';
+
+    if (photoDocRes.rows.length > 0) {
+      storageKey = photoDocRes.rows[0].storage_key;
+      mimeType = photoDocRes.rows[0].file_mime_type || 'image/jpeg';
+    } else {
+      // 2. Check customer photo_url column
+      const custRes = await queryPostgres(
+        `SELECT photo_url FROM customers WHERE id = $1`,
+        [context.customerId]
+      );
+      if (custRes.rows.length > 0 && custRes.rows[0].photo_url) {
+        storageKey = custRes.rows[0].photo_url;
+      }
+    }
+
+    if (!storageKey) {
+      throw new NotFoundError('Customer photograph not found');
+    }
+
+    const storage = getStorageProvider();
+    const fileExists = await storage.exists(storageKey);
+    if (!fileExists) {
+      throw new NotFoundError('Customer photograph file not found in storage vault');
+    }
+
+    if (!storage.getStream) {
+      throw new AppError('Streaming not supported for active storage provider', 500);
+    }
+
+    const streamResult = await storage.getStream(storageKey);
+
+    return {
+      stream: streamResult.stream,
+      mimeType: streamResult.contentType || mimeType,
+      contentLength: streamResult.contentLength,
+    };
+  }
+
+  /**
+   * Customer Self-Verification Confirmation.
+   * Records that borrower reviewed their personal/KYC information and confirmed it is correct.
+   * Customer confirmation does NOT alter or approve official regulatory KYC documents.
+   */
+  public static async confirmPortalProfile(
+    rawToken: string,
+    section: VerificationSection = VerificationSection.ALL
+  ) {
+    const context = await this.validatePortalTokenContext(rawToken);
+
+    // Prevent duplicate repeated confirmation within 60 seconds
+    const existingVerif = await queryPostgres(
+      `SELECT id, status, confirmed_at FROM customer_kyc_verifications WHERE customer_id = $1`,
+      [context.customerId]
+    );
+
+    if (
+      existingVerif.rows.length > 0 &&
+      existingVerif.rows[0].status === CustomerVerificationStatus.CONFIRMED &&
+      existingVerif.rows[0].confirmed_at
+    ) {
+      const confirmedTime = new Date(existingVerif.rows[0].confirmed_at).getTime();
+      if (Date.now() - confirmedTime < 60_000) {
+        return {
+          success: true,
+          status: CustomerVerificationStatus.CONFIRMED,
+          confirmedAt: existingVerif.rows[0].confirmed_at,
+          message: 'Details already confirmed recently.',
+        };
+      }
+    }
+
+    const verifId = existingVerif.rows[0]?.id || uuidv4();
+    const now = new Date().toISOString();
+
+    // Upsert customer_kyc_verifications
+    await queryPostgres(
+      `INSERT INTO customer_kyc_verifications (
+        id, customer_id, loan_id, status, confirmed_at, updated_at
+      ) VALUES ($1, $2, $3, $4, NOW(), NOW())
+      ON CONFLICT (customer_id)
+      DO UPDATE SET
+        status = $4,
+        loan_id = COALESCE(customer_kyc_verifications.loan_id, EXCLUDED.loan_id),
+        confirmed_at = NOW(),
+        updated_at = NOW()`,
+      [verifId, context.customerId, context.loanId, CustomerVerificationStatus.CONFIRMED]
+    );
+
+    // Record confirmation entry in customer_kyc_correction_requests
+    const reqId = uuidv4();
+    await queryPostgres(
+      `INSERT INTO customer_kyc_correction_requests (
+        id, customer_id, loan_id, portal_token_id, request_type, section, explanation, status, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, 'CONFIRMATION', $5, 'Customer confirmed details are correct', 'RESOLVED', NOW(), NOW())`,
+      [reqId, context.customerId, context.loanId, context.tokenId, section || VerificationSection.ALL]
+    );
+
+    // Audit log (actor is the customer, no sensitive KYC payload)
+    await AuditService.log({
+      userId: null,
+      action: 'CUSTOMER_KYC_SELF_CONFIRMED',
+      entity: 'CustomerKYCVerification',
+      entityId: verifId,
+      newState: {
+        customerId: context.customerId,
+        loanId: context.loanId,
+        section: section || VerificationSection.ALL,
+        status: CustomerVerificationStatus.CONFIRMED,
+        confirmedAt: now,
+      },
+    });
+
+    return {
+      success: true,
+      status: CustomerVerificationStatus.CONFIRMED,
+      confirmedAt: now,
+      message: 'Thank you. Your confirmation has been recorded.',
+    };
+  }
+
+  /**
+   * Report an Issue / Request Correction.
+   * Allows borrower to report discrepancies in their personal, contact, address, photograph, or KYC documents.
+   * Does NOT directly alter any verified KYC records.
+   * Creates a reviewable request for authorized staff.
+   */
+  public static async reportPortalIssue(
+    rawToken: string,
+    payload: { section: VerificationSection; explanation: string }
+  ) {
+    const context = await this.validatePortalTokenContext(rawToken);
+
+    // Validation
+    const validSections = Object.values(VerificationSection);
+    if (!payload.section || !validSections.includes(payload.section)) {
+      throw new ValidationError(`Invalid section. Must be one of: ${validSections.join(', ')}`);
+    }
+
+    const trimmedExplanation = (payload.explanation || '').trim();
+    if (!trimmedExplanation || trimmedExplanation.length < 5) {
+      throw new ValidationError('Please provide a short explanation of the issue (minimum 5 characters).');
+    }
+    if (trimmedExplanation.length > 1000) {
+      throw new ValidationError('Explanation must not exceed 1000 characters.');
+    }
+
+    // Prevent duplicate pending issue report for same section in last 2 minutes
+    const duplicateCheck = await queryPostgres(
+      `SELECT id FROM customer_kyc_correction_requests
+       WHERE customer_id = $1 AND section = $2 AND status = 'PENDING'
+         AND created_at > NOW() - INTERVAL '2 minutes'`,
+      [context.customerId, payload.section]
+    );
+
+    if (duplicateCheck.rows.length > 0) {
+      throw new AppError(
+        'A correction request for this section has recently been submitted and is pending review.',
+        409,
+        'DUPLICATE_CORRECTION_REQUEST'
+      );
+    }
+
+    const reqId = uuidv4();
+    const verifId = uuidv4();
+
+    // 1. Insert correction request
+    await queryPostgres(
+      `INSERT INTO customer_kyc_correction_requests (
+        id, customer_id, loan_id, portal_token_id, request_type, section, explanation, status, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, 'CORRECTION_REQUEST', $5, $6, 'PENDING', NOW(), NOW())`,
+      [reqId, context.customerId, context.loanId, context.tokenId, payload.section, trimmedExplanation]
+    );
+
+    // 2. Update overall customer verification status
+    await queryPostgres(
+      `INSERT INTO customer_kyc_verifications (
+        id, customer_id, loan_id, status, updated_at
+      ) VALUES ($1, $2, $3, $4, NOW())
+      ON CONFLICT (customer_id)
+      DO UPDATE SET
+        status = $4,
+        loan_id = COALESCE(customer_kyc_verifications.loan_id, EXCLUDED.loan_id),
+        updated_at = NOW()`,
+      [verifId, context.customerId, context.loanId, CustomerVerificationStatus.CORRECTION_REQUESTED]
+    );
+
+    // 3. Audit log (never log full raw explanations if they might contain raw PII)
+    await AuditService.log({
+      userId: null,
+      action: 'CUSTOMER_KYC_CORRECTION_REQUESTED',
+      entity: 'CustomerKYCCorrectionRequest',
+      entityId: reqId,
+      newState: {
+        customerId: context.customerId,
+        loanId: context.loanId,
+        section: payload.section,
+        explanationLength: trimmedExplanation.length,
+        status: 'PENDING',
+      },
+    });
+
+    return {
+      success: true,
+      requestId: reqId,
+      status: CustomerVerificationStatus.CORRECTION_REQUESTED,
+      message: 'Correction request submitted successfully. Our operations team will review your report.',
+    };
+  }
+
+  /**
+   * Staff Endpoint: List correction requests across customers.
+   * RBAC: SUPER_ADMIN, ADMIN, BRANCH_MANAGER.
+   */
+  public static async listCorrectionRequests(
+    user: AuthenticatedUser,
+    query: { status?: string; section?: string; page?: number; limit?: number }
+  ) {
+    const page = Math.max(1, Number(query.page || 1));
+    const limit = Math.min(100, Math.max(1, Number(query.limit || 20)));
+    const offset = (page - 1) * limit;
+
+    const conditions: string[] = ["cr.request_type = 'CORRECTION_REQUEST'"];
+    const params: any[] = [];
+    let paramIndex = 1;
+
+    if (query.status) {
+      conditions.push(`cr.status = $${paramIndex++}`);
+      params.push(query.status);
+    }
+
+    if (query.section) {
+      conditions.push(`cr.section = $${paramIndex++}`);
+      params.push(query.section);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const countRes = await queryPostgres(
+      `SELECT COUNT(*) as total FROM customer_kyc_correction_requests cr ${whereClause}`,
+      params
+    );
+    const total = Number(countRes.rows[0]?.total || 0);
+
+    const listParams = [...params, limit, offset];
+    const listRes = await queryPostgres(
+      `SELECT cr.id, cr.customer_id, cr.loan_id, cr.request_type, cr.section, cr.explanation,
+              cr.status, cr.resolution_notes, cr.reviewed_by, cr.reviewed_at, cr.created_at, cr.updated_at,
+              c.full_name as customer_name, c.customer_code, c.primary_phone,
+              l.loan_account_no,
+              u.full_name as reviewer_name
+       FROM customer_kyc_correction_requests cr
+       JOIN customers c ON c.id = cr.customer_id
+       LEFT JOIN loans l ON l.id = cr.loan_id
+       LEFT JOIN users u ON u.id = cr.reviewed_by
+       ${whereClause}
+       ORDER BY cr.created_at DESC
+       LIMIT $${paramIndex++} OFFSET $${paramIndex++}`,
+      listParams
+    );
+
+    return {
+      requests: listRes.rows.map((r: any) => ({
+        id: r.id,
+        customerId: r.customer_id,
+        customerName: r.customer_name,
+        customerCode: r.customer_code,
+        customerPhone: maskPhoneNumber(r.primary_phone),
+        loanId: r.loan_id,
+        loanAccountNo: r.loan_account_no,
+        requestType: r.request_type,
+        section: r.section,
+        explanation: r.explanation,
+        status: r.status,
+        resolutionNotes: r.resolution_notes,
+        reviewedBy: r.reviewed_by,
+        reviewedByName: r.reviewer_name,
+        reviewedAt: r.reviewed_at ? (r.reviewed_at instanceof Date ? r.reviewed_at.toISOString() : String(r.reviewed_at)) : null,
+        createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+        updatedAt: r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at),
+      })),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
+
+  /**
+   * Staff Endpoint: Get customer's verification and correction history.
+   * RBAC: SUPER_ADMIN, ADMIN, BRANCH_MANAGER, COLLECTION_AGENT.
+   */
+  public static async getCustomerVerifications(customerId: string, user: AuthenticatedUser) {
+    const custRes = await queryPostgres(
+      `SELECT id, customer_code, full_name FROM customers WHERE id = $1 AND deleted_at IS NULL`,
+      [customerId]
+    );
+
+    if (custRes.rows.length === 0) {
+      throw new NotFoundError('Customer not found');
+    }
+
+    const verifRes = await queryPostgres(
+      `SELECT * FROM customer_kyc_verifications WHERE customer_id = $1`,
+      [customerId]
+    );
+
+    const corrRes = await queryPostgres(
+      `SELECT cr.*, u.full_name as reviewer_name, l.loan_account_no
+       FROM customer_kyc_correction_requests cr
+       LEFT JOIN users u ON u.id = cr.reviewed_by
+       LEFT JOIN loans l ON l.id = cr.loan_id
+       WHERE cr.customer_id = $1
+       ORDER BY cr.created_at DESC`,
+      [customerId]
+    );
+
+    return {
+      customer: custRes.rows[0],
+      verification: verifRes.rows[0]
+        ? {
+            id: verifRes.rows[0].id,
+            customerId: verifRes.rows[0].customer_id,
+            loanId: verifRes.rows[0].loan_id,
+            status: verifRes.rows[0].status,
+            confirmedAt: verifRes.rows[0].confirmed_at
+              ? (verifRes.rows[0].confirmed_at instanceof Date ? verifRes.rows[0].confirmed_at.toISOString() : String(verifRes.rows[0].confirmed_at))
+              : null,
+            lastReviewedAt: verifRes.rows[0].last_reviewed_at
+              ? (verifRes.rows[0].last_reviewed_at instanceof Date ? verifRes.rows[0].last_reviewed_at.toISOString() : String(verifRes.rows[0].last_reviewed_at))
+              : null,
+            createdAt: verifRes.rows[0].created_at instanceof Date ? verifRes.rows[0].created_at.toISOString() : String(verifRes.rows[0].created_at),
+            updatedAt: verifRes.rows[0].updated_at instanceof Date ? verifRes.rows[0].updated_at.toISOString() : String(verifRes.rows[0].updated_at),
+          }
+        : {
+            id: '',
+            customerId,
+            loanId: null,
+            status: CustomerVerificationStatus.NOT_REVIEWED,
+            confirmedAt: null,
+            lastReviewedAt: null,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+      requests: corrRes.rows.map((r: any) => ({
+        id: r.id,
+        customerId: r.customer_id,
+        loanId: r.loan_id,
+        loanAccountNo: r.loan_account_no,
+        requestType: r.request_type,
+        section: r.section,
+        explanation: r.explanation,
+        status: r.status,
+        resolutionNotes: r.resolution_notes,
+        reviewedBy: r.reviewed_by,
+        reviewedByName: r.reviewer_name,
+        reviewedAt: r.reviewed_at ? (r.reviewed_at instanceof Date ? r.reviewed_at.toISOString() : String(r.reviewed_at)) : null,
+        createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+        updatedAt: r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at),
+      })),
+    };
+  }
+
+  /**
+   * Staff Endpoint: Review a customer correction request.
+   * RBAC: SUPER_ADMIN, ADMIN, BRANCH_MANAGER.
+   */
+  public static async reviewCorrectionRequest(
+    requestId: string,
+    user: AuthenticatedUser,
+    body: { status: 'UNDER_REVIEW' | 'RESOLVED' | 'REJECTED'; resolutionNotes?: string }
+  ) {
+    const allowedStatuses = ['UNDER_REVIEW', 'RESOLVED', 'REJECTED'];
+    if (!body.status || !allowedStatuses.includes(body.status)) {
+      throw new ValidationError(`Status must be one of: ${allowedStatuses.join(', ')}`);
+    }
+
+    const reqRes = await queryPostgres(
+      `SELECT * FROM customer_kyc_correction_requests WHERE id = $1`,
+      [requestId]
+    );
+
+    if (reqRes.rows.length === 0) {
+      throw new NotFoundError('Correction request not found');
+    }
+
+    const currentReq = reqRes.rows[0];
+
+    // Update the request
+    await queryPostgres(
+      `UPDATE customer_kyc_correction_requests
+       SET status = $1, resolution_notes = $2, reviewed_by = $3, reviewed_at = NOW(), updated_at = NOW()
+       WHERE id = $4`,
+      [body.status, body.resolutionNotes || null, user.id, requestId]
+    );
+
+    // Re-evaluate customer-level verification status
+    const pendingCountRes = await queryPostgres(
+      `SELECT COUNT(*) as pending_count FROM customer_kyc_correction_requests
+       WHERE customer_id = $1 AND status = 'PENDING' AND id != $2`,
+      [currentReq.customer_id, requestId]
+    );
+    const pendingCount = Number(pendingCountRes.rows[0]?.pending_count || 0);
+
+    let newCustomerVerifStatus: CustomerVerificationStatus;
+    if (pendingCount > 0) {
+      newCustomerVerifStatus = CustomerVerificationStatus.CORRECTION_REQUESTED;
+    } else if (body.status === 'UNDER_REVIEW') {
+      newCustomerVerifStatus = CustomerVerificationStatus.UNDER_REVIEW;
+    } else if (body.status === 'RESOLVED') {
+      newCustomerVerifStatus = CustomerVerificationStatus.RESOLVED;
+    } else {
+      newCustomerVerifStatus = CustomerVerificationStatus.REJECTED;
+    }
+
+    await queryPostgres(
+      `UPDATE customer_kyc_verifications
+       SET status = $1, last_reviewed_at = NOW(), updated_at = NOW()
+       WHERE customer_id = $2`,
+      [newCustomerVerifStatus, currentReq.customer_id]
+    );
+
+    // Audit log
+    await AuditService.log({
+      userId: user.id,
+      action: 'REVIEW_CUSTOMER_KYC_CORRECTION',
+      entity: 'CustomerKYCCorrectionRequest',
+      entityId: requestId,
+      previousState: {
+        status: currentReq.status,
+      },
+      newState: {
+        status: body.status,
+        resolutionNotes: body.resolutionNotes || null,
+        reviewedBy: user.id,
+        customerVerificationStatus: newCustomerVerifStatus,
+      },
+    });
+
+    return {
+      success: true,
+      requestId,
+      status: body.status,
+      customerVerificationStatus: newCustomerVerifStatus,
+      message: `Correction request marked as ${body.status}`,
     };
   }
 }

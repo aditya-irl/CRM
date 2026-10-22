@@ -348,3 +348,36 @@ CREATE TABLE IF NOT EXISTS dealer_payable_allocations (
 CREATE INDEX IF NOT EXISTS idx_dealer_payable_allocations_payout ON dealer_payable_allocations(payout_id);
 CREATE INDEX IF NOT EXISTS idx_dealer_payable_allocations_loan ON dealer_payable_allocations(loan_id);
 
+CREATE TABLE IF NOT EXISTS customer_kyc_verifications (
+    id TEXT PRIMARY KEY,
+    customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    loan_id TEXT REFERENCES loans(id) ON DELETE SET NULL,
+    status TEXT NOT NULL DEFAULT 'NOT_REVIEWED',
+    confirmed_at TEXT,
+    last_reviewed_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(customer_id)
+);
+CREATE INDEX IF NOT EXISTS idx_cust_kyc_verif_customer ON customer_kyc_verifications(customer_id);
+CREATE INDEX IF NOT EXISTS idx_cust_kyc_verif_status ON customer_kyc_verifications(status);
+
+CREATE TABLE IF NOT EXISTS customer_kyc_correction_requests (
+    id TEXT PRIMARY KEY,
+    customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    loan_id TEXT REFERENCES loans(id) ON DELETE SET NULL,
+    portal_token_id TEXT REFERENCES customer_portal_tokens(id) ON DELETE SET NULL,
+    request_type TEXT NOT NULL DEFAULT 'CORRECTION_REQUEST',
+    section TEXT NOT NULL,
+    explanation TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'PENDING',
+    resolution_notes TEXT,
+    reviewed_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    reviewed_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_corr_req_customer ON customer_kyc_correction_requests(customer_id);
+CREATE INDEX IF NOT EXISTS idx_corr_req_status ON customer_kyc_correction_requests(status);
+CREATE INDEX IF NOT EXISTS idx_corr_req_created_at ON customer_kyc_correction_requests(created_at);
+
