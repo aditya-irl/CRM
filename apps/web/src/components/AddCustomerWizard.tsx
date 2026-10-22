@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ApiClient } from '../services/api';
 import {
   KYCType,
@@ -89,6 +89,19 @@ const initialProductAttachments: AttachmentItem[] = [
     status: 'READY',
   },
 ];
+
+export function useBodyScrollLock(isOpen: boolean) {
+  useEffect(() => {
+    if (!isOpen || typeof document === 'undefined') return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isOpen]);
+}
 
 export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, onClose, onSuccess }) => {
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4 | 5>(1);
@@ -232,6 +245,25 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
     resetWizard();
     onClose();
   };
+
+  const stepContentRef = useRef<HTMLDivElement>(null);
+
+  // Background body scroll locking while modal is open, restoring previous overflow style on close or unmount
+  useBodyScrollLock(isOpen);
+
+  // Reset scroll position to top when transitioning between wizard steps
+  useEffect(() => {
+    if (stepContentRef.current) {
+      stepContentRef.current.scrollTop = 0;
+    }
+  }, [currentStep]);
+
+  // Scroll to top of content container if an error message is triggered
+  useEffect(() => {
+    if (errorMsg && stepContentRef.current) {
+      stepContentRef.current.scrollTop = 0;
+    }
+  }, [errorMsg]);
 
   useEffect(() => {
     if (isOpen) {
@@ -542,7 +574,18 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
 
   return (
     <div className="modal-overlay">
-      <div className="modal-content" style={{ width: '100%', maxWidth: 780, padding: 0 }}>
+      <div
+        className="modal-content wizard-modal-container"
+        style={{
+          width: '100%',
+          maxWidth: 780,
+          maxHeight: 'min(90vh, 920px)',
+          display: 'flex',
+          flexDirection: 'column',
+          padding: 0,
+          overflow: 'hidden',
+        }}
+      >
         {/* Header */}
         <div
           style={{
@@ -552,6 +595,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
             justifyContent: 'space-between',
             alignItems: 'center',
             background: 'var(--bg-surface-secondary)',
+            flexShrink: 0,
           }}
         >
           <div>
@@ -575,7 +619,18 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
 
         {/* Success Screen */}
         {createdResult ? (
-          <div style={{ padding: 36, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <div
+            style={{
+              padding: 36,
+              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              flex: 1,
+              minHeight: 0,
+              overflowY: 'auto',
+            }}
+          >
             <div
               style={{
                 width: 56,
@@ -773,7 +828,15 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
             </div>
           </div>
         ) : (
-          <div>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              flex: 1,
+              minHeight: 0,
+              overflow: 'hidden',
+            }}
+          >
             {/* Step Progress Bar */}
             <div
               style={{
@@ -782,6 +845,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                 borderBottom: '1px solid var(--border-subtle)',
                 padding: '10px 16px',
                 overflowX: 'auto',
+                flexShrink: 0,
               }}
             >
               {steps.map((s, idx) => {
@@ -839,7 +903,16 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
             </div>
 
             {/* Step Content Container */}
-            <div style={{ padding: 24 }}>
+            <div
+              ref={stepContentRef}
+              className="wizard-step-content"
+              style={{
+                padding: 24,
+                flex: 1,
+                minHeight: 0,
+                overflowY: 'auto',
+              }}
+            >
               {errorMsg && (
                 <div
                   style={{
@@ -1601,11 +1674,12 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
+                flexShrink: 0,
               }}
             >
               <button
                 type="button"
-                onClick={currentStep === 1 ? onClose : handlePrev}
+                onClick={currentStep === 1 ? handleClose : handlePrev}
                 className="btn btn-secondary"
               >
                 {currentStep === 1 ? (

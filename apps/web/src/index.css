@@ -354,6 +354,22 @@ h1, h2, h3, h4, h5, h6 {
   background: var(--bg-surface-secondary);
 }
 
+/* Onboarding Wizard Modal Scroll & Layout */
+.modal-content.wizard-modal-container {
+  padding: 0 !important;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.wizard-step-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* Drawer overlay and structures */
 .crm-drawer-overlay {
   position: fixed;
@@ -559,6 +575,11 @@ h1, h2, h3, h4, h5, h6 {
     padding: 16px !important;
     border-radius: var(--radius-lg) !important;
   }
+
+  .modal-content.wizard-modal-container {
+    padding: 0 !important;
+    max-height: 94vh !important;
+  }
 }
 
 /* Small Smartphone Breakpoint (<= 480px: 320px, 360px, 375px, 390px, 430px) */
@@ -576,6 +597,10 @@ h1, h2, h3, h4, h5, h6 {
   .modal-actions-footer .btn {
     width: 100% !important;
     justify-content: center !important;
+  }
+
+  .wizard-step-content {
+    padding: 16px !important;
   }
 
   .collection-source-button-group {
