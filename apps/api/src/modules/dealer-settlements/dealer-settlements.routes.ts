@@ -162,12 +162,12 @@ router.post(
 
 /**
  * POST /api/v1/dealer-settlements
- * Record a dealer settlement remitted by a partner store.
- * If called by a dealer, automatically records as a pending approval request.
+ * Record a dealer settlement remitted by a partner store (Admin / Manager only).
+ * Dealers submit requests via POST /api/v1/dealer-settlements/request.
  */
 router.post(
   '/',
-  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER, UserRole.DEALER),
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER),
   validateBody(createDealerSettlementSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {

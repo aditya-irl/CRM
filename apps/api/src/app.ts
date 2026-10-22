@@ -76,8 +76,13 @@ const buildCorsOptions = (): CorsOptions => {
 // Security and utility middlewares
 app.use(helmet());
 app.use(cors(buildCorsOptions()));
-app.use(express.json({ limit: '25mb' }));
-app.use(express.urlencoded({ extended: true, limit: '25mb' }));
+// KYC endpoints accept base64 document payloads where 10MB binary becomes ~14MB base64
+app.use('/api/v1/kyc', express.json({ limit: '25mb' }));
+app.use('/api/v1/kyc', express.urlencoded({ extended: true, limit: '25mb' }));
+
+// Standard application endpoints are strictly constrained to 10MB payload limit
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 /**
  * Sanitizes URLs for application logging by redacting sensitive query parameters
