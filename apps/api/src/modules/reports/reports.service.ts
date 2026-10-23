@@ -2104,30 +2104,34 @@ export class ReportService {
         d.owner_name AS contact_person,
         d.phone,
         d.status,
-        COUNT(DISTINCT l.customer_id) AS total_customers,
-        COUNT(l.id) AS total_loans,
-        COUNT(l.id) AS total_phones_financed,
-        COALESCE(SUM(l.net_disbursed_amount), 0) AS total_financed_principal,
-        COALESCE(SUM(l.down_payment), 0) AS total_down_payment,
-        COALESCE(SUM(l.total_paid), 0) AS total_collected,
-        COALESCE(SUM(l.outstanding_balance), 0) AS total_outstanding,
+        COUNT(DISTINCT CASE WHEN l.status IN ('ACTIVE', 'CLOSED', 'DEFAULTED') THEN l.customer_id END)::int AS total_customers,
+        COUNT(l.id)::int AS total_loans,
+        COUNT(CASE WHEN l.status IN ('ACTIVE', 'CLOSED', 'DEFAULTED') THEN l.id END)::int AS total_phones_financed,
+        COALESCE(SUM(CASE WHEN l.status IN ('ACTIVE', 'CLOSED', 'DEFAULTED') THEN l.net_disbursed_amount ELSE 0 END), 0)::numeric AS total_financed_principal,
+        COALESCE(SUM(CASE WHEN l.status IN ('ACTIVE', 'CLOSED', 'DEFAULTED') THEN l.down_payment ELSE 0 END), 0)::numeric AS total_down_payment,
+        COALESCE(SUM(CASE WHEN l.status IN ('ACTIVE', 'CLOSED', 'DEFAULTED') THEN l.total_paid ELSE 0 END), 0)::numeric AS total_collected,
+        COALESCE(SUM(CASE WHEN l.status IN ('ACTIVE', 'CLOSED', 'DEFAULTED') THEN l.outstanding_balance ELSE 0 END), 0)::numeric AS total_outstanding,
         COALESCE(SUM(
-          (SELECT COALESCE(SUM(e.remaining_amount), 0)
-           FROM emi_installments e
-           WHERE e.loan_id = l.id AND e.status = 'OVERDUE')
-        ), 0) AS total_overdue,
+          CASE WHEN l.status IN ('ACTIVE', 'CLOSED', 'DEFAULTED') THEN
+            (SELECT COALESCE(SUM(e.remaining_amount), 0)
+             FROM emi_installments e
+             WHERE e.loan_id = l.id AND e.status = 'OVERDUE')
+          ELSE 0 END
+        ), 0)::numeric AS total_overdue,
         COALESCE(SUM(
-          (SELECT COALESCE(SUM(e.penalty_amount), 0)
-           FROM emi_installments e
-           WHERE e.loan_id = l.id)
-        ), 0) AS total_penalty,
-        COUNT(CASE WHEN l.status = 'ACTIVE' THEN 1 END) AS active_loans,
-        COUNT(CASE WHEN l.status = 'CLOSED' THEN 1 END) AS completed_loans,
-        COUNT(CASE WHEN l.status = 'PENDING_APPROVAL' THEN 1 END) AS pending_loans,
-        COUNT(CASE WHEN l.status = 'REJECTED' THEN 1 END) AS rejected_loans,
-        COUNT(CASE WHEN EXISTS (
+          CASE WHEN l.status IN ('ACTIVE', 'CLOSED', 'DEFAULTED') THEN
+            (SELECT COALESCE(SUM(e.penalty_amount), 0)
+             FROM emi_installments e
+             WHERE e.loan_id = l.id)
+          ELSE 0 END
+        ), 0)::numeric AS total_penalty,
+        COUNT(CASE WHEN l.status = 'ACTIVE' THEN 1 END)::int AS active_loans,
+        COUNT(CASE WHEN l.status = 'CLOSED' THEN 1 END)::int AS completed_loans,
+        COUNT(CASE WHEN l.status = 'PENDING_APPROVAL' THEN 1 END)::int AS pending_loans,
+        COUNT(CASE WHEN l.status = 'REJECTED' THEN 1 END)::int AS rejected_loans,
+        COUNT(CASE WHEN l.status IN ('ACTIVE', 'CLOSED', 'DEFAULTED') AND EXISTS (
           SELECT 1 FROM emi_installments e WHERE e.loan_id = l.id AND e.status = 'OVERDUE'
-        ) THEN 1 END) AS overdue_loans
+        ) THEN 1 END)::int AS overdue_loans
       FROM dealers d
       LEFT JOIN loans l ON l.dealer_id = d.id ${dateFilterClause}
       ${dealerFilterClause}
@@ -2146,12 +2150,12 @@ export class ReportService {
       totalCustomers: parseInt(r.total_customers, 10),
       totalLoans: parseInt(r.total_loans, 10),
       totalPhonesFinanced: parseInt(r.total_phones_financed, 10),
-      totalFinancedPrincipal: Number(r.total_financed_principal),
-      totalDownPayment: Number(r.total_down_payment),
-      totalCollected: Number(r.total_collected),
-      totalOutstanding: Number(r.total_outstanding),
-      totalOverdue: Number(r.total_overdue),
-      totalPenalty: Number(r.total_penalty),
+      totalFinancedPrincipal: Number(Number(r.total_financed_principal || 0).toFixed(2)),
+      totalDownPayment: Number(Number(r.total_down_payment || 0).toFixed(2)),
+      totalCollected: Number(Number(r.total_collected || 0).toFixed(2)),
+      totalOutstanding: Number(Number(r.total_outstanding || 0).toFixed(2)),
+      totalOverdue: Number(Number(r.total_overdue || 0).toFixed(2)),
+      totalPenalty: Number(Number(r.total_penalty || 0).toFixed(2)),
       activeLoans: parseInt(r.active_loans, 10),
       completedLoans: parseInt(r.completed_loans, 10),
       pendingLoans: parseInt(r.pending_loans, 10),
@@ -2163,12 +2167,12 @@ export class ReportService {
       totalCustomers: acc.totalCustomers + d.totalCustomers,
       totalLoans: acc.totalLoans + d.totalLoans,
       totalPhonesFinanced: acc.totalPhonesFinanced + d.totalPhonesFinanced,
-      totalFinancedPrincipal: acc.totalFinancedPrincipal + d.totalFinancedPrincipal,
-      totalDownPayment: acc.totalDownPayment + d.totalDownPayment,
-      totalAmountCollected: acc.totalAmountCollected + d.totalCollected,
-      totalOutstanding: acc.totalOutstanding + d.totalOutstanding,
-      totalOverdue: acc.totalOverdue + d.totalOverdue,
-      totalPenalty: acc.totalPenalty + d.totalPenalty,
+      totalFinancedPrincipal: Number(new Decimal(acc.totalFinancedPrincipal).plus(d.totalFinancedPrincipal).toFixed(2)),
+      totalDownPayment: Number(new Decimal(acc.totalDownPayment).plus(d.totalDownPayment).toFixed(2)),
+      totalAmountCollected: Number(new Decimal(acc.totalAmountCollected).plus(d.totalCollected).toFixed(2)),
+      totalOutstanding: Number(new Decimal(acc.totalOutstanding).plus(d.totalOutstanding).toFixed(2)),
+      totalOverdue: Number(new Decimal(acc.totalOverdue).plus(d.totalOverdue).toFixed(2)),
+      totalPenalty: Number(new Decimal(acc.totalPenalty).plus(d.totalPenalty).toFixed(2)),
       activeLoans: acc.activeLoans + d.activeLoans,
       completedLoans: acc.completedLoans + d.completedLoans,
       pendingLoans: acc.pendingLoans + d.pendingLoans,

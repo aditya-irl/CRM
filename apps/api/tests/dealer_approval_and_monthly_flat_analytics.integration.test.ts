@@ -268,6 +268,14 @@ describe('Dealer Loan Approval, Monthly Flat Simple Interest & Dealer Financing 
         .set('Authorization', `Bearer ${adminToken}`);
       const found = queueRes.body.data.find((l: any) => l.id === pendingLoanId);
       expect(found).toBeUndefined();
+
+      // Super Admin disburses the approved loan -> status becomes ACTIVE
+      const disbRes = await request(app)
+        .post(`/api/v1/loans/${pendingLoanId}/disburse`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({});
+      expect(disbRes.status).toBe(200);
+      expect(disbRes.body.data.status).toBe(LoanStatus.ACTIVE);
     });
 
     test('Dealer originates second loan, Super Admin rejects with mandatory reason', async () => {
@@ -333,16 +341,21 @@ describe('Dealer Loan Approval, Monthly Flat Simple Interest & Dealer Financing 
       const target = dealers[0];
 
       expect(target.dealerId).toBe(dealerId);
-      // Total Financed Principal = Retail Price - Down Payment
-      // Loan 1: 10000 - 4000 = 6000; Loan 2: 15000 - 3000 = 12000 => Total = 18000
-      expect(target.totalFinancedPrincipal).toBe(18000);
-      expect(target.totalDownPayment).toBe(7000);
+      // Total Financed Principal = Retail Price - Down Payment for eligible financed/disbursed loans
+      // Loan 1 (Disbursed/Active): 10000 - 4000 = 6000
+      // Loan 2 (Rejected): Strictly excluded from financed principal
+      expect(target.totalFinancedPrincipal).toBe(6000);
+      expect(target.totalDownPayment).toBe(4000);
       expect(target.totalLoans).toBe(2);
-      expect(target.totalPhonesFinanced).toBe(2);
+      expect(target.totalPhonesFinanced).toBe(1);
+      expect(target.activeLoans).toBe(1);
       expect(target.rejectedLoans).toBe(1);
 
-      expect(summary.totalFinancedPrincipal).toBe(18000);
-      expect(summary.totalDownPayment).toBe(7000);
+      expect(summary.totalFinancedPrincipal).toBe(6000);
+      expect(summary.totalDownPayment).toBe(4000);
+      expect(summary.totalPhonesFinanced).toBe(1);
+      expect(summary.activeLoans).toBe(1);
+      expect(summary.rejectedLoans).toBe(1);
     });
 
     test('Dealer accesses dealer-financing-analytics and is automatically scoped to own store (RLAC)', async () => {
