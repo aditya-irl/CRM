@@ -897,6 +897,73 @@ export class ApiClient {
     });
   }
 
+  /**
+   * Upload customer photo directly to the authenticated photo endpoint.
+   * Normalizes MIME types (e.g. image/jpg -> image/jpeg) and handles mobile camera captures.
+   */
+  public static async uploadCustomerPhoto(customerId: string, file: File): Promise<{
+    photoUrl: string;
+    customer: ICustomer;
+  }> {
+    let mimeType = file.type || 'image/jpeg';
+    if (mimeType === 'image/jpg') mimeType = 'image/jpeg';
+
+    let fileName = file.name || 'customer-photo.jpg';
+    if (!fileName.includes('.')) {
+      fileName = `${fileName}.jpg`;
+    }
+
+    const fileBase64 = await this.fileToBase64(file);
+    const res = await this.request<{
+      success: boolean;
+      data: {
+        photoUrl: string;
+        customer: ICustomer;
+      };
+    }>(`/customers/${customerId}/photo`, {
+      method: 'POST',
+      body: JSON.stringify({
+        fileName,
+        mimeType,
+        fileBase64,
+      }),
+    });
+    return res.data;
+  }
+
+  /**
+   * Get an authorized display URL for a customer photo.
+   * If the photoUrl is an internal API endpoint (e.g. /api/v1/customers/:id/photo),
+   * this builds the full API URL and appends the current auth token for secure <img> rendering.
+   */
+  public static getAuthorizedPhotoUrl(photoUrl?: string | null): string {
+    if (!photoUrl) return '';
+    if (photoUrl.startsWith('/api/v1/') || photoUrl.startsWith('/')) {
+      const cleanPath = photoUrl.replace(/^\/api\/v1/, '');
+      const fullUrl = buildApiUrl(cleanPath);
+      if (cleanPath.startsWith('/customers/') && !cleanPath.includes('token=')) {
+        const token = this.getToken();
+        if (token) {
+          const sep = fullUrl.includes('?') ? '&' : '?';
+          return `${fullUrl}${sep}token=${encodeURIComponent(token)}`;
+        }
+      }
+      return fullUrl;
+    }
+    if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://')) {
+      if (photoUrl.includes('/customers/') && photoUrl.includes('/photo') && !photoUrl.includes('token=')) {
+        const token = this.getToken();
+        if (token) {
+          const sep = photoUrl.includes('?') ? '&' : '?';
+          return `${photoUrl}${sep}token=${encodeURIComponent(token)}`;
+        }
+      }
+      return photoUrl;
+    }
+    return photoUrl;
+  }
+
+
   // Loans
   public static async calculateLoanPreview(data: any) {
     return this.request<any>('/loans/calculate-preview', {

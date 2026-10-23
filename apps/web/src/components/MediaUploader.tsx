@@ -40,10 +40,30 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     let file = e.target.files?.[0];
+    if (e.target) {
+      e.target.value = '';
+    }
     if (!file) return;
 
     const isPdfFile = file.type === 'application/pdf';
     setIsPdf(isPdfFile);
+
+    // Normalize fileName and MIME type for mobile camera captures
+    let normalizedName = file.name || (category === 'CUSTOMER_PHOTO' ? 'customer-photo.jpg' : 'upload.jpg');
+    if (!normalizedName.includes('.')) {
+      normalizedName = `${normalizedName}.jpg`;
+    }
+    let normalizedMime = file.type || (isPdfFile ? 'application/pdf' : 'image/jpeg');
+    if (normalizedMime === 'image/jpg') normalizedMime = 'image/jpeg';
+
+    if (file.name !== normalizedName || file.type !== normalizedMime) {
+      try {
+        file = new File([file], normalizedName, { type: normalizedMime, lastModified: file.lastModified });
+      } catch {
+        // Fallback for older browsers
+      }
+    }
+
     setFileName(file.name);
 
     if (isPdfFile) {
@@ -58,7 +78,8 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
     } else {
       setCompressing(true);
       try {
-        if (file.type.startsWith('image/')) {
+        const isCandidateImage = file.type.startsWith('image/') || category === 'CUSTOMER_PHOTO' || category === 'DOCUMENT_PHOTO';
+        if (isCandidateImage) {
           const maxDim = category === 'CUSTOMER_PHOTO' ? 400 : 1000;
           const qual = category === 'CUSTOMER_PHOTO' ? 0.7 : 0.75;
           file = await compressImageFile(file, maxDim, qual);
@@ -72,7 +93,7 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
           onChange({
             file: processedFile,
             previewUrl: url,
-            mimeType: processedFile.type,
+            mimeType: processedFile.type || 'image/jpeg',
             fileName: processedFile.name,
             fileSizeBytes: processedFile.size,
           });
@@ -88,7 +109,7 @@ export const MediaUploader: React.FC<MediaUploaderProps> = ({
           onChange({
             file,
             previewUrl: url,
-            mimeType: file.type,
+            mimeType: file.type || 'image/jpeg',
             fileName: file.name,
             fileSizeBytes: file.size,
           });

@@ -435,7 +435,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
                 >
                   {customerDetail.customer.photoUrl ? (
                     <img
-                      src={customerDetail.customer.photoUrl}
+                      src={ApiClient.getAuthorizedPhotoUrl(customerDetail.customer.photoUrl)}
                       alt={customerDetail.customer.fullName}
                       referrerPolicy="no-referrer"
                       style={{ width: '100%', height: '100%', objectFit: 'cover' }}
@@ -736,7 +736,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
                       >
                         {customerDetail.customer.photoUrl ? (
                           <img
-                            src={customerDetail.customer.photoUrl}
+                            src={ApiClient.getAuthorizedPhotoUrl(customerDetail.customer.photoUrl)}
                             alt="Customer Photo"
                             referrerPolicy="no-referrer"
                             style={{ width: '100%', height: '100%', objectFit: 'cover' }}

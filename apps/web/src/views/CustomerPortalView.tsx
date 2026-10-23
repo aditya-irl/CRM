@@ -2226,7 +2226,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                               {profileData.hasPhoto && profileData.photoUrl ? (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                                   <img
-                                    src={profileData.photoUrl}
+                                    src={ApiClient.getAuthorizedPhotoUrl(profileData.photoUrl)}
                                     alt="Registered Customer"
                                     style={{
                                       width: 90,

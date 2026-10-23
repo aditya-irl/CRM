@@ -14,7 +14,7 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
  * Validates magic bytes / binary file header signatures against declared MIME type
  * to prevent disguised or malicious executable/script file uploads.
  */
-function validateMagicBytes(buffer: Buffer, mimeType: string): boolean {
+export function validateMagicBytes(buffer: Buffer, mimeType: string): boolean {
   if (buffer.length < 3) return false;
   const normMime = mimeType.toLowerCase().trim();
   if (normMime === 'application/pdf') {

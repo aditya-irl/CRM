@@ -410,25 +410,16 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
     setPhotoUploadError(null);
 
     try {
-      const photoDoc = await ApiClient.uploadKYCDocument({
-        customerId: createdResult.customer.id,
-        docType: KYCType.PHOTO,
-        docNumber: 'Customer Main Photo',
-        file: customerPhoto.file,
-      });
-      if (photoDoc?.id) {
-        const photoDownload = await ApiClient.getKYCDownloadUrl(photoDoc.id);
-        if (photoDownload?.downloadUrl) {
-          await ApiClient.updateCustomer(createdResult.customer.id, { photoUrl: photoDownload.downloadUrl });
-          setCreatedResult({
-            ...createdResult,
-            customer: {
-              ...createdResult.customer,
-              photoUrl: photoDownload.downloadUrl,
-            },
-          });
-          setPhotoUploadSuccess(true);
-        }
+      const uploadRes = await ApiClient.uploadCustomerPhoto(createdResult.customer.id, customerPhoto.file);
+      if (uploadRes?.photoUrl) {
+        setCreatedResult({
+          ...createdResult,
+          customer: {
+            ...createdResult.customer,
+            photoUrl: uploadRes.photoUrl,
+          },
+        });
+        setPhotoUploadSuccess(true);
       }
     } catch (photoErr: any) {
       console.warn('Customer photo storage upload retry error:', photoErr);
@@ -502,22 +493,13 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
       const newCustomer = onboardResult.customer;
       const newLoan = onboardResult.loan || undefined;
 
-      // 2. Upload Customer Main Photo via secure KYC storage vault if attached
+      // 2. Upload Customer Main Photo via dedicated photo endpoint if attached
       if (customerPhoto?.file) {
         try {
-          const photoDoc = await ApiClient.uploadKYCDocument({
-            customerId: newCustomer.id,
-            docType: KYCType.PHOTO,
-            docNumber: 'Customer Main Photo',
-            file: customerPhoto.file,
-          });
-          if (photoDoc?.id) {
-            const photoDownload = await ApiClient.getKYCDownloadUrl(photoDoc.id);
-            if (photoDownload?.downloadUrl) {
-              await ApiClient.updateCustomer(newCustomer.id, { photoUrl: photoDownload.downloadUrl });
-              newCustomer.photoUrl = photoDownload.downloadUrl;
-              setPhotoUploadSuccess(true);
-            }
+          const uploadRes = await ApiClient.uploadCustomerPhoto(newCustomer.id, customerPhoto.file);
+          if (uploadRes?.photoUrl) {
+            newCustomer.photoUrl = uploadRes.photoUrl;
+            setPhotoUploadSuccess(true);
           }
         } catch (photoErr: any) {
           console.warn('Customer photo storage upload note:', photoErr);

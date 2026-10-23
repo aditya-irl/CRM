@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { queryPostgres, runPostgresTransaction } from '../../database/postgres';
 import { db } from '../../database/db';
@@ -14,9 +15,27 @@ import {
   ALLOWED_MONTHLY_INTEREST_RATES,
   DEALER_ALLOWED_INTEREST_RATES,
 } from '@crm/shared';
-import { AppError, NotFoundError, ForbiddenError } from '../../middlewares/error.middleware';
+import { AppError, NotFoundError, ForbiddenError, ValidationError } from '../../middlewares/error.middleware';
 import { AuthenticatedUser } from '../../middlewares/auth.middleware';
 import { AuditService } from '../audit/audit.service';
+import { getStorageProvider } from '../../core/storage';
+import { validateMagicBytes } from '../kyc/kyc.service';
+
+/**
+ * Format customer photo URL for client consumption.
+ * Translates private storage keys and expired presigned URLs to the permanent authorized streaming endpoint.
+ */
+export function formatCustomerPhotoUrl(customerId: string, rawPhotoUrl?: string | null): string | null {
+  if (!rawPhotoUrl || !String(rawPhotoUrl).trim()) return null;
+  const trimmed = String(rawPhotoUrl).trim();
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    if (trimmed.includes('backblazeb2.com') || trimmed.includes('amazonaws.com') || trimmed.includes('X-Amz-Signature') || trimmed.includes('X-Amz-Expires')) {
+      return `/api/v1/customers/${customerId}/photo`;
+    }
+    return trimmed;
+  }
+  return `/api/v1/customers/${customerId}/photo`;
+}
 
 export interface CreateCustomerDTO {
   fullName: string;
@@ -126,7 +145,7 @@ export class CustomerService {
         state: c.state,
         pincode: c.pincode,
         areaRoute: c.area_route,
-        photoUrl: c.photo_url,
+        photoUrl: formatCustomerPhotoUrl(c.id, c.photo_url),
         isActive: Boolean(c.is_active),
         activeLoansCount: Number(c.active_loans_count || 0),
         totalOutstanding: Number(c.total_outstanding || 0),
@@ -336,7 +355,7 @@ export class CustomerService {
         state: customer.state,
         pincode: customer.pincode,
         areaRoute: customer.area_route,
-        photoUrl: customer.photo_url,
+        photoUrl: formatCustomerPhotoUrl(customer.id, customer.photo_url),
         isActive: Boolean(customer.is_active),
         createdAt: customer.created_at,
         updatedAt: customer.updated_at,
@@ -446,6 +465,7 @@ export class CustomerService {
       state: created.state,
       pincode: created.pincode,
       areaRoute: created.area_route,
+      photoUrl: formatCustomerPhotoUrl(created.id, created.photo_url),
       isActive: Boolean(created.is_active),
       createdAt: created.created_at,
     };
@@ -504,7 +524,7 @@ export class CustomerService {
         state: c.state,
         pincode: c.pincode,
         areaRoute: c.area_route,
-        photoUrl: c.photo_url,
+        photoUrl: formatCustomerPhotoUrl(c.id || c.cust_id, c.photo_url),
         isActive: Boolean(c.is_active),
         createdAt: c.created_at,
         updatedAt: c.updated_at,
@@ -1130,6 +1150,7 @@ export class CustomerService {
       state: updated.state,
       pincode: updated.pincode,
       areaRoute: updated.area_route,
+      photoUrl: formatCustomerPhotoUrl(updated.id, updated.photo_url),
       isActive: Boolean(updated.is_active),
       updatedAt: updated.updated_at,
     };
@@ -1155,5 +1176,216 @@ export class CustomerService {
       entity: 'Customer',
       entityId: id,
     });
+  }
+
+  /**
+   * Verify customer existence and role-level access (IDOR / RLAC).
+   */
+  public static async verifyCustomerAccess(customerId: string, user: AuthenticatedUser) {
+    const custRes = await queryPostgres(
+      'SELECT id, customer_code, full_name, area_route, photo_url, created_by, deleted_at FROM customers WHERE id = $1 AND deleted_at IS NULL',
+      [customerId]
+    );
+
+    if (custRes.rows.length === 0) {
+      throw new NotFoundError('Customer not found');
+    }
+
+    const customer = custRes.rows[0];
+
+    // RLAC: Check dealer scoping or agent assignment permission (IDOR protection)
+    if (user.role === UserRole.DEALER) {
+      if (!user.dealerId) {
+        throw new ForbiddenError('Dealer context missing');
+      }
+      const dealerLoanRes = await queryPostgres(
+        `SELECT id FROM loans WHERE dealer_id = $1 AND customer_id = $2
+         UNION
+         SELECT id FROM customers WHERE id = $2 AND (created_by = $3 OR created_by IN (SELECT id FROM users WHERE dealer_id = $1))`,
+        [user.dealerId, customer.id, user.id]
+      );
+      if (dealerLoanRes.rows.length === 0) {
+        throw new ForbiddenError('You do not have access to this customer profile');
+      }
+    } else if (user.role === UserRole.COLLECTION_AGENT) {
+      const assignmentRes = await queryPostgres(
+        `SELECT id FROM collection_assignments
+         WHERE agent_id = $1 AND (customer_id = $2 OR area_route = $3) 
+           AND is_active = TRUE AND (effective_to IS NULL OR effective_to >= CURRENT_DATE)
+         UNION
+         SELECT id FROM loans WHERE customer_id = $2 AND assigned_agent_id = $1`,
+        [user.id, customer.id, customer.area_route]
+      );
+
+      if (assignmentRes.rows.length === 0) {
+        throw new ForbiddenError('You do not have access to this customer profile');
+      }
+    }
+
+    return customer;
+  }
+
+  /**
+   * Upload customer photograph securely to Backblaze B2 private storage vault.
+   * Validates MIME type, file size, image content (magic bytes), and customer access.
+   */
+  public static async uploadCustomerPhoto(
+    customerId: string,
+    data: {
+      fileName: string;
+      mimeType: string;
+      fileBuffer: Buffer;
+    },
+    user: AuthenticatedUser
+  ) {
+    const rawMime = (data.mimeType || '').toLowerCase().trim();
+    const mimeType = rawMime === 'image/jpg' ? 'image/jpeg' : rawMime;
+    const ALLOWED_PHOTO_MIMES = ['image/jpeg', 'image/png', 'image/webp'];
+
+    if (!ALLOWED_PHOTO_MIMES.includes(mimeType)) {
+      throw new ValidationError(`Invalid file type ${data.mimeType}. Only JPEG, PNG, or WEBP images are permitted.`);
+    }
+
+    const fileSizeBytes = data.fileBuffer.length;
+    if (fileSizeBytes <= 0 || fileSizeBytes > 10 * 1024 * 1024) {
+      throw new ValidationError('Photo file size must be greater than 0 and less than or equal to 10 MB.');
+    }
+
+    if (!validateMagicBytes(data.fileBuffer, mimeType)) {
+      throw new ValidationError('File content does not match the declared image MIME type.');
+    }
+
+    const customer = await this.verifyCustomerAccess(customerId, user);
+
+    const rawExt = data.fileName.split('.').pop()?.toLowerCase() || (mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg');
+    let fileExt = rawExt.replace(/[^a-z0-9]/g, '');
+    if (!fileExt || fileExt === 'bin' || fileExt === 'image' || fileExt === 'blob') {
+      fileExt = mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg';
+    }
+
+    const storageKey = `photos/${customer.id}/${uuidv4()}.${fileExt}`;
+    const storage = getStorageProvider();
+
+    try {
+      await storage.upload({
+        key: storageKey,
+        body: data.fileBuffer,
+        mimeType,
+        isPrivate: true,
+      });
+    } catch (storageErr: any) {
+      console.error(`[Customer Photo Upload Error] Storage upload failed for key ${storageKey}:`, storageErr?.message || storageErr);
+      throw new AppError('Storage service temporarily unavailable. Please retry upload shortly.', 503, 'STORAGE_PROVIDER_ERROR');
+    }
+
+    // Update customer photo_url in PostgreSQL
+    await queryPostgres(
+      `UPDATE customers SET photo_url = $1, updated_at = NOW() WHERE id = $2`,
+      [storageKey, customer.id]
+    );
+
+    // Also register or update in kyc_documents as doc_type = 'PHOTO' for compliance audit trail
+    const docId = uuidv4();
+    try {
+      await queryPostgres(
+        `INSERT INTO kyc_documents (
+          id, customer_id, doc_type, doc_number_masked, doc_number_hash,
+          storage_key, file_mime_type, file_size_bytes, status, verified_by,
+          verified_at, created_at
+        ) VALUES ($1, $2, 'PHOTO', 'Customer Photograph', $3, $4, $5, $6, 'VERIFIED', $7, NOW(), NOW())`,
+        [
+          docId,
+          customer.id,
+          crypto.createHash('sha256').update(`PHOTO_${customer.id}`).digest('hex'),
+          storageKey,
+          mimeType,
+          fileSizeBytes,
+          user.id,
+        ]
+      );
+    } catch (kycSyncErr) {
+      console.warn('[Customer Photo KYC Sync Note] Non-fatal KYC document link note:', kycSyncErr);
+    }
+
+    await AuditService.log({
+      userId: user.id,
+      action: 'CUSTOMER_PHOTO_UPLOADED',
+      entity: 'Customer',
+      entityId: customer.id,
+      newState: { storageKey, mimeType, fileSizeBytes },
+    });
+
+    const detail = await this.getCustomerById(customer.id, user);
+
+    return {
+      customerId: customer.id,
+      photoUrl: `/api/v1/customers/${customer.id}/photo`,
+      storageKey,
+      fileMimeType: mimeType,
+      fileSizeBytes,
+      customer: detail.customer,
+    };
+  }
+
+  /**
+   * Retrieve and stream customer photograph securely from Backblaze B2 storage vault.
+   */
+  public static async streamCustomerPhoto(customerId: string, user: AuthenticatedUser) {
+    const customer = await this.verifyCustomerAccess(customerId, user);
+
+    let storageKey: string | null = null;
+    let mimeType = 'image/jpeg';
+
+    if (customer.photo_url) {
+      const raw = String(customer.photo_url).trim();
+      if (raw.startsWith('http://') || raw.startsWith('https://')) {
+        // If it's an external URL (e.g. Unsplash seed), redirect
+        if (!raw.includes('backblazeb2.com') && !raw.includes('amazonaws.com') && !raw.includes('X-Amz-Signature')) {
+          return { redirectUrl: raw };
+        }
+        // Extract storage key from S3 presigned URL if it contains kyc/ or photos/
+        const match = raw.match(/\/(?:kyc|photos)\/[^?]+/);
+        if (match) {
+          storageKey = match[0].replace(/^\//, '');
+        }
+      } else {
+        storageKey = raw;
+      }
+    }
+
+    // Fallback: check kyc_documents where doc_type = 'PHOTO'
+    if (!storageKey) {
+      const kycPhotoRes = await queryPostgres(
+        `SELECT storage_key, file_mime_type FROM kyc_documents
+         WHERE customer_id = $1 AND doc_type = 'PHOTO'
+         ORDER BY created_at DESC LIMIT 1`,
+        [customer.id]
+      );
+      if (kycPhotoRes.rows.length > 0) {
+        storageKey = kycPhotoRes.rows[0].storage_key;
+        mimeType = kycPhotoRes.rows[0].file_mime_type || mimeType;
+      }
+    }
+
+    if (!storageKey) {
+      throw new NotFoundError('Customer photograph not found');
+    }
+
+    const storage = getStorageProvider();
+    const fileExists = await storage.exists(storageKey);
+    if (!fileExists) {
+      throw new NotFoundError('Customer photograph file not found in storage vault');
+    }
+
+    if (!storage.getStream) {
+      throw new AppError('Streaming not supported for active storage provider', 500);
+    }
+
+    const streamResult = await storage.getStream(storageKey);
+    return {
+      stream: streamResult.stream,
+      mimeType: streamResult.contentType || mimeType,
+      contentLength: streamResult.contentLength,
+    };
   }
 }

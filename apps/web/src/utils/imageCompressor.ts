@@ -3,7 +3,13 @@
  * Preserves document sharpness while avoiding multi-megabyte payload bottlenecks.
  */
 export async function compressImageFile(file: File, maxDimension: number = 1600, quality: number = 0.85): Promise<File> {
-  if (!file.type.startsWith('image/') || file.type === 'image/svg+xml') {
+  const mime = file.type || '';
+  if (mime === 'application/pdf' || mime === 'image/svg+xml') {
+    return file;
+  }
+  // Allow image/* or empty/octet-stream types from camera captures
+  const isCandidateImage = mime.startsWith('image/') || !mime || mime === 'application/octet-stream';
+  if (!isCandidateImage) {
     return file;
   }
 
@@ -44,8 +50,12 @@ export async function compressImageFile(file: File, maxDimension: number = 1600,
               resolve(file);
               return;
             }
-            if (blob.size < file.size || file.size > 200 * 1024) {
-              const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, '.jpg'), {
+            const rawName = file.name || 'photo.jpg';
+            const baseName = rawName.includes('.') ? rawName.replace(/\.[^/.]+$/, '') : rawName;
+            const outputName = `${baseName}.jpg`;
+
+            if (blob.size < file.size || file.size > 200 * 1024 || !file.type || file.name !== outputName) {
+              const compressedFile = new File([blob], outputName, {
                 type: 'image/jpeg',
                 lastModified: Date.now(),
               });

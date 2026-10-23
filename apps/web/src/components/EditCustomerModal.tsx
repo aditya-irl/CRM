@@ -55,21 +55,13 @@ export const EditCustomerModal: React.FC<EditCustomerModalProps> = ({
     setErrorMsg(null);
 
     try {
-      // 1. Upload new customer photo via KYC storage vault if provided
+      // 1. Upload new customer photo via dedicated photo endpoint if provided
       let finalPhotoUrl = customer.photoUrl || null;
       if (mainPhoto?.file) {
         try {
-          const photoDoc = await ApiClient.uploadKYCDocument({
-            customerId: customer.id,
-            docType: KYCType.PHOTO,
-            docNumber: 'Customer Main Photo',
-            file: mainPhoto.file,
-          });
-          if (photoDoc?.id) {
-            const photoDownload = await ApiClient.getKYCDownloadUrl(photoDoc.id);
-            if (photoDownload?.downloadUrl) {
-              finalPhotoUrl = photoDownload.downloadUrl;
-            }
+          const uploadRes = await ApiClient.uploadCustomerPhoto(customer.id, mainPhoto.file);
+          if (uploadRes?.photoUrl) {
+            finalPhotoUrl = uploadRes.photoUrl;
           }
         } catch (photoErr: any) {
           console.warn('Customer photo storage upload note:', photoErr);
@@ -282,7 +274,7 @@ export const EditCustomerModal: React.FC<EditCustomerModalProps> = ({
               <MediaUploader
                 label="Update Customer Photo / Avatar"
                 category="CUSTOMER_PHOTO"
-                value={customer.photoUrl || undefined}
+                value={ApiClient.getAuthorizedPhotoUrl(customer.photoUrl) || undefined}
                 helperText="Upload or take fresh customer live photo"
                 onChange={setMainPhoto}
               />
