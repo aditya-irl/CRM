@@ -25,6 +25,7 @@ import directCollectionsRoutes from './modules/direct-collections/direct-collect
 import portalRoutes from './modules/portal/portal.routes';
 import settingsRoutes from './modules/settings/settings.routes';
 import notificationRoutes from './modules/notifications/notifications.routes';
+import cashfreeRoutes from './modules/payments/cashfree.routes';
 import { EMIStateEngineJob } from './jobs/emi-state-engine.job';
 import { ReminderDispatcherJob } from './jobs/reminder-dispatcher.job';
 import { BackgroundScheduler } from './jobs/scheduler';
@@ -81,7 +82,15 @@ app.use('/api/v1/kyc', express.json({ limit: '25mb' }));
 app.use('/api/v1/kyc', express.urlencoded({ extended: true, limit: '25mb' }));
 
 // Standard application endpoints are strictly constrained to 10MB payload limit
-app.use(express.json({ limit: '10mb' }));
+// Preserve raw request body string for cryptographic signature verification (Cashfree webhooks)
+app.use(
+  express.json({
+    limit: '10mb',
+    verify: (req: any, _res, buf) => {
+      req.rawBody = buf.toString('utf8');
+    },
+  })
+);
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 /**
@@ -123,6 +132,7 @@ app.use('/api/v1/kyc', kycRoutes);
 app.use('/api/v1/loans', loanRoutes);
 app.use('/api/v1/agent', emiRoutes);
 app.use('/api/v1/emi', emiRoutes);
+app.use('/api/v1/payments/cashfree', cashfreeRoutes);
 app.use('/api/v1/payments', paymentRoutes);
 app.use('/api/v1/call-logs', callLogRoutes);
 app.use('/api/v1/assignments', assignmentRoutes);

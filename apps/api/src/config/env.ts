@@ -81,6 +81,12 @@ export const envSchema = z.object({
 
   // CORS — must be explicitly set to '*' or a domain list; empty = locked down
   CORS_ORIGIN: z.string().default(''),
+
+  // Cashfree Payment Gateway Configuration
+  CASHFREE_CLIENT_ID: z.string().optional(),
+  CASHFREE_CLIENT_SECRET: z.string().optional(),
+  CASHFREE_ENV: z.enum(['sandbox', 'production']).default('sandbox'),
+  CASHFREE_API_VERSION: z.string().default('2023-08-01'),
 }).superRefine((data, ctx) => {
   if (data.NODE_ENV === 'production') {
     // Blocker 2: Force PostgreSQL in production

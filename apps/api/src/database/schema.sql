@@ -377,7 +377,41 @@ CREATE TABLE IF NOT EXISTS customer_kyc_correction_requests (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_corr_req_customer ON customer_kyc_correction_requests(customer_id);
-CREATE INDEX IF NOT EXISTS idx_corr_req_status ON customer_kyc_correction_requests(status);
-CREATE INDEX IF NOT EXISTS idx_corr_req_created_at ON customer_kyc_correction_requests(created_at);
+CREATE TABLE IF NOT EXISTS cashfree_orders (
+    id TEXT PRIMARY KEY,
+    order_id TEXT UNIQUE NOT NULL,
+    payment_session_id TEXT,
+    loan_id TEXT NOT NULL REFERENCES loans(id) ON DELETE RESTRICT,
+    customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
+    emi_installment_id TEXT REFERENCES emi_installments(id) ON DELETE RESTRICT,
+    installment_number INTEGER,
+    order_amount REAL NOT NULL,
+    order_currency TEXT NOT NULL DEFAULT 'INR',
+    status TEXT NOT NULL DEFAULT 'ACTIVE',
+    cf_payment_id TEXT,
+    payment_time TEXT,
+    payment_method TEXT,
+    bank_reference TEXT,
+    payment_id TEXT REFERENCES payments(id) ON DELETE SET NULL,
+    idempotency_key TEXT UNIQUE,
+    error_message TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_cf_orders_loan ON cashfree_orders(loan_id);
+CREATE INDEX IF NOT EXISTS idx_cf_orders_customer ON cashfree_orders(customer_id);
+CREATE INDEX IF NOT EXISTS idx_cf_orders_order_id ON cashfree_orders(order_id);
+CREATE INDEX IF NOT EXISTS idx_cf_orders_status ON cashfree_orders(status);
+
+CREATE TABLE IF NOT EXISTS cashfree_webhook_events (
+    id TEXT PRIMARY KEY,
+    event_id TEXT UNIQUE NOT NULL,
+    event_type TEXT NOT NULL,
+    order_id TEXT,
+    cf_payment_id TEXT,
+    raw_payload TEXT,
+    processed_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_cf_webhook_events_order_id ON cashfree_webhook_events(order_id);
+
 

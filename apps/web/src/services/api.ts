@@ -131,6 +131,28 @@ export interface ICustomerPortalLoanData {
   }>;
 }
 
+export interface ICashfreeOrderData {
+  orderId: string;
+  paymentSessionId: string;
+  orderAmount: number;
+  orderCurrency: string;
+  installmentNumber: number;
+  dueDate: string;
+  loanAccountNo: string;
+  environment: 'sandbox' | 'production';
+}
+
+export interface ICashfreeVerifyData {
+  status: 'SUCCESS' | 'PENDING' | 'FAILED' | 'USER_DROPPED' | 'CANCELLED';
+  orderId: string;
+  installmentNumber?: number;
+  orderAmount: number;
+  receiptNumber?: string;
+  paymentId?: string;
+  message?: string;
+}
+
+
 export interface IPortalLinkStatus {
   loanId: string;
   loanAccountNo: string;
@@ -515,6 +537,67 @@ export class ApiClient {
     }
 
     return json.data;
+  }
+
+  /**
+   * Public Customer Portal - create Cashfree payment order for outstanding EMI.
+   */
+  public static async createCustomerPortalPaymentOrder(
+    token: string,
+    installmentNumber?: number
+  ): Promise<ICashfreeOrderData> {
+    const url = buildApiUrl(`/portal/payment/orders?token=${encodeURIComponent(token)}`);
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        installmentNumber,
+      }),
+    });
+
+    let json: any;
+    try {
+      json = await res.json();
+    } catch {
+      throw new Error(`Unable to reach the customer payment server (HTTP ${res.status}).`);
+    }
+
+    if (!res.ok || !json.success) {
+      throw new Error(json.error?.message || 'Failed to initiate payment checkout order');
+    }
+
+    return json.data as ICashfreeOrderData;
+  }
+
+  /**
+   * Public Customer Portal - verify Cashfree payment order status.
+   */
+  public static async verifyCustomerPortalPaymentOrder(
+    token: string,
+    orderId: string
+  ): Promise<ICashfreeVerifyData> {
+    const url = buildApiUrl(`/portal/payment/orders/${encodeURIComponent(orderId)}/verify?token=${encodeURIComponent(token)}`);
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    let json: any;
+    try {
+      json = await res.json();
+    } catch {
+      throw new Error(`Unable to verify payment status (HTTP ${res.status}).`);
+    }
+
+    if (!res.ok || !json.success) {
+      throw new Error(json.error?.message || 'Failed to verify payment order');
+    }
+
+    return json.data as ICashfreeVerifyData;
   }
 
   // Staff Review Methods (Protected by Admin JWT)

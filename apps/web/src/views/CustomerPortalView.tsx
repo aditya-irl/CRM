@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { ApiClient, ICustomerPortalLoanData } from '../services/api';
+import { ApiClient, ICustomerPortalLoanData, ICashfreeOrderData, ICashfreeVerifyData } from '../services/api';
+import { launchCashfreeRedirectCheckout } from '../utils/cashfree';
 import {
   formatINR,
   formatDateDDMMYYYY,
@@ -73,6 +74,13 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
   const [submittingIssue, setSubmittingIssue] = useState<boolean>(false);
   const [issueError, setIssueError] = useState<string | null>(null);
   const [issueSuccessMsg, setIssueSuccessMsg] = useState<string | null>(null);
+
+  // Cashfree Payments & Redirect Checkout state
+  const [payingInstallmentNumber, setPayingInstallmentNumber] = useState<number | 'hero' | null>(null);
+  const [paymentPhase, setPaymentPhase] = useState<'idle' | 'initiating' | 'redirecting' | 'verifying'>('idle');
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [paymentResultModal, setPaymentResultModal] = useState<ICashfreeVerifyData | null>(null);
+
 
   // Language selection (English / Hindi)
   const [lang, setLang] = useState<'en' | 'hi'>(() => {
@@ -260,6 +268,76 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [fetchPortalData]);
+
+  // Check URL on load for returned checkout redirect: ?order_id=...
+  useEffect(() => {
+    if (!token || !token.trim()) return;
+    if (typeof window === 'undefined') return;
+
+    const params = new URLSearchParams(window.location.search);
+    const returnedOrderId = params.get('order_id');
+    if (!returnedOrderId) return;
+
+    let isCancelled = false;
+    const verifyReturnedOrder = async () => {
+      setPaymentPhase('verifying');
+      try {
+        const verifyResult = await ApiClient.verifyCustomerPortalPaymentOrder(token, returnedOrderId);
+        if (!isCancelled) {
+          setPaymentResultModal(verifyResult);
+          // If payment was verified successful, refresh portal data immediately
+          if (verifyResult.status === 'SUCCESS') {
+            fetchPortalData(true);
+          }
+          // Clean the query string without losing the token
+          const cleanParams = new URLSearchParams(window.location.search);
+          cleanParams.delete('order_id');
+          cleanParams.delete('payment_status');
+          const newUrl = `${window.location.pathname}?${cleanParams.toString()}${window.location.hash}`;
+          window.history.replaceState({}, '', newUrl);
+        }
+      } catch (err: any) {
+        if (!isCancelled) {
+          setPaymentError(err.message || 'Unable to verify payment status.');
+        }
+      } finally {
+        if (!isCancelled) {
+          setPaymentPhase('idle');
+        }
+      }
+    };
+
+    verifyReturnedOrder();
+    return () => {
+      isCancelled = true;
+    };
+  }, [token, fetchPortalData]);
+
+  // Handler to initiate Cashfree Redirect Checkout
+  const handleCashfreePay = async (installmentNumber?: number, targetName: number | 'hero' = 'hero') => {
+    if (!token || !token.trim()) return;
+    setPayingInstallmentNumber(targetName);
+    setPaymentPhase('initiating');
+    setPaymentError(null);
+
+    try {
+      // 1. Create secure server-side order with authoritative amount
+      const orderData = await ApiClient.createCustomerPortalPaymentOrder(token, installmentNumber);
+
+      // 2. Launch Cashfree Redirect Checkout
+      setPaymentPhase('redirecting');
+      await launchCashfreeRedirectCheckout({
+        paymentSessionId: orderData.paymentSessionId,
+        environment: orderData.environment,
+        redirectTarget: '_self',
+      });
+    } catch (err: any) {
+      console.error('Cashfree checkout initiation failed:', err);
+      setPaymentError(err.message || 'Unable to start checkout. Please try again or contact support.');
+      setPaymentPhase('idle');
+      setPayingInstallmentNumber(null);
+    }
+  };
 
   // WhatsApp Pay Action
   const handlePayViaWhatsApp = (customAmount?: number, instNumber?: number) => {
@@ -661,6 +739,58 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                 </div>
               )}
 
+              {/* Payment Verification Processing Banner */}
+              {paymentPhase === 'verifying' && (
+                <div
+                  style={{
+                    background: 'var(--primary-subtle)',
+                    border: '1px solid var(--primary-border)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '14px 18px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    color: 'var(--primary)',
+                    fontWeight: 600,
+                    fontSize: 14,
+                  }}
+                >
+                  <RefreshCw size={18} className="animate-spin" />
+                  <span>Verifying your payment status with Cashfree and your bank... Please do not close this window.</span>
+                </div>
+              )}
+
+              {/* Payment Error Alert Banner */}
+              {paymentError && (
+                <div
+                  style={{
+                    background: 'var(--danger-bg)',
+                    border: '1px solid var(--danger-border)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '14px 18px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 12,
+                    color: 'var(--danger)',
+                    fontWeight: 600,
+                    fontSize: 13,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <AlertCircle size={18} />
+                    <span>{paymentError}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentError(null)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)' }}
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              )}
+
               {/* ─── Hero Overview Card ────────────────────────────────────── */}
               <div
                 className="crm-card"
@@ -926,24 +1056,48 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                                   </span>
                                 )}
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => handlePayViaWhatsApp(totalInstDue, inst.installmentNumber)}
-                                className="btn btn-sm btn-primary"
-                                style={{
-                                  background: '#25D366',
-                                  borderColor: '#1EBE5D',
-                                  color: '#fff',
-                                  fontWeight: 700,
-                                  fontSize: 13,
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: 6,
-                                }}
-                              >
-                                <MessageCircle size={14} />
-                                <span>Pay Now ({formatINR(totalInstDue)})</span>
-                              </button>
+                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                <button
+                                  type="button"
+                                  disabled={paymentPhase !== 'idle'}
+                                  onClick={() => handleCashfreePay(inst.installmentNumber, inst.installmentNumber)}
+                                  className="btn btn-sm btn-primary"
+                                  style={{
+                                    fontWeight: 700,
+                                    fontSize: 13,
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 6,
+                                    cursor: paymentPhase !== 'idle' ? 'not-allowed' : 'pointer',
+                                  }}
+                                >
+                                  {payingInstallmentNumber === inst.installmentNumber ? (
+                                    <>
+                                      <RefreshCw size={14} className="animate-spin" />
+                                      <span>{paymentPhase === 'redirecting' ? 'Redirecting...' : 'Processing...'}</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <CreditCard size={14} />
+                                      <span>Pay Now ({formatINR(totalInstDue)})</span>
+                                    </>
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handlePayViaWhatsApp(totalInstDue, inst.installmentNumber)}
+                                  className="btn btn-sm btn-outline"
+                                  style={{
+                                    fontSize: 13,
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                  }}
+                                >
+                                  <MessageCircle size={14} />
+                                  <span>WhatsApp</span>
+                                </button>
+                              </div>
                             </div>
 
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, fontSize: 13 }}>
@@ -1002,46 +1156,82 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                 </div>
               </div>
 
-              {/* ─── Primary CTA: Pay Now via WhatsApp ────────────────────── */}
+              {/* ─── Primary CTA: Secure Cashfree Online Payment ────────────────────── */}
               <div
                 style={{
-                  background: 'var(--primary-subtle)',
+                  background: 'var(--bg-surface)',
                   border: '1px solid var(--primary-border)',
                   borderRadius: 'var(--radius-lg)',
                   padding: '20px',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 14,
+                  boxShadow: 'var(--shadow-sm)',
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
                   <div>
-                    <h3 style={{ fontSize: 17, fontWeight: 800, color: 'var(--primary)', margin: 0 }}>
-                      Pay Your EMI via WhatsApp
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      <span className="badge badge-primary" style={{ fontSize: 11, fontWeight: 700 }}>
+                        SECURE CHECKOUT
+                      </span>
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Cashfree Payments</span>
+                    </div>
+                    <h3 style={{ fontSize: 17, fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
+                      Pay Outstanding EMI Online
                     </h3>
                     <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
-                      Click below to send a pre-filled request to our finance office and receive the official UPI QR code instantly.
+                      Instant secure payment with UPI, Debit/Credit Card, or Netbanking via Cashfree Redirect Checkout.
                     </p>
                   </div>
-                  <button
-                    onClick={() => handlePayViaWhatsApp()}
-                    className="btn btn-primary"
-                    style={{
-                      background: '#25D366',
-                      borderColor: '#1EBE5D',
-                      color: '#ffffff',
-                      fontWeight: 700,
-                      fontSize: 15,
-                      padding: '12px 24px',
-                      borderRadius: 'var(--radius-md)',
-                      boxShadow: '0 2px 8px rgba(37, 211, 102, 0.3)',
-                      cursor: 'pointer',
-                      gap: 8,
-                    }}
-                  >
-                    <MessageCircle size={18} />
-                    <span>Pay Now via WhatsApp ({formatINR(data.emiAmount)})</span>
-                  </button>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      disabled={paymentPhase !== 'idle' || data.outstandingBalance <= 0}
+                      onClick={() => handleCashfreePay(undefined, 'hero')}
+                      className="btn btn-primary"
+                      style={{
+                        fontWeight: 700,
+                        fontSize: 15,
+                        padding: '12px 24px',
+                        borderRadius: 'var(--radius-md)',
+                        boxShadow: '0 2px 8px rgba(105, 48, 202, 0.3)',
+                        cursor: paymentPhase !== 'idle' || data.outstandingBalance <= 0 ? 'not-allowed' : 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 8,
+                      }}
+                    >
+                      {payingInstallmentNumber === 'hero' ? (
+                        <>
+                          <RefreshCw size={18} className="animate-spin" />
+                          <span>{paymentPhase === 'redirecting' ? 'Redirecting to Checkout...' : 'Connecting to Gateway...'}</span>
+                        </>
+                      ) : (
+                        <>
+                          <CreditCard size={18} />
+                          <span>Pay EMI ({formatINR(data.emiAmount)})</span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handlePayViaWhatsApp()}
+                      className="btn btn-outline"
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 600,
+                        padding: '12px 18px',
+                        borderRadius: 'var(--radius-md)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                      }}
+                    >
+                      <MessageCircle size={16} />
+                      <span>Pay Now via WhatsApp</span>
+                    </button>
+                  </div>
                 </div>
 
                 <div
@@ -1185,18 +1375,20 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                         <th style={{ padding: '10px 12px', textAlign: 'right' }}>Paid</th>
                         <th style={{ padding: '10px 12px', textAlign: 'right' }}>Total Remaining</th>
                         <th style={{ padding: '10px 12px', textAlign: 'center' }}>Status</th>
+                        <th style={{ padding: '10px 12px', textAlign: 'center' }}>Action</th>
                       </tr>
                     </thead>
                     <tbody>
                       {data.installments && data.installments.length > 0 ? (
                         data.installments.map((inst) => {
                           const totalRemaining = inst.totalDue !== undefined ? inst.totalDue : (inst.remainingAmount + (inst.penaltyAmount || 0));
+                          const isFullyPaid = inst.status === 'PAID' || totalRemaining <= 0;
                           return (
                             <tr
                               key={inst.installmentNumber}
                               style={{
                                 borderBottom: '1px solid var(--border-subtle)',
-                                background: inst.status === 'PAID' ? 'transparent' : 'var(--bg-surface-secondary)',
+                                background: isFullyPaid ? 'transparent' : 'var(--bg-surface-secondary)',
                               }}
                             >
                               <td style={{ padding: '12px', fontWeight: 700 }}>{inst.installmentNumber}</td>
@@ -1212,12 +1404,48 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                                 {formatINR(totalRemaining)}
                               </td>
                               <td style={{ padding: '12px', textAlign: 'center' }}>{getStatusBadge(inst.status)}</td>
+                              <td style={{ padding: '12px', textAlign: 'center' }}>
+                                {isFullyPaid ? (
+                                  <span style={{ fontSize: 12, color: 'var(--success-text)', display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 600 }}>
+                                    <CheckCircle2 size={14} /> Paid
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    disabled={paymentPhase !== 'idle'}
+                                    onClick={() => handleCashfreePay(inst.installmentNumber, inst.installmentNumber)}
+                                    className="btn btn-sm btn-primary"
+                                    style={{
+                                      padding: '5px 12px',
+                                      fontSize: 12,
+                                      fontWeight: 700,
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 5,
+                                      borderRadius: 'var(--radius-sm)',
+                                      cursor: paymentPhase !== 'idle' ? 'not-allowed' : 'pointer',
+                                    }}
+                                  >
+                                    {payingInstallmentNumber === inst.installmentNumber ? (
+                                      <>
+                                        <RefreshCw size={12} className="animate-spin" />
+                                        <span>{paymentPhase === 'redirecting' ? 'Redirecting...' : 'Initiating...'}</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <CreditCard size={12} />
+                                        <span>Pay Now</span>
+                                      </>
+                                    )}
+                                  </button>
+                                )}
+                              </td>
                             </tr>
                           );
                         })
                       ) : (
                         <tr>
-                          <td colSpan={7} style={{ padding: 24, textAlign: 'center', color: 'var(--text-secondary)' }}>
+                          <td colSpan={8} style={{ padding: 24, textAlign: 'center', color: 'var(--text-secondary)' }}>
                             No installments recorded.
                           </td>
                         </tr>
@@ -2579,6 +2807,183 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                   </button>
                 </div>
               </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ─── Cashfree Payment Result Dialog ─────────────────────────── */}
+      {paymentResultModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.6)',
+            backdropFilter: 'blur(3px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1100,
+            padding: 16,
+          }}
+        >
+          <div
+            className="crm-card"
+            style={{
+              width: '100%',
+              maxWidth: 480,
+              background: '#ffffff',
+              borderRadius: 'var(--radius-lg)',
+              padding: 24,
+              boxShadow: 'var(--shadow-xl)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 16,
+              textAlign: 'center',
+            }}
+          >
+            {paymentResultModal.status === 'SUCCESS' && (
+              <>
+                <div
+                  style={{
+                    width: 54,
+                    height: 54,
+                    borderRadius: '50%',
+                    background: 'var(--success-bg)',
+                    color: 'var(--success-text)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    margin: '0 auto',
+                  }}
+                >
+                  <CheckCircle2 size={32} />
+                </div>
+                <h3 style={{ fontSize: 20, fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+                  Payment Successful!
+                </h3>
+                <p style={{ fontSize: 14, color: 'var(--text-secondary)', margin: 0 }}>
+                  Your EMI payment of <strong>{formatINR(paymentResultModal.orderAmount)}</strong> has been verified and recorded in the loan ledger.
+                </p>
+                {paymentResultModal.receiptNumber && (
+                  <div
+                    style={{
+                      background: 'var(--bg-surface-secondary)',
+                      padding: '12px 16px',
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px dashed var(--border-strong)',
+                      fontSize: 13,
+                    }}
+                  >
+                    <span style={{ color: 'var(--text-secondary)' }}>Official Receipt Number: </span>
+                    <strong className="mono" style={{ color: 'var(--primary)', fontSize: 14 }}>
+                      {paymentResultModal.receiptNumber}
+                    </strong>
+                  </div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginTop: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPaymentResultModal(null);
+                      fetchPortalData(true);
+                    }}
+                    className="btn btn-primary"
+                    style={{ width: '100%', padding: '10px 18px', fontWeight: 700 }}
+                  >
+                    View Updated Schedule
+                  </button>
+                </div>
+              </>
+            )}
+
+            {paymentResultModal.status === 'PENDING' && (
+              <>
+                <div
+                  style={{
+                    width: 54,
+                    height: 54,
+                    borderRadius: '50%',
+                    background: '#fef3c7',
+                    color: '#92400e',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    margin: '0 auto',
+                  }}
+                >
+                  <Clock size={32} />
+                </div>
+                <h3 style={{ fontSize: 20, fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+                  Payment In Progress
+                </h3>
+                <p style={{ fontSize: 14, color: 'var(--text-secondary)', margin: 0 }}>
+                  Your bank is processing the transaction. As soon as confirmation is received, your EMI schedule and balance will update automatically.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPaymentResultModal(null);
+                    fetchPortalData(true);
+                  }}
+                  className="btn btn-primary"
+                  style={{ width: '100%', padding: '10px 18px', fontWeight: 700 }}
+                >
+                  Close & Refresh Later
+                </button>
+              </>
+            )}
+
+            {(paymentResultModal.status === 'FAILED' || paymentResultModal.status === 'USER_DROPPED' || paymentResultModal.status === 'CANCELLED') && (
+              <>
+                <div
+                  style={{
+                    width: 54,
+                    height: 54,
+                    borderRadius: '50%',
+                    background: paymentResultModal.status === 'FAILED' ? 'var(--danger-bg)' : 'var(--bg-surface-secondary)',
+                    color: paymentResultModal.status === 'FAILED' ? 'var(--danger)' : 'var(--text-secondary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    margin: '0 auto',
+                  }}
+                >
+                  {paymentResultModal.status === 'FAILED' ? <AlertCircle size={32} /> : <AlertTriangle size={32} />}
+                </div>
+                <h3 style={{ fontSize: 20, fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+                  {paymentResultModal.status === 'FAILED' ? 'Payment Unsuccessful' : 'Checkout Cancelled'}
+                </h3>
+                <p style={{ fontSize: 14, color: 'var(--text-secondary)', margin: 0 }}>
+                  {paymentResultModal.message || (paymentResultModal.status === 'FAILED'
+                    ? 'Your payment could not be processed by your bank. No money was deducted.'
+                    : 'The checkout session was cancelled. You can retry whenever you are ready.')}
+                </p>
+                <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentResultModal(null)}
+                    className="btn btn-secondary"
+                    style={{ flex: 1, padding: '10px 18px' }}
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const inst = paymentResultModal.installmentNumber;
+                      setPaymentResultModal(null);
+                      handleCashfreePay(inst, inst || 'hero');
+                    }}
+                    className="btn btn-primary"
+                    style={{ flex: 1, padding: '10px 18px', fontWeight: 700 }}
+                  >
+                    Retry Payment
+                  </button>
+                </div>
+              </>
             )}
           </div>
         </div>

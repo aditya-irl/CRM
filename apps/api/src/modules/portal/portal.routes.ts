@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { PortalService } from './portal.service';
+import { PortalPaymentService } from './portal-payment.service';
 import { portalRateLimiter } from '../../middlewares/rate-limit.middleware';
 import { authenticate, requireRole } from '../../middlewares/auth.middleware';
 import { UserRole } from '@crm/shared';
@@ -274,6 +275,77 @@ router.post('/verify/report-issue', portalRateLimiter, async (req: Request, res:
     const result = await PortalService.reportPortalIssue(token, { section, explanation });
 
     return res.status(201).json({
+      success: true,
+      data: result,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── Customer Cashfree Payment Endpoints ─────────────────────────────────────
+
+/**
+ * POST /api/v1/portal/payment/orders
+ * Customer endpoint to initiate a secure Cashfree Payment order for an EMI installment.
+ * Authenticated purely via high-entropy customer portal token.
+ * Authoritative amount is strictly calculated on server.
+ */
+router.post('/payment/orders', portalRateLimiter, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const token = extractPortalToken(req);
+
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'PORTAL_TOKEN_REQUIRED',
+          message: 'A valid portal token is required to create a payment order',
+        },
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    const { installmentNumber, emiId } = req.body || {};
+    const result = await PortalPaymentService.createEmiOrder(token, {
+      installmentNumber: installmentNumber !== undefined ? Number(installmentNumber) : undefined,
+      emiId: typeof emiId === 'string' ? emiId : undefined,
+    });
+
+    return res.status(201).json({
+      success: true,
+      data: result,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/v1/portal/payment/orders/:orderId/verify
+ * Customer endpoint to verify payment status server-to-server after return from Cashfree checkout.
+ * Authenticated via customer portal token.
+ */
+router.get('/payment/orders/:orderId/verify', portalRateLimiter, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const token = extractPortalToken(req);
+
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'PORTAL_TOKEN_REQUIRED',
+          message: 'A valid portal token is required to verify payment status',
+        },
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    const result = await PortalPaymentService.verifyOrder(token, req.params.orderId);
+
+    return res.json({
       success: true,
       data: result,
       timestamp: new Date().toISOString(),
