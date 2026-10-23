@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { IDealerDashboardMetrics, formatINR, formatDateDDMMYYYY } from '@crm/shared';
+import { IDealerDashboardMetrics, formatINR, formatDateDDMMYYYY, UserRole } from '@crm/shared';
 import { ApiClient } from '../services/api';
 import {
   Store,
@@ -23,14 +23,19 @@ import { RecordPaymentModal } from '../components/RecordPaymentModal';
 
 interface DealerDashboardViewProps {
   onNavigateToTab?: (tab: string) => void;
+  userRole?: UserRole | string;
+  initialData?: IDealerDashboardMetrics | null;
 }
 
-export const DealerDashboardView: React.FC<DealerDashboardViewProps> = ({ onNavigateToTab }) => {
-  const [data, setData] = useState<IDealerDashboardMetrics | null>(null);
+export const DealerDashboardView: React.FC<DealerDashboardViewProps> = ({ onNavigateToTab, userRole, initialData }) => {
+  const currentUser = ApiClient.getUser();
+  const effectiveRole = userRole || currentUser?.role;
+  const isDealerRole = effectiveRole === UserRole.DEALER;
+  const [data, setData] = useState<IDealerDashboardMetrics | null>(initialData || null);
   const [showOnboardWizard, setShowOnboardWizard] = useState(false);
   const [showRecordPaymentModal, setShowRecordPaymentModal] = useState(false);
   const [selectedLoanForPayment, setSelectedLoanForPayment] = useState<any | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(initialData ? false : true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
@@ -65,8 +70,10 @@ export const DealerDashboardView: React.FC<DealerDashboardViewProps> = ({ onNavi
   };
 
   useEffect(() => {
-    fetchDashboardData();
-  }, []);
+    if (!initialData) {
+      fetchDashboardData();
+    }
+  }, [initialData]);
 
   const formatDate = (dateStr?: string) => {
     if (!dateStr) return '—';
@@ -352,36 +359,38 @@ export const DealerDashboardView: React.FC<DealerDashboardViewProps> = ({ onNavi
           </div>
         </div>
 
-        {/* Active Outstanding Balance */}
-        <div className="crm-card" style={{ padding: 18 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
-                Active Outstanding
+        {/* Active Outstanding Balance - Exclusively hidden for Dealer role, preserved for Management */}
+        {!isDealerRole && typeof data?.metrics?.totalOutstandingBalance === 'number' && (
+          <div className="crm-card" style={{ padding: 18 }} data-testid="active-outstanding-card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                  Active Outstanding
+                </div>
+                <div style={{ fontSize: 24, fontWeight: 800, marginTop: 6, color: 'var(--warning-text, #d97706)' }}>
+                  {loading ? '—' : formatINR(data?.metrics?.totalOutstandingBalance || 0)}
+                </div>
               </div>
-              <div style={{ fontSize: 24, fontWeight: 800, marginTop: 6, color: 'var(--warning-text, #d97706)' }}>
-                {loading ? '—' : formatINR(data?.metrics.totalOutstandingBalance || 0)}
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'rgba(245, 158, 11, 0.1)',
+                  color: 'var(--warning)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Clock size={18} />
               </div>
             </div>
-            <div
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 'var(--radius-sm)',
-                background: 'rgba(245, 158, 11, 0.1)',
-                color: 'var(--warning)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Clock size={18} />
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
+              Remaining balance on active loans
             </div>
           </div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
-            Remaining balance on active loans
-          </div>
-        </div>
+        )}
 
         {/* Store Collections Collected */}
         <div className="crm-card" style={{ padding: 18 }}>

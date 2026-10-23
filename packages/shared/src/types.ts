@@ -55,7 +55,7 @@ export interface IDealerDashboardMetrics {
     pendingLoans?: number;
     closedLoans: number;
     totalFinancedAmount: number;
-    totalOutstandingBalance: number;
+    totalOutstandingBalance?: number;
     totalCollectedAmount: number;
     unsettledCollectionAmount: number;
     totalSettledAmount: number;

@@ -805,7 +805,11 @@ export class DealerService {
         pendingLoans: Number(m.pending_loans || 0),
         closedLoans: Number(m.closed_loans || 0),
         totalFinancedAmount: Number(m.total_financed_amount || 0),
-        totalOutstandingBalance: Number(m.total_outstanding_balance || 0),
+        // Restrict aggregate active outstanding balance from Dealer role for business confidentiality.
+        // Preserved exclusively for SUPER_ADMIN, ADMIN, BRANCH_MANAGER, and other authorized roles.
+        ...(user.role !== UserRole.DEALER && {
+          totalOutstandingBalance: Number(m.total_outstanding_balance || 0),
+        }),
         totalCollectedAmount: totalCollected,
         unsettledCollectionAmount: unsettledCollection,
         totalSettledAmount: totalSettled,

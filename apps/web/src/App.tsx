@@ -208,7 +208,7 @@ export const App: React.FC = () => {
       isDealer &&
       !['dashboard', 'customers', 'devices', 'dealer-payables', 'dealer-collections', 'dealer-settlements'].includes(activeTab)
     ) {
-      return <DealerDashboardView onNavigateToTab={(t) => selectTab(t as NavTab)} />;
+      return <DealerDashboardView onNavigateToTab={(t) => selectTab(t as NavTab)} userRole={user.role} />;
     }
 
     // If collection agent attempts to access admin-only tabs, redirect to agent dashboard
@@ -223,7 +223,7 @@ export const App: React.FC = () => {
           return <AgentDashboardView onNavigateToTab={(t) => selectTab(t as NavTab)} />;
         }
         return isDealer ? (
-          <DealerDashboardView onNavigateToTab={(t) => selectTab(t as NavTab)} />
+          <DealerDashboardView onNavigateToTab={(t) => selectTab(t as NavTab)} userRole={user.role} />
         ) : (
           <DashboardView
             onOpenAddCustomer={() => setShowAddCustomerWizard(true)}
