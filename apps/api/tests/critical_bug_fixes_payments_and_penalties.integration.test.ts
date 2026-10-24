@@ -196,6 +196,25 @@ describe('CRITICAL BUG FIXES — Payments, Approvals, Penalties & Deduplication 
 
       expect(waiveRes.status).toBe(403);
     });
+
+    it('2c. Agent API requests attempting to submit payment with pre-approved or finalized status are rejected with 403', async () => {
+      const res = await request(app)
+        .post('/api/v1/payments')
+        .set('Authorization', `Bearer ${agentToken}`)
+        .send({
+          loanId,
+          customerId,
+          emiId: emi1Id,
+          amount: 3000,
+          status: 'SUCCESS',
+          paymentMode: PaymentMode.CASH,
+          collectionSource: CollectionSource.RECOVERY_AGENT,
+        });
+
+      expect(res.status).toBe(403);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error.message).toContain('Collection agents cannot submit payments with pre-approved or finalized status');
+    });
   });
 
   describe('BUG 1 — Problem B: Enforce Payment Approval & Pending State Financial Isolation', () => {
@@ -229,6 +248,17 @@ describe('CRITICAL BUG FIXES — Payments, Approvals, Penalties & Deduplication 
         [loanId]
       );
       expect(penCheck.rows.length).toBe(0);
+
+      // GET /api/v1/payments?status=PENDING must return this pending agent submission
+      const pendingListRes = await request(app)
+        .get(`/api/v1/payments?status=PENDING&loanId=${loanId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(pendingListRes.status).toBe(200);
+      expect(pendingListRes.body.data.length).toBeGreaterThanOrEqual(1);
+      const found = pendingListRes.body.data.find((p: any) => p.id === pendingPaymentId);
+      expect(found).toBeDefined();
+      expect(found.status).toBe(PaymentStatus.PENDING_APPROVAL);
     });
 
     it('4. Pending payments do not reduce loan balance, mark installment paid, or count as confirmed collections', async () => {

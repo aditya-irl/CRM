@@ -1321,7 +1321,11 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
                                   className="mono"
                                   style={{
                                     fontWeight: 700,
-                                    color: isReversed ? 'var(--text-muted)' : 'var(--success-text)',
+                                    color: isReversed
+                                      ? 'var(--text-muted)'
+                                      : p.status === 'PENDING_APPROVAL' || p.status === 'PENDING_VERIFICATION'
+                                      ? 'var(--warning-text)'
+                                      : 'var(--success-text)',
                                     textDecoration: isReversed ? 'line-through' : 'none',
                                   }}
                                 >
@@ -1362,8 +1366,24 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
                                   {formatDateDDMMYYYY(p.paymentTimestamp || (p as any).payment_timestamp)}
                                 </td>
                                 <td>
-                                  <span className={`badge ${isReversed ? 'badge-overdue' : 'badge-paid'}`}>
-                                    {isReversed ? 'REVERSED' : 'SUCCESS'}
+                                  <span
+                                    className={`badge ${
+                                      isReversed
+                                        ? 'badge-overdue'
+                                        : p.status === 'PENDING_APPROVAL' || p.status === 'PENDING_VERIFICATION'
+                                        ? 'badge-warning'
+                                        : p.status === 'REJECTED'
+                                        ? 'badge-overdue'
+                                        : 'badge-paid'
+                                    }`}
+                                  >
+                                    {isReversed
+                                      ? 'REVERSED'
+                                      : p.status === 'PENDING_APPROVAL' || p.status === 'PENDING_VERIFICATION'
+                                      ? 'PENDING APPROVAL'
+                                      : p.status === 'REJECTED'
+                                      ? 'REJECTED'
+                                      : 'SUCCESS'}
                                   </span>
                                 </td>
                                 <td>

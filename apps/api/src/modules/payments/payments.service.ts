@@ -249,6 +249,10 @@ export class PaymentService {
         const isAgent = user.role === UserRole.COLLECTION_AGENT;
         const isPending = isDealer || isAgent;
 
+        if (isAgent && (data as any).status && (data as any).status !== PaymentStatus.PENDING_APPROVAL) {
+          throw new ForbiddenError('Collection agents cannot submit payments with pre-approved or finalized status');
+        }
+
         if (hasManualPenalty && penaltyAmount.greaterThan(0)) {
           if (isAgent) {
             throw new ForbiddenError('Collection agents are not authorized to apply penalties');
@@ -2242,8 +2246,24 @@ export class PaymentService {
     }
 
     if (query.status) {
-      sql += ` AND p.status = $${paramIndex++}`;
-      params.push(query.status);
+      const s = String(query.status).toUpperCase();
+      if (s === 'PENDING' || s === 'PENDING_APPROVAL' || s === 'PENDING_VERIFICATION') {
+        if (s === 'PENDING') {
+          sql += ` AND p.status IN ('PENDING_APPROVAL', 'PENDING_VERIFICATION')`;
+        } else {
+          sql += ` AND p.status = $${paramIndex++}`;
+          params.push(s);
+        }
+      } else if (s === 'APPROVED' || s === 'SUCCESS') {
+        sql += ` AND p.status = 'SUCCESS' AND (p.is_reversal IS FALSE OR p.is_reversal IS NULL)`;
+      } else if (s === 'REJECTED') {
+        sql += ` AND p.status = 'REJECTED'`;
+      } else if (s === 'REVERSED') {
+        sql += ` AND (p.status = 'REVERSED' OR p.is_reversal IS TRUE)`;
+      } else {
+        sql += ` AND p.status = $${paramIndex++}`;
+        params.push(query.status);
+      }
     }
 
     if (query.paymentMode) {

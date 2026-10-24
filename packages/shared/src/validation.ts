@@ -252,6 +252,7 @@ export const recordPaymentSchema = z.object({
   agentId: z.string().uuid('Invalid agent ID').optional().nullable(),
   referenceNumber: z.string().max(100).optional().nullable(),
   notes: z.string().max(500).optional().nullable(),
+  status: z.string().optional(),
   idempotencyKey: z.string().min(5).max(150).optional(),
 }).superRefine((data, ctx) => {
   if (data.collectionSource === CollectionSource.DIRECT_CUSTOMER) {
@@ -445,7 +446,7 @@ export const directCollectionsFilterSchema = z.object({
 
 export const paymentsFilterSchema = z.object({
   collectionSource: z.nativeEnum(CollectionSource).optional(),
-  status: z.nativeEnum(PaymentStatus).optional(),
+  status: z.union([z.nativeEnum(PaymentStatus), z.literal('PENDING'), z.literal('APPROVED')]).optional(),
   paymentMode: z.nativeEnum(PaymentMode).optional(),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Start date must be YYYY-MM-DD').optional(),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'End date must be YYYY-MM-DD').optional(),

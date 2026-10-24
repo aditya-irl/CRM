@@ -589,7 +589,15 @@ export const DealerCollectionsView: React.FC<DealerCollectionsViewProps> = ({
                         }}
                         className="mono font-bold"
                       >
-                        <span style={{ color: isReversed ? 'var(--text-muted)' : 'var(--success-text)' }}>
+                        <span
+                          style={{
+                            color: isReversed
+                              ? 'var(--text-muted)'
+                              : r.status === 'PENDING_APPROVAL' || r.status === 'PENDING_VERIFICATION'
+                              ? 'var(--warning-text)'
+                              : 'var(--success-text)',
+                          }}
+                        >
                           {formatINR(r.amount)}
                         </span>
                       </td>
@@ -608,8 +616,22 @@ export const DealerCollectionsView: React.FC<DealerCollectionsViewProps> = ({
                       </td>
 
                       <td>
-                        <span className={`badge ${isReversed ? 'badge-overdue' : 'badge-paid'}`}>
-                          {r.status}
+                        <span
+                          className={`badge ${
+                            isReversed
+                              ? 'badge-overdue'
+                              : r.status === 'PENDING_APPROVAL' || r.status === 'PENDING_VERIFICATION'
+                              ? 'badge-warning'
+                              : r.status === 'REJECTED'
+                              ? 'badge-overdue'
+                              : 'badge-paid'
+                          }`}
+                        >
+                          {isReversed
+                            ? 'REVERSED'
+                            : r.status === 'PENDING_APPROVAL' || r.status === 'PENDING_VERIFICATION'
+                            ? 'PENDING APPROVAL'
+                            : r.status}
                         </span>
                       </td>
 
@@ -753,8 +775,22 @@ export const DealerCollectionsView: React.FC<DealerCollectionsViewProps> = ({
                     {selectedRecord.receiptNumber}
                   </div>
                 </div>
-                <span className={`badge ${selectedRecord.status === 'REVERSED' ? 'badge-overdue' : 'badge-paid'}`}>
-                  {selectedRecord.status}
+                <span
+                  className={`badge ${
+                    selectedRecord.status === 'REVERSED'
+                      ? 'badge-overdue'
+                      : selectedRecord.status === 'PENDING_APPROVAL' || selectedRecord.status === 'PENDING_VERIFICATION'
+                      ? 'badge-warning'
+                      : selectedRecord.status === 'REJECTED'
+                      ? 'badge-overdue'
+                      : 'badge-paid'
+                  }`}
+                >
+                  {selectedRecord.status === 'REVERSED'
+                    ? 'REVERSED'
+                    : selectedRecord.status === 'PENDING_APPROVAL' || selectedRecord.status === 'PENDING_VERIFICATION'
+                    ? 'PENDING APPROVAL'
+                    : selectedRecord.status}
                 </span>
               </div>
 

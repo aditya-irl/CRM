@@ -233,7 +233,7 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({ user }) => {
   };
 
   const handleApprovePayment = async (paymentId: string) => {
-    if (!confirm('Approve this dealer-recorded collection and allocate it to the customer loan?')) return;
+    if (!confirm('Approve this collection submission and allocate it to the customer loan?')) return;
     setActionLoading(paymentId);
     try {
       await ApiClient.approvePayment(paymentId);
@@ -480,7 +480,9 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({ user }) => {
               style={{ width: '100%', fontSize: 12 }}
             >
               <option value="ALL">All Statuses</option>
-              <option value="PENDING_VERIFICATION">Pending Approval</option>
+              <option value="PENDING">Pending Approval (All)</option>
+              <option value="PENDING_APPROVAL">Pending Approval (Field Agent)</option>
+              <option value="PENDING_VERIFICATION">Pending Approval (Store Partner)</option>
               <option value="SUCCESS">Completed (Success)</option>
               <option value="REVERSED">Reversed</option>
               <option value="REJECTED">Rejected</option>
@@ -585,7 +587,11 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({ user }) => {
                       className="mono"
                       style={{
                         fontWeight: 700,
-                        color: isReversed ? 'var(--text-muted)' : 'var(--success-text)',
+                        color: isReversed
+                          ? 'var(--text-muted)'
+                          : p.status === 'PENDING_APPROVAL' || p.status === 'PENDING_VERIFICATION'
+                          ? 'var(--warning-text)'
+                          : 'var(--success-text)',
                         textDecoration: isReversed ? 'line-through' : 'none',
                       }}
                     >
@@ -626,7 +632,7 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({ user }) => {
                       <span className="badge badge-upcoming">{p.paymentMode}</span>
                     </td>
                     <td>
-                      {p.status === 'PENDING_VERIFICATION' ? (
+                      {p.status === 'PENDING_APPROVAL' || p.status === 'PENDING_VERIFICATION' ? (
                         <span className="badge badge-warning" style={{ fontWeight: 700 }}>
                           PENDING APPROVAL
                         </span>
@@ -642,7 +648,7 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({ user }) => {
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: 6 }}>
-                        {isAdmin && p.status === 'PENDING_VERIFICATION' && (
+                        {isAdmin && (p.status === 'PENDING_VERIFICATION' || p.status === 'PENDING_APPROVAL') && (
                           <>
                             <button
                               onClick={() => handleApprovePayment(p.id)}
@@ -773,8 +779,24 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({ user }) => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <h3 style={{ fontSize: 17, fontWeight: 800 }}>Payment Transaction Details</h3>
                   {detailData && (
-                    <span className={`badge ${detailData.isReversal ? 'badge-overdue' : 'badge-paid'}`}>
-                      {detailData.isReversal ? 'REVERSED' : 'COMPLETED'}
+                    <span
+                      className={`badge ${
+                        detailData.isReversal
+                          ? 'badge-overdue'
+                          : detailData.status === 'PENDING_APPROVAL' || detailData.status === 'PENDING_VERIFICATION'
+                          ? 'badge-warning'
+                          : detailData.status === 'REJECTED'
+                          ? 'badge-overdue'
+                          : 'badge-paid'
+                      }`}
+                    >
+                      {detailData.isReversal
+                        ? 'REVERSED'
+                        : detailData.status === 'PENDING_APPROVAL' || detailData.status === 'PENDING_VERIFICATION'
+                        ? 'PENDING APPROVAL'
+                        : detailData.status === 'REJECTED'
+                        ? 'REJECTED'
+                        : 'COMPLETED'}
                     </span>
                   )}
                 </div>
@@ -840,7 +862,11 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({ user }) => {
                       style={{
                         fontSize: 20,
                         fontWeight: 800,
-                        color: detailData.isReversal ? 'var(--text-muted)' : 'var(--success-text)',
+                        color: detailData.isReversal
+                          ? 'var(--text-muted)'
+                          : detailData.status === 'PENDING_APPROVAL' || detailData.status === 'PENDING_VERIFICATION'
+                          ? 'var(--warning-text)'
+                          : 'var(--success-text)',
                         textDecoration: detailData.isReversal ? 'line-through' : 'none',
                         marginTop: 2,
                       }}
@@ -975,6 +1001,14 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({ user }) => {
                         </tbody>
                       </table>
                     </div>
+                  ) : (detailData.status === 'PENDING_APPROVAL' || detailData.status === 'PENDING_VERIFICATION') ? (
+                    <div style={{ fontSize: 12, color: 'var(--warning-text)', padding: 12, textAlign: 'center', border: '1px dashed var(--warning-border, #f59e0b)', borderRadius: 'var(--radius-md)', background: 'rgba(245, 158, 11, 0.05)' }}>
+                      Collection submission is pending approval. No waterfall allocations or ledger postings will take place until approved by an administrator.
+                    </div>
+                  ) : detailData.status === 'REJECTED' ? (
+                    <div style={{ fontSize: 12, color: 'var(--danger-text)', padding: 12, textAlign: 'center', border: '1px dashed var(--danger-border)', borderRadius: 'var(--radius-md)' }}>
+                      This payment collection was rejected. No allocations or ledger postings were made.
+                    </div>
                   ) : (
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: 12, textAlign: 'center', border: '1px dashed var(--border-subtle)', borderRadius: 'var(--radius-md)' }}>
                       Payment credited directly to customer loan obligation balance.
@@ -1030,7 +1064,33 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({ user }) => {
                     <span>Official Receipt</span>
                   </button>
 
-                  {isAdmin && !detailData.isReversal && (
+                  {isAdmin && (detailData.status === 'PENDING_APPROVAL' || detailData.status === 'PENDING_VERIFICATION') && (
+                    <>
+                      <button
+                        onClick={() => handleApprovePayment(detailData.id)}
+                        disabled={actionLoading === detailData.id}
+                        className="btn btn-primary"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                      >
+                        <CheckCircle2 size={14} />
+                        <span>Approve Collection</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedPaymentForRejection(detailData);
+                          setRejectionReason('');
+                        }}
+                        disabled={actionLoading === detailData.id}
+                        className="btn btn-danger"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                      >
+                        <X size={14} />
+                        <span>Reject Collection</span>
+                      </button>
+                    </>
+                  )}
+
+                  {isAdmin && !detailData.isReversal && detailData.status === 'SUCCESS' && (
                     <button
                       onClick={() => {
                         setSelectedPaymentForReversal(detailData);
