@@ -16,6 +16,8 @@ import {
   X,
   Power,
   RefreshCw,
+  Trash2,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface AgentUser {
@@ -62,6 +64,13 @@ export const AgentsView: React.FC = () => {
 
   // Resetting state
   const [resettingId, setResettingId] = useState<string | null>(null);
+
+  // Delete Agent Modal State
+  const [agentToDelete, setAgentToDelete] = useState<AgentUser | null>(null);
+  const [reassignToAgentId, setReassignToAgentId] = useState<string>('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteNotice, setDeleteNotice] = useState<string | null>(null);
 
   const loadAgents = async () => {
     setLoading(true);
@@ -159,6 +168,24 @@ export const AgentsView: React.FC = () => {
     }
   };
 
+  const handleDeleteAgent = async () => {
+    if (!agentToDelete) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const res = await ApiClient.deleteAgent(agentToDelete.id, reassignToAgentId || undefined);
+      setDeleteNotice(res.message || 'Agent deleted successfully');
+      setAgentToDelete(null);
+      setReassignToAgentId('');
+      loadAgents();
+      setTimeout(() => setDeleteNotice(null), 6000);
+    } catch (err: any) {
+      setDeleteError(err.message || 'Failed to delete agent');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const filteredAgents = agents.filter((ag) => {
     const name = (ag.fullName || ag.full_name || '').toLowerCase();
     const ph = (ag.phone || '').toLowerCase();
@@ -208,6 +235,27 @@ export const AgentsView: React.FC = () => {
           <span>Provision New Agent</span>
         </button>
       </div>
+
+      {deleteNotice && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '10px 16px',
+            background: 'var(--success-bg)',
+            border: '1px solid var(--success-border)',
+            borderRadius: 'var(--radius-md)',
+            color: 'var(--success-text)',
+            fontSize: 13,
+            fontWeight: 600,
+            marginBottom: 20,
+          }}
+        >
+          <CheckCircle2 size={16} />
+          <span>{deleteNotice}</span>
+        </div>
+      )}
 
       {/* Filter / Search Bar */}
       <div
@@ -393,6 +441,27 @@ export const AgentsView: React.FC = () => {
                             <Power size={12} />
                             <span>{ag.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}</span>
                           </button>
+                          <button
+                            onClick={() => {
+                              setAgentToDelete(ag);
+                              setDeleteError(null);
+                              setReassignToAgentId('');
+                            }}
+                            className="btn btn-sm"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              fontSize: 11,
+                              background: 'var(--danger-subtle)',
+                              color: 'var(--danger-text)',
+                              border: '1px solid var(--danger-border)',
+                            }}
+                            title="Delete Agent Account"
+                          >
+                            <Trash2 size={12} />
+                            <span>Delete</span>
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -534,6 +603,137 @@ export const AgentsView: React.FC = () => {
           isReset={credentialModalData.isReset}
           onClose={() => setCredentialModalData(null)}
         />
+      )}
+
+      {/* Delete Agent Confirmation Modal */}
+      {agentToDelete && (
+        <div className="modal-overlay" style={{ zIndex: 2500 }}>
+          <div className="modal-content" style={{ maxWidth: 480, width: '100%', padding: 24 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--danger-subtle)',
+                    color: 'var(--danger-text)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Trash2 size={16} />
+                </div>
+                <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+                  Delete Agent Account
+                </h3>
+              </div>
+              <button
+                onClick={() => {
+                  setAgentToDelete(null);
+                  setDeleteError(null);
+                }}
+                className="btn btn-secondary btn-sm"
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <div style={{ marginBottom: 16 }}>
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '0 0 12px' }}>
+                Are you sure you want to delete the collection agent account for{' '}
+                <strong style={{ color: 'var(--text-primary)' }}>
+                  {agentToDelete.fullName || agentToDelete.full_name}
+                </strong>{' '}
+                (<span className="mono">{agentToDelete.phone || agentToDelete.loginId || agentToDelete.email}</span>)?
+              </p>
+
+              <div
+                style={{
+                  background: 'var(--warning-subtle)',
+                  border: '1px solid var(--warning-border)',
+                  color: 'var(--warning-text)',
+                  padding: '10px 12px',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: 12,
+                  lineHeight: '1.4',
+                  marginBottom: 16,
+                }}
+              >
+                <strong>Security & Financial Audit Guarantee:</strong>
+                <ul style={{ margin: '6px 0 0', paddingLeft: 16 }}>
+                  <li>Agent access will be revoked immediately; active sessions are invalidated.</li>
+                  <li>All historical collection records, receipts, and audit trail are permanently preserved.</li>
+                  <li>Active customers and loan assignments can be reassigned below, or safely unassigned.</li>
+                </ul>
+              </div>
+
+              {deleteError && (
+                <div
+                  style={{
+                    background: 'var(--danger-subtle)',
+                    color: 'var(--danger-text)',
+                    padding: '8px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: 12,
+                    marginBottom: 14,
+                  }}
+                >
+                  {deleteError}
+                </div>
+              )}
+
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                  Reassign Active Cases To: (Optional)
+                </label>
+                <select
+                  className="form-select"
+                  value={reassignToAgentId}
+                  onChange={(e) => setReassignToAgentId(e.target.value)}
+                  style={{ width: '100%', fontSize: 12 }}
+                >
+                  <option value="">Do not reassign (Safely unassign active loans)</option>
+                  {agents
+                    .filter((ag) => ag.id !== agentToDelete.id && ag.status === 'ACTIVE')
+                    .map((ag) => (
+                      <option key={ag.id} value={ag.id}>
+                        {ag.fullName || ag.full_name} ({ag.phone})
+                      </option>
+                    ))}
+                </select>
+                <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--text-muted)' }}>
+                  If selected, all active loan and collection assignments are atomically transferred to the chosen agent.
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setAgentToDelete(null);
+                  setDeleteError(null);
+                }}
+                disabled={deleting}
+                className="btn btn-secondary btn-sm"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteAgent}
+                disabled={deleting}
+                className="btn btn-danger btn-sm"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
+                <Trash2 size={13} />
+                <span>{deleting ? 'Deleting...' : 'Confirm Delete Agent'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

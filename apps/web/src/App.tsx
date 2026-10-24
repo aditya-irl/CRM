@@ -211,8 +211,8 @@ export const App: React.FC = () => {
       return <DealerDashboardView onNavigateToTab={(t) => selectTab(t as NavTab)} userRole={user.role} />;
     }
 
-    // If collection agent attempts to access admin-only tabs, redirect to agent dashboard
-    const agentAllowedTabs: NavTab[] = ['dashboard', 'queue', 'customers', 'devices', 'loans', 'agent-collections'];
+    // If collection agent attempts to access loans, customer onboarding, or admin-only tabs, redirect to collection dashboard
+    const agentAllowedTabs: NavTab[] = ['dashboard', 'agent-collections'];
     if (isAgent && !agentAllowedTabs.includes(activeTab)) {
       return <AgentDashboardView onNavigateToTab={(t) => selectTab(t as NavTab)} />;
     }
@@ -327,7 +327,7 @@ export const App: React.FC = () => {
       {/* Global Add Customer Wizard */}
       <Suspense fallback={null}>
         <AddCustomerWizard
-          isOpen={showAddCustomerWizard}
+          isOpen={showAddCustomerWizard && !isAgent}
           onClose={() => setShowAddCustomerWizard(false)}
           onSuccess={() => {
             setShowAddCustomerWizard(false);

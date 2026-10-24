@@ -1537,6 +1537,16 @@ export class ApiClient {
     });
   }
 
+  public static async deleteAgent(agentId: string, reassignToAgentId?: string) {
+    return this.request<{ success: boolean; message: string; reassignedCount?: number; unassignedCount?: number }>(
+      `/users/agents/${agentId}`,
+      {
+        method: 'DELETE',
+        body: JSON.stringify({ reassignToAgentId }),
+      }
+    );
+  }
+
   public static async getAgentDashboard() {
     return this.request<any>('/emi/agent-dashboard');
   }

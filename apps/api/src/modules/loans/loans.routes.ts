@@ -28,7 +28,7 @@ router.use(authenticate);
  */
 router.post(
   '/calculate-preview',
-  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER, UserRole.COLLECTION_AGENT, UserRole.DEALER),
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER, UserRole.DEALER),
   validateBody(calculateLoanSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {

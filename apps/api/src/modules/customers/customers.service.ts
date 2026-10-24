@@ -99,6 +99,10 @@ export class CustomerService {
           SELECT area_route FROM collection_assignments 
           WHERE agent_id = $${paramIndex} AND is_active = TRUE AND (effective_to IS NULL OR effective_to >= CURRENT_DATE)
         )
+        OR c.id IN (
+          SELECT customer_id FROM loans
+          WHERE assigned_agent_id = $${paramIndex} AND status = 'ACTIVE'
+        )
       )`;
       params.push(user.id);
       paramIndex++;

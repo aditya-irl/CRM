@@ -270,7 +270,16 @@ export class EMIService {
       `SELECT COUNT(DISTINCT c.id)::int as assigned_customers
        FROM customers c
        JOIN loans l ON l.customer_id = c.id AND l.status = 'ACTIVE'
-       WHERE c.deleted_at IS NULL AND l.assigned_agent_id = $1`,
+       WHERE c.deleted_at IS NULL AND (
+         l.assigned_agent_id = $1
+         OR EXISTS (
+           SELECT 1 FROM collection_assignments ca
+           WHERE ca.agent_id = $1
+             AND (ca.loan_id = l.id OR ca.customer_id = l.customer_id)
+             AND ca.is_active = TRUE
+             AND (ca.effective_to IS NULL OR ca.effective_to >= CURRENT_DATE)
+         )
+       )`,
       [targetAgentId]
     );
 
@@ -279,7 +288,16 @@ export class EMIService {
       `SELECT COUNT(DISTINCT l.id)::int as active_loans
        FROM loans l
        JOIN customers c ON l.customer_id = c.id
-       WHERE l.status = 'ACTIVE' AND c.deleted_at IS NULL AND l.assigned_agent_id = $1`,
+       WHERE l.status = 'ACTIVE' AND c.deleted_at IS NULL AND (
+         l.assigned_agent_id = $1
+         OR EXISTS (
+           SELECT 1 FROM collection_assignments ca
+           WHERE ca.agent_id = $1
+             AND (ca.loan_id = l.id OR ca.customer_id = l.customer_id)
+             AND ca.is_active = TRUE
+             AND (ca.effective_to IS NULL OR ca.effective_to >= CURRENT_DATE)
+         )
+       )`,
       [targetAgentId]
     );
 
@@ -307,7 +325,16 @@ export class EMIService {
        JOIN loans l ON e.loan_id = l.id
        JOIN customers c ON e.customer_id = c.id
        WHERE e.status != 'PAID' AND l.status = 'ACTIVE' AND c.deleted_at IS NULL
-         AND l.assigned_agent_id = $1`,
+         AND (
+           l.assigned_agent_id = $1
+           OR EXISTS (
+             SELECT 1 FROM collection_assignments ca
+             WHERE ca.agent_id = $1
+               AND (ca.loan_id = l.id OR ca.customer_id = l.customer_id)
+               AND ca.is_active = TRUE
+               AND (ca.effective_to IS NULL OR ca.effective_to >= CURRENT_DATE)
+           )
+         )`,
       [targetAgentId, businessToday]
     );
 

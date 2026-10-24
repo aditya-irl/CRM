@@ -140,6 +140,25 @@ router.patch(
   }
 );
 
+// Delete / soft-delete Collection Agent (Admin / Super Admin / Branch Manager)
+router.delete(
+  '/agents/:id',
+  requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await UsersService.deleteAgent(req.params.id, req.user!, req.body?.reassignToAgentId);
+      return res.json({
+        success: true,
+        message: result.message,
+        data: result,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 // Create user
 router.post(
   '/',

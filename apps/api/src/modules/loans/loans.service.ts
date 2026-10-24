@@ -1143,7 +1143,20 @@ export class LoanService {
         throw new ForbiddenError('You do not have access to this loan account');
       }
     } else if (user.role === UserRole.COLLECTION_AGENT) {
-      if (!loan.assigned_agent_id || loan.assigned_agent_id !== user.id) {
+      let isAssigned = loan.assigned_agent_id === user.id;
+      if (!isAssigned) {
+        const assignCheck = await queryPostgres(
+          `SELECT id FROM collection_assignments
+           WHERE agent_id = $1
+             AND (loan_id = $2 OR customer_id = $3 OR area_route = (SELECT area_route FROM customers WHERE id = $3))
+             AND is_active = TRUE
+             AND (effective_to IS NULL OR effective_to >= CURRENT_DATE)
+           LIMIT 1`,
+          [user.id, loan.id, loan.customer_id]
+        );
+        isAssigned = assignCheck.rows.length > 0;
+      }
+      if (!isAssigned) {
         throw new ForbiddenError('You do not have access to this loan account');
       }
     }

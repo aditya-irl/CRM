@@ -1,8 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
-import { queryPostgres } from '../../database/postgres';
+import { queryPostgres, runPostgresTransaction } from '../../database/postgres';
 import { UserRole, UserStatus } from '@crm/shared';
-import { AppError, NotFoundError, ConflictError } from '../../middlewares/error.middleware';
+import { AppError, NotFoundError, ConflictError, ForbiddenError, BadRequestError } from '../../middlewares/error.middleware';
 import { AuthenticatedUser } from '../../middlewares/auth.middleware';
 import { AuditService } from '../audit/audit.service';
 
@@ -347,7 +347,17 @@ export class UsersService {
    * Soft-delete a user.
    */
   public static async deleteUser(id: string, deleter: AuthenticatedUser): Promise<void> {
-    await this.getUserById(id);
+    if (deleter.id === id) {
+      throw new ForbiddenError('You cannot delete your own account');
+    }
+
+    const user = await this.getUserById(id);
+
+    // If deleting a collection agent, delegate to deleteAgent for safe assignment handling
+    if (user.role === UserRole.COLLECTION_AGENT) {
+      await this.deleteAgent(id, deleter);
+      return;
+    }
 
     await queryPostgres(
       'UPDATE users SET deleted_at = NOW(), status = $1, updated_at = NOW() WHERE id = $2',
@@ -552,5 +562,129 @@ export class UsersService {
       id: agentId,
       status,
     };
+  }
+
+  /**
+   * Delete / soft-delete a Collection Agent.
+   * Preserves all financial history (payments, receipts, audit logs).
+   * Safely deactivates or reassigns active collection assignments and active loans.
+   * Enforces self-deletion prevention and immediate token invalidation via soft-delete status.
+   */
+  public static async deleteAgent(
+    agentId: string,
+    currentUser: AuthenticatedUser,
+    reassignToAgentId?: string
+  ): Promise<{ id: string; message: string; reassignedCount: number; unassignedCount: number }> {
+    if (currentUser.id === agentId) {
+      throw new ForbiddenError('You cannot delete your own account');
+    }
+
+    const userRes = await queryPostgres(
+      'SELECT id, email, full_name, phone, role, status FROM users WHERE id = $1 AND deleted_at IS NULL',
+      [agentId]
+    );
+
+    if (userRes.rows.length === 0) {
+      throw new NotFoundError('Collection agent account not found');
+    }
+
+    const agent = userRes.rows[0];
+    if (agent.role !== UserRole.COLLECTION_AGENT) {
+      throw new BadRequestError('Target user is not a collection agent');
+    }
+
+    // Validate reassignment target if provided
+    if (reassignToAgentId) {
+      if (reassignToAgentId === agentId) {
+        throw new BadRequestError('Cannot reassign assignments to the agent being deleted');
+      }
+      const targetAgentRes = await queryPostgres(
+        'SELECT id, full_name, role, status FROM users WHERE id = $1 AND deleted_at IS NULL AND status = $2',
+        [reassignToAgentId, UserStatus.ACTIVE]
+      );
+      if (targetAgentRes.rows.length === 0 || targetAgentRes.rows[0].role !== UserRole.COLLECTION_AGENT) {
+        throw new BadRequestError('Target agent for reassignment not found or not an active collection agent');
+      }
+    }
+
+    return await runPostgresTransaction(async (client) => {
+      let reassignedCount = 0;
+      let unassignedCount = 0;
+
+      if (reassignToAgentId) {
+        // Reassign active loans
+        const loanReassignRes = await client.query(
+          `UPDATE loans 
+           SET assigned_agent_id = $1, updated_at = NOW() 
+           WHERE assigned_agent_id = $2 AND status = 'ACTIVE' 
+           RETURNING id`,
+          [reassignToAgentId, agentId]
+        );
+        reassignedCount += loanReassignRes.rows.length;
+
+        // Reassign active collection assignments
+        await client.query(
+          `UPDATE collection_assignments
+           SET agent_id = $1, assigned_by = $2
+           WHERE agent_id = $3 AND is_active = TRUE`,
+          [reassignToAgentId, currentUser.id, agentId]
+        );
+      } else {
+        // Safely unassign active loans (set assigned_agent_id to NULL to prevent orphaned references)
+        const loanUnassignRes = await client.query(
+          `UPDATE loans 
+           SET assigned_agent_id = NULL, updated_at = NOW() 
+           WHERE assigned_agent_id = $1 AND status = 'ACTIVE' 
+           RETURNING id`,
+          [agentId]
+        );
+        unassignedCount += loanUnassignRes.rows.length;
+
+        // Deactivate active collection assignments
+        await client.query(
+          `UPDATE collection_assignments
+           SET is_active = FALSE, effective_to = CURRENT_DATE
+           WHERE agent_id = $1 AND is_active = TRUE`,
+          [agentId]
+        );
+      }
+
+      // Soft delete agent user and mark status INACTIVE (invalidates subsequent JWT checks immediately)
+      await client.query(
+        'UPDATE users SET deleted_at = NOW(), status = $1, updated_at = NOW() WHERE id = $2',
+        [UserStatus.INACTIVE, agentId]
+      );
+
+      // Log immutable audit entry
+      await AuditService.log({
+        userId: currentUser.id,
+        action: 'AGENT_DELETED',
+        entity: 'User',
+        entityId: agentId,
+        previousState: {
+          agentId,
+          name: agent.full_name,
+          email: agent.email,
+          phone: agent.phone,
+          status: agent.status,
+        },
+        newState: {
+          status: UserStatus.INACTIVE,
+          deletedAt: new Date().toISOString(),
+          reassignedTo: reassignToAgentId || null,
+          reassignedCount,
+          unassignedCount,
+        },
+      });
+
+      return {
+        id: agentId,
+        message: reassignToAgentId
+          ? `Agent ${agent.full_name} deleted successfully. ${reassignedCount} active loans/assignments reassigned.`
+          : `Agent ${agent.full_name} deleted successfully. Active assignments safely unassigned.`,
+        reassignedCount,
+        unassignedCount,
+      };
+    });
   }
 }

@@ -4,7 +4,6 @@ import {
   IAgentQueueItem,
   formatINR,
   formatDateDDMMYYYY,
-  normalizeNumericLeadingZeros,
   PaymentMode,
   CollectionSource,
   IUser,
@@ -17,32 +16,33 @@ import {
   Calendar,
   AlertTriangle,
   Clock,
-  TrendingUp,
   DollarSign,
   Phone,
   MessageCircle,
   Receipt,
-  CheckCircle2,
-  Filter,
   Search,
-  ExternalLink,
-  X,
   RefreshCw,
-  ArrowUpRight,
-  ShieldAlert,
+  Eye,
+  CheckCircle2,
+  X,
+  FileText,
+  ShieldCheck,
 } from 'lucide-react';
 
 interface AgentDashboardStats {
   assignedCustomers: number;
   activeLoans: number;
   todayDue: number;
+  todayDueCount?: number;
   todayCollected: number;
-  todayPending: number;
-  upcomingDuesCount: number;
-  upcomingDuesAmount: number;
-  overdueCustomersCount: number;
+  todayCollectionCount?: number;
+  todayPending?: number;
+  upcomingDues?: number;
+  upcomingDueCount?: number;
+  overdueCustomers?: number;
   overdueAmount: number;
-  collectionEfficiency: number;
+  overdueEmisCount?: number;
+  collectionPerformance?: number;
   recentCollections: any[];
 }
 
@@ -51,38 +51,35 @@ interface AgentDashboardViewProps {
 }
 
 export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNavigateToTab }) => {
-  const [currentUser, setCurrentUser] = useState<IUser | null>(ApiClient.getUser());
+  const [currentUser] = useState<IUser | null>(ApiClient.getUser());
   const [stats, setStats] = useState<AgentDashboardStats | null>(null);
   const [queueItems, setQueueItems] = useState<IAgentQueueItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Active View Tab: 'UPCOMING' | 'RECOVERY' | 'RECENT'
-  const [activeSubTab, setActiveSubTab] = useState<'UPCOMING' | 'RECOVERY' | 'RECENT'>('UPCOMING');
+  // Active View Tab: 'ASSIGNED_CUSTOMERS' | 'COLLECTIONS'
+  const [activeTab, setActiveTab] = useState<'ASSIGNED_CUSTOMERS' | 'COLLECTIONS'>('ASSIGNED_CUSTOMERS');
 
-  // Upcoming Filter: 'TODAY' | 'TOMORROW' | 'NEXT_7_DAYS' | 'OVERDUE'
-  const [upcomingFilter, setUpcomingFilter] = useState<'TODAY' | 'TOMORROW' | 'NEXT_7_DAYS' | 'OVERDUE'>('TODAY');
+  // Filter for obligations: 'ALL' | 'TODAY' | 'OVERDUE' | 'UPCOMING'
+  const [dueFilter, setDueFilter] = useState<'ALL' | 'TODAY' | 'OVERDUE' | 'UPCOMING'>('ALL');
 
-  // Search
+  // Search input
   const [search, setSearch] = useState('');
 
   // Payment Modal State
   const [selectedItemForPayment, setSelectedItemForPayment] = useState<IAgentQueueItem | null>(null);
-  const [paymentAmount, setPaymentAmount] = useState<number>(0);
-  const [paymentMode, setPaymentMode] = useState<PaymentMode>(PaymentMode.CASH);
-  const [refNumber, setRefNumber] = useState('');
-  const [paymentNotes, setPaymentNotes] = useState('');
-  const [submittingPayment, setSubmittingPayment] = useState(false);
-  const [paymentError, setPaymentError] = useState<string | null>(null);
 
-  // Active Receipt Modal
-  const [activeReceipt, setActiveReceipt] = useState<any | null>(null);
+  // EMI Details Modal State
+  const [selectedItemForDetails, setSelectedItemForDetails] = useState<IAgentQueueItem | null>(null);
+  const [loanDetails, setLoanDetails] = useState<any | null>(null);
+  const [loadingLoanDetails, setLoadingLoanDetails] = useState(false);
 
   const loadDashboardData = async () => {
     try {
+      const queueStatus = dueFilter === 'ALL' ? undefined : dueFilter;
       const [dashStats, qList] = await Promise.all([
         ApiClient.getAgentDashboard(),
-        ApiClient.getAgentQueue(upcomingFilter, undefined, search || undefined),
+        ApiClient.getAgentQueue(queueStatus, undefined, search || undefined),
       ]);
       setStats(dashStats);
       setQueueItems(qList);
@@ -96,52 +93,25 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
 
   useEffect(() => {
     loadDashboardData();
-  }, [upcomingFilter]);
+  }, [dueFilter]);
 
   const handleRefresh = () => {
     setRefreshing(true);
     loadDashboardData();
   };
 
-  // Open Payment Modal
-  const handleOpenPayment = (item: IAgentQueueItem) => {
-    setSelectedItemForPayment(item);
-  };
-
-  // Submit Payment using existing payment engine
-  const handleSubmitPayment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedItemForPayment) return;
-    const user = currentUser || ApiClient.getUser();
-    if (!user) {
-      alert('User session not found. Please log in again.');
-      return;
-    }
-
-    setSubmittingPayment(true);
-    setPaymentError(null);
+  // Open Detailed EMI Breakdown
+  const handleOpenDetails = async (item: IAgentQueueItem) => {
+    setSelectedItemForDetails(item);
+    setLoanDetails(null);
+    setLoadingLoanDetails(true);
     try {
-      const idempotencyKey = `AGT_${selectedItemForPayment.installmentId}_${Date.now()}`;
-      const res = await ApiClient.recordPayment({
-        loanId: selectedItemForPayment.loanId,
-        emiId: selectedItemForPayment.installmentId,
-        customerId: selectedItemForPayment.customerId,
-        amount: Number(paymentAmount),
-        paymentMode,
-        collectionSource: CollectionSource.RECOVERY_AGENT,
-        agentId: user.id,
-        referenceNumber: refNumber || undefined,
-        notes: paymentNotes || undefined,
-        idempotencyKey,
-      });
-
-      setSelectedItemForPayment(null);
-      setActiveReceipt(res);
-      loadDashboardData();
+      const details = await ApiClient.getLoanById(item.loanId);
+      setLoanDetails(details);
     } catch (err: any) {
-      setPaymentError(err.message || 'Failed to record payment');
+      console.error('Failed to load full loan details', err);
     } finally {
-      setSubmittingPayment(false);
+      setLoadingLoanDetails(false);
     }
   };
 
@@ -151,151 +121,98 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
     const cleanPhone = rawPhone.replace(/\D/g, '');
     const phoneWithCode = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
     const dueAmt = formatINR((item.remainingAmount || item.expectedAmount || 0) + (item.penaltyAmount || 0));
-    const msg = `Namaste ${item.customerName}, this is a gentle reminder from Alpha Mobile Gallery / Shubh Pvt Ltd regarding your EMI payment of ${dueAmt} for Loan Account ${item.loanAccountNo} (Due: ${formatDateDDMMYYYY(item.dueDate)}). Please make the payment promptly to avoid late fees. Thank you.`;
+    const msg = `Namaste ${item.customerName}, this is an EMI collection reminder from Alpha Mobile Gallery / Shubh Pvt Ltd regarding your EMI payment of ${dueAmt} for Loan Account ${item.loanAccountNo} (Due: ${formatDateDDMMYYYY(item.dueDate)}). Please pay on time to avoid additional charges. Thank you.`;
     window.open(`https://wa.me/${phoneWithCode}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
+  // Filter items based on local search query
   const filteredItems = queueItems.filter((item) => {
     if (!search) return true;
     const s = search.toLowerCase();
     const phone = (item.primaryPhone || item.customerPhone || '').toLowerCase();
+    const custCode = (item.customerCode || '').toLowerCase();
+    const loanAcc = (item.loanAccountNo || '').toLowerCase();
     return (
       item.customerName.toLowerCase().includes(s) ||
       phone.includes(s) ||
-      item.loanAccountNo.toLowerCase().includes(s)
+      custCode.includes(s) ||
+      loanAcc.includes(s)
     );
   });
 
   return (
-    <div style={{ padding: '24px', maxWidth: 1400, margin: '0 auto' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, flexWrap: 'wrap', gap: 16 }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div
-              style={{
-                width: 38,
-                height: 38,
-                borderRadius: 'var(--radius-md)',
-                background: 'var(--primary-subtle)',
-                color: 'var(--primary)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <LayoutDashboard size={20} />
-            </div>
-            <div>
-              <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
-                Recovery Agent Dashboard
-              </h1>
-              <p style={{ margin: '3px 0 0', fontSize: 13, color: 'var(--text-muted)' }}>
-                Field operations overview, assigned recovery targets, and collections
-              </p>
-            </div>
+    <div style={{ padding: '16px 20px', maxWidth: 1400, margin: '0 auto' }}>
+      {/* Field Collection Header */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 20,
+          flexWrap: 'wrap',
+          gap: 12,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 'var(--radius-md)',
+              background: 'var(--primary-subtle)',
+              color: 'var(--primary)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <LayoutDashboard size={20} />
+          </div>
+          <div>
+            <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+              Collection Agent Dashboard (Recovery Agent Dashboard)
+            </h1>
+            <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text-muted)' }}>
+              Field collection targets, assigned customer obligations, and payment receipts
+            </p>
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <button
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className="btn btn-secondary btn-sm"
-            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-          >
-            <RefreshCw size={13} className={refreshing ? 'spin' : ''} />
-            <span>{refreshing ? 'Updating...' : 'Refresh'}</span>
-          </button>
-        </div>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className="btn btn-secondary btn-sm"
+          style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+        >
+          <RefreshCw size={13} className={refreshing ? 'spin' : ''} />
+          <span>{refreshing ? 'Updating...' : 'Refresh'}</span>
+        </button>
       </div>
 
-      {/* KPI Stats Grid */}
+      {/* 4 Authoritative Summary Cards (Layout E) */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-          gap: 16,
-          marginBottom: 24,
+          gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+          gap: 14,
+          marginBottom: 22,
         }}
       >
-        {/* Assigned Customers */}
-        <div className="crm-card" style={{ padding: 18 }}>
+        {/* 1. Today's Collections */}
+        <div className="crm-card" style={{ padding: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
-                Assigned Customers
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
+                Today's Collection / Collections
               </div>
-              <div className="mono" style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-primary)', marginTop: 6 }}>
-                {stats?.assignedCustomers ?? '—'}
-              </div>
-            </div>
-            <div
-              style={{
-                width: 38,
-                height: 38,
-                borderRadius: 'var(--radius-md)',
-                background: 'var(--primary-subtle)',
-                color: 'var(--primary)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Users size={18} />
-            </div>
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
-            Active Loans: <span className="mono" style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{stats?.activeLoans ?? 0}</span>
-          </div>
-        </div>
-
-        {/* Today's Target / Due */}
-        <div className="crm-card" style={{ padding: 18 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
-                Today's Due
-              </div>
-              <div className="mono" style={{ fontSize: 24, fontWeight: 800, color: 'var(--warning-text)', marginTop: 6 }}>
-                {stats ? formatINR(stats.todayDue) : '—'}
-              </div>
-            </div>
-            <div
-              style={{
-                width: 38,
-                height: 38,
-                borderRadius: 'var(--radius-md)',
-                background: 'var(--warning-subtle)',
-                color: 'var(--warning-text)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Clock size={18} />
-            </div>
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
-            Pending Today: <span className="mono" style={{ fontWeight: 700, color: 'var(--danger-text)' }}>{stats ? formatINR(stats.todayPending) : '—'}</span>
-          </div>
-        </div>
-
-        {/* Today's Collection */}
-        <div className="crm-card" style={{ padding: 18 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
-                Today's Collection
-              </div>
-              <div className="mono" style={{ fontSize: 24, fontWeight: 800, color: 'var(--success-text)', marginTop: 6 }}>
+              <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: 'var(--success-text)', marginTop: 4 }}>
                 {stats ? formatINR(stats.todayCollected) : '—'}
               </div>
             </div>
             <div
               style={{
-                width: 38,
-                height: 38,
+                width: 36,
+                height: 36,
                 borderRadius: 'var(--radius-md)',
                 background: 'var(--success-subtle)',
                 color: 'var(--success-text)',
@@ -308,25 +225,56 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
             </div>
           </div>
           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
-            Efficiency: <span className="mono" style={{ fontWeight: 700, color: 'var(--success-text)' }}>{stats?.collectionEfficiency ?? 0}%</span>
+            Collected Today: <span className="mono" style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{stats?.todayCollectionCount ?? 0}</span> receipts
           </div>
         </div>
 
-        {/* Total Overdue */}
-        <div className="crm-card" style={{ padding: 18 }}>
+        {/* 2. EMIs Due Today */}
+        <div className="crm-card" style={{ padding: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
-                Overdue Portfolio
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
+                EMIs Due Today / Today's Due
               </div>
-              <div className="mono" style={{ fontSize: 24, fontWeight: 800, color: 'var(--danger-text)', marginTop: 6 }}>
+              <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: 'var(--warning-text)', marginTop: 4 }}>
+                {stats ? formatINR(stats.todayDue) : '—'}
+              </div>
+            </div>
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--warning-subtle)',
+                color: 'var(--warning-text)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Clock size={18} />
+            </div>
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
+            Obligations Due Today: <span className="mono" style={{ fontWeight: 700, color: 'var(--warning-text)' }}>{stats?.todayDueCount ?? 0}</span>
+          </div>
+        </div>
+
+        {/* 3. Overdue EMIs */}
+        <div className="crm-card" style={{ padding: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
+                Overdue EMIs / Overdue Portfolio
+              </div>
+              <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: 'var(--danger-text)', marginTop: 4 }}>
                 {stats ? formatINR(stats.overdueAmount) : '—'}
               </div>
             </div>
             <div
               style={{
-                width: 38,
-                height: 38,
+                width: 36,
+                height: 36,
                 borderRadius: 'var(--radius-md)',
                 background: 'var(--danger-subtle)',
                 color: 'var(--danger-text)',
@@ -339,56 +287,100 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
             </div>
           </div>
           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
-            Delinquent Accounts: <span className="mono" style={{ fontWeight: 700, color: 'var(--danger-text)' }}>{stats?.overdueCustomersCount ?? 0}</span>
+            Overdue Count: <span className="mono" style={{ fontWeight: 700, color: 'var(--danger-text)' }}>{stats?.overdueEmisCount ?? 0}</span> ({stats?.overdueCustomers ?? 0} borrowers)
+          </div>
+        </div>
+
+        {/* 4. Assigned Customers */}
+        <div className="crm-card" style={{ padding: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
+                Assigned Customers
+              </div>
+              <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-primary)', marginTop: 4 }}>
+                {stats?.assignedCustomers ?? '—'}
+              </div>
+            </div>
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--primary-subtle)',
+                color: 'var(--primary)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Users size={18} />
+            </div>
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
+            Assigned Loans: <span className="mono" style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{stats?.activeLoans ?? 0}</span>
           </div>
         </div>
       </div>
 
-      {/* Main Section Navigation Tabs */}
+      {/* Main Tabs Navigation */}
       <div
         style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
           borderBottom: '1px solid var(--border-subtle)',
-          marginBottom: 20,
+          marginBottom: 16,
           flexWrap: 'wrap',
           gap: 12,
         }}
       >
         <div style={{ display: 'flex', gap: 6 }}>
           <button
-            onClick={() => setActiveSubTab('UPCOMING')}
-            className={`crm-tab ${activeSubTab === 'UPCOMING' ? 'active' : ''}`}
+            onClick={() => setActiveTab('ASSIGNED_CUSTOMERS')}
+            className={`crm-tab ${activeTab === 'ASSIGNED_CUSTOMERS' ? 'active' : ''}`}
             style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px' }}
           >
-            <Calendar size={15} />
-            <span>Upcoming EMI Dues</span>
+            <Users size={15} />
+            <span>Assigned Customers & Dues (Recovery Queue)</span>
+            <span
+              style={{
+                background: activeTab === 'ASSIGNED_CUSTOMERS' ? 'var(--primary)' : 'var(--bg-surface-secondary)',
+                color: activeTab === 'ASSIGNED_CUSTOMERS' ? '#ffffff' : 'var(--text-secondary)',
+                borderRadius: 12,
+                padding: '2px 7px',
+                fontSize: 11,
+                fontWeight: 700,
+              }}
+            >
+              {filteredItems.length}
+            </span>
           </button>
           <button
-            onClick={() => {
-              setActiveSubTab('RECOVERY');
-              setUpcomingFilter('OVERDUE');
-            }}
-            className={`crm-tab ${activeSubTab === 'RECOVERY' ? 'active' : ''}`}
-            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px' }}
-          >
-            <AlertTriangle size={15} />
-            <span>Recovery Queue</span>
-          </button>
-          <button
-            onClick={() => setActiveSubTab('RECENT')}
-            className={`crm-tab ${activeSubTab === 'RECENT' ? 'active' : ''}`}
+            onClick={() => setActiveTab('COLLECTIONS')}
+            className={`crm-tab ${activeTab === 'COLLECTIONS' ? 'active' : ''}`}
             style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px' }}
           >
             <Receipt size={15} />
-            <span>Recent Collections</span>
+            <span>Today's Collections / Recent Collections</span>
+            <span
+              style={{
+                background: activeTab === 'COLLECTIONS' ? 'var(--primary)' : 'var(--bg-surface-secondary)',
+                color: activeTab === 'COLLECTIONS' ? '#ffffff' : 'var(--text-secondary)',
+                borderRadius: 12,
+                padding: '2px 7px',
+                fontSize: 11,
+                fontWeight: 700,
+              }}
+            >
+              {stats?.recentCollections?.length ?? 0}
+            </span>
           </button>
         </div>
 
-        {/* Search Input */}
-        {activeSubTab !== 'RECENT' && (
-          <div style={{ position: 'relative', width: 280 }}>
+        {/* Quick Search */}
+        {activeTab === 'ASSIGNED_CUSTOMERS' && (
+          <div style={{ position: 'relative', width: 280, maxWidth: '100%' }}>
             <Search
               size={14}
               style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}
@@ -396,8 +388,8 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
             <input
               type="text"
               className="form-input"
-              style={{ paddingLeft: 32, fontSize: 12, height: 34 }}
-              placeholder="Search customer, phone, loan..."
+              style={{ paddingLeft: 32, fontSize: 12, height: 34, width: '100%' }}
+              placeholder="Search customer, phone, code, loan..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -405,188 +397,207 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
         )}
       </div>
 
-      {/* Sub-Filters for Upcoming Dues */}
-      {activeSubTab === 'UPCOMING' && (
-        <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
-          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)' }}>Due Period:</span>
-          {(['TODAY', 'TOMORROW', 'NEXT_7_DAYS', 'OVERDUE'] as const).map((filterKey) => {
-            const labels: Record<string, string> = {
-              TODAY: "Today's Due",
-              TOMORROW: 'Tomorrow',
-              NEXT_7_DAYS: 'Next 7 Days',
-              OVERDUE: 'All Overdue',
-            };
-            return (
+      {/* Assigned Customers & Obligations View */}
+      {activeTab === 'ASSIGNED_CUSTOMERS' && (
+        <div>
+          {/* Due Filter Pills */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)' }}>Obligation Status:</span>
+            {(
+              [
+                { id: 'ALL', label: 'All Assigned' },
+                { id: 'TODAY', label: "Due Today" },
+                { id: 'OVERDUE', label: 'Overdue EMIs' },
+                { id: 'UPCOMING', label: 'Upcoming EMI Dues' },
+              ] as const
+            ).map((f) => (
               <button
-                key={filterKey}
-                onClick={() => setUpcomingFilter(filterKey)}
-                className={`btn btn-sm ${upcomingFilter === filterKey ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ fontSize: 11 }}
+                key={f.id}
+                onClick={() => setDueFilter(f.id)}
+                className={`btn btn-sm ${dueFilter === f.id ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ fontSize: 11, padding: '4px 10px' }}
               >
-                {labels[filterKey]}
+                {f.label}
               </button>
-            );
-          })}
+            ))}
+          </div>
+
+          {/* Assigned Customers Table / Cards */}
+          <div className="crm-card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ overflowX: 'auto' }}>
+              <table className="crm-table">
+                <thead>
+                  <tr>
+                    <th>Customer & Contact</th>
+                    <th>Assigned Loan Reference</th>
+                    <th>Next EMI Due</th>
+                    <th>EMI Amount Due</th>
+                    <th>Collection Status</th>
+                    <th style={{ textAlign: 'right' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    <tr>
+                      <td colSpan={6} style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
+                        Loading assigned customer obligations...
+                      </td>
+                    </tr>
+                  ) : filteredItems.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
+                        No assigned customers or EMI obligations found for this filter.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredItems.map((item) => {
+                      const totalDue = (item.remainingAmount || item.expectedAmount || 0) + (item.penaltyAmount || 0);
+                      const isOverdue = item.daysOverdue > 0;
+                      const isDueToday = item.status === 'DUE_TODAY' || item.daysOverdue === 0;
+
+                      return (
+                        <tr key={item.installmentId}>
+                          {/* Customer Name, Code, and Phone */}
+                          <td>
+                            <div>
+                              <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 13 }}>
+                                {item.customerName}
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                                {item.customerCode && (
+                                  <span className="badge badge-neutral" style={{ fontSize: 10 }}>
+                                    {item.customerCode}
+                                  </span>
+                                )}
+                                <span className="mono" style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                  {item.primaryPhone || item.customerPhone}
+                                </span>
+                              </div>
+                              {item.areaRoute && (
+                                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
+                                  Route: {item.areaRoute}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Assigned Loan Reference */}
+                          <td>
+                            <div>
+                              <span className="mono" style={{ fontWeight: 700, color: 'var(--primary)', fontSize: 12 }}>
+                                {item.loanAccountNo}
+                              </span>
+                              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                EMI #{item.installmentNumber} of {item.totalInstallments}
+                              </div>
+                              {item.totalOutstandingLoan > 0 && (
+                                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                                  Bal: <span className="mono">{formatINR(item.totalOutstandingLoan)}</span>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Next EMI Due Date */}
+                          <td style={{ fontSize: 12, fontWeight: 600 }}>
+                            {formatDateDDMMYYYY(item.dueDate)}
+                          </td>
+
+                          {/* EMI Amount Due */}
+                          <td>
+                            <div>
+                              <div className="mono" style={{ fontWeight: 800, color: 'var(--text-primary)', fontSize: 14 }}>
+                                {formatINR(totalDue)}
+                              </div>
+                              {item.penaltyAmount > 0 && (
+                                <div style={{ fontSize: 10, color: 'var(--danger-text)' }}>
+                                  (Incl. {formatINR(item.penaltyAmount)} late fee)
+                                </div>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Payment / Collection Status */}
+                          <td>
+                            {isOverdue ? (
+                              <span className="badge badge-danger" style={{ fontSize: 11 }}>
+                                {item.daysOverdue} Days Overdue
+                              </span>
+                            ) : isDueToday ? (
+                              <span className="badge badge-warning" style={{ fontSize: 11 }}>
+                                Due Today
+                              </span>
+                            ) : (
+                              <span className="badge badge-neutral" style={{ fontSize: 11 }}>
+                                Upcoming
+                              </span>
+                            )}
+                            {item.overdueEmisCount && item.overdueEmisCount > 1 ? (
+                              <div style={{ fontSize: 10, color: 'var(--danger-text)', marginTop: 3 }}>
+                                {item.overdueEmisCount} Overdue EMIs
+                              </div>
+                            ) : null}
+                          </td>
+
+                          {/* Actions: View EMI Details & Collect Payment */}
+                          <td style={{ textAlign: 'right' }}>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                              {/* Collect EMI */}
+                              <button
+                                onClick={() => setSelectedItemForPayment(item)}
+                                className="btn btn-success btn-sm"
+                                title="Collect payment against this EMI obligation"
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11 }}
+                              >
+                                <DollarSign size={12} />
+                                <span>Collect EMI</span>
+                              </button>
+
+                              {/* View EMI Details */}
+                              <button
+                                onClick={() => handleOpenDetails(item)}
+                                className="btn btn-secondary btn-sm"
+                                title="View full EMI details, schedule, and collection history"
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11 }}
+                              >
+                                <Eye size={12} />
+                                <span>Details</span>
+                              </button>
+
+                              {/* Call Customer */}
+                              <a
+                                href={`tel:${item.primaryPhone || item.customerPhone || ''}`}
+                                className="btn btn-secondary btn-sm"
+                                title="Call customer"
+                                style={{ padding: '6px 8px' }}
+                              >
+                                <Phone size={12} />
+                              </a>
+
+                              {/* WhatsApp Reminder */}
+                              <button
+                                onClick={() => handleSendWhatsApp(item)}
+                                className="btn btn-secondary btn-sm"
+                                title="Send WhatsApp collection reminder"
+                                style={{ padding: '6px 8px', color: '#25D366' }}
+                              >
+                                <MessageCircle size={12} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* SECTION A & B: Due List / Recovery Queue Table */}
-      {activeSubTab !== 'RECENT' ? (
-        <div className="crm-card" style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ overflowX: 'auto' }}>
-            <table className="crm-table">
-              <thead>
-                <tr>
-                  <th>Customer</th>
-                  <th>Loan & Installment</th>
-                  <th>Due Date</th>
-                  <th>EMI Amount</th>
-                  <th>Late Penalty</th>
-                  <th>Total Due</th>
-                  <th>Overdue Status</th>
-                  {activeSubTab === 'RECOVERY' && <th>Priority</th>}
-                  {activeSubTab === 'RECOVERY' && <th>Last Payment</th>}
-                  <th style={{ textAlign: 'right' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan={10} style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
-                      Loading recovery records...
-                    </td>
-                  </tr>
-                ) : filteredItems.length === 0 ? (
-                  <tr>
-                    <td colSpan={10} style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
-                      No recovery items found for this filter.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredItems.map((item) => {
-                    const totalDue = (item.remainingAmount || item.expectedAmount || 0) + (item.penaltyAmount || 0);
-                    const isOverdue = item.daysOverdue > 0;
-                    const priorityColor =
-                      item.priority === 'HIGH'
-                        ? 'badge-danger'
-                        : item.priority === 'MEDIUM'
-                        ? 'badge-warning'
-                        : 'badge-neutral';
-
-                    return (
-                      <tr key={item.installmentId}>
-                        <td>
-                          <div>
-                            <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 13 }}>
-                              {item.customerName}
-                            </div>
-                            <div className="mono" style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                              {item.primaryPhone || item.customerPhone}
-                            </div>
-                          </div>
-                        </td>
-                        <td>
-                          <div>
-                            <span className="mono" style={{ fontWeight: 700, color: 'var(--primary)', fontSize: 12 }}>
-                              {item.loanAccountNo}
-                            </span>
-                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                              EMI #{item.installmentNumber}
-                              {item.overdueEmisCount && item.overdueEmisCount > 1 ? ` • ${item.overdueEmisCount} EMIs Overdue` : ''}
-                            </div>
-                            {item.assignedByName && (
-                              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-                                Assigned by {item.assignedByName}
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                        <td style={{ fontSize: 12 }}>
-                          {formatDateDDMMYYYY(item.dueDate)}
-                        </td>
-                        <td className="mono" style={{ fontWeight: 600, fontSize: 13 }}>
-                          {formatINR(item.expectedAmount || item.remainingAmount || 0)}
-                        </td>
-                        <td className="mono" style={{ color: item.penaltyAmount > 0 ? 'var(--danger-text)' : 'var(--text-muted)', fontSize: 13 }}>
-                          {item.penaltyAmount > 0 ? formatINR(item.penaltyAmount) : '—'}
-                        </td>
-                        <td className="mono" style={{ fontWeight: 800, color: 'var(--text-primary)', fontSize: 14 }}>
-                          {formatINR(totalDue)}
-                        </td>
-                        <td>
-                          {isOverdue ? (
-                            <span className="badge badge-danger" style={{ fontSize: 11 }}>
-                              {item.daysOverdue} Days Overdue
-                            </span>
-                          ) : (
-                            <span className="badge badge-warning" style={{ fontSize: 11 }}>
-                              Due Today / Upcoming
-                            </span>
-                          )}
-                        </td>
-                        {activeSubTab === 'RECOVERY' && (
-                          <td>
-                            <span className={`badge ${priorityColor}`} style={{ fontSize: 11 }}>
-                              {item.priority || 'NORMAL'}
-                            </span>
-                          </td>
-                        )}
-                        {activeSubTab === 'RECOVERY' && (
-                          <td style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                            {item.lastPaymentDate ? (
-                              <div>
-                                <div>{formatDateDDMMYYYY(item.lastPaymentDate)}</div>
-                                <div className="mono" style={{ fontWeight: 600 }}>{formatINR(item.lastPaymentAmount || 0)}</div>
-                              </div>
-                            ) : (
-                              <span style={{ color: 'var(--text-muted)' }}>No previous payment</span>
-                            )}
-                          </td>
-                        )}
-                        <td style={{ textAlign: 'right' }}>
-                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                            {/* Record Payment */}
-                            <button
-                              onClick={() => handleOpenPayment(item)}
-                              className="btn btn-success btn-sm"
-                              title="Record payment collected in the field"
-                              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11 }}
-                            >
-                              <DollarSign size={12} />
-                              <span>Record Payment</span>
-                            </button>
-
-                            {/* Call */}
-                            <a
-                              href={`tel:${item.primaryPhone || item.customerPhone || ''}`}
-                              className="btn btn-secondary btn-sm"
-                              title="Call customer directly"
-                              style={{ padding: '6px 8px' }}
-                            >
-                              <Phone size={12} />
-                            </a>
-
-                            {/* WhatsApp */}
-                            <button
-                              onClick={() => handleSendWhatsApp(item)}
-                              className="btn btn-secondary btn-sm"
-                              title="Send WhatsApp payment reminder"
-                              style={{ padding: '6px 8px', color: '#25D366' }}
-                            >
-                              <MessageCircle size={12} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ) : (
-        /* SECTION C: Recent Collections */
+      {/* Today's Collections Tab */}
+      {activeTab === 'COLLECTIONS' && (
         <div className="crm-card" style={{ padding: 0, overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
             <table className="crm-table">
@@ -597,7 +608,7 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
                   <th>Loan Account</th>
                   <th>Amount Collected</th>
                   <th>Payment Mode</th>
-                  <th>Payment Date</th>
+                  <th>Collection Date</th>
                 </tr>
               </thead>
               <tbody>
@@ -610,7 +621,9 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
                         </span>
                       </td>
                       <td style={{ fontWeight: 600 }}>{col.customer_name}</td>
-                      <td><span className="mono">{col.loan_account_no}</span></td>
+                      <td>
+                        <span className="mono">{col.loan_account_no}</span>
+                      </td>
                       <td className="mono" style={{ fontWeight: 700, color: 'var(--success-text)' }}>
                         {formatINR(Number(col.amount))}
                       </td>
@@ -627,7 +640,7 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
                 ) : (
                   <tr>
                     <td colSpan={6} style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
-                      No recent collections recorded yet today.
+                      No collections recorded yet today.
                     </td>
                   </tr>
                 )}
@@ -637,7 +650,196 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
         </div>
       )}
 
-      {/* Record Payment Modal */}
+      {/* EMI Details Modal (Requirement 4.B) */}
+      {selectedItemForDetails && (
+        <div className="modal-overlay" style={{ zIndex: 2200 }}>
+          <div className="modal-content" style={{ maxWidth: 640, width: '100%', padding: 24, maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--primary-subtle)',
+                    color: 'var(--primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <FileText size={18} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>
+                    EMI Details — {selectedItemForDetails.customerName}
+                  </h3>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                    Loan Account: <span className="mono" style={{ fontWeight: 700, color: 'var(--primary)' }}>{selectedItemForDetails.loanAccountNo}</span>
+                    {selectedItemForDetails.customerCode ? ` • Ref: ${selectedItemForDetails.customerCode}` : ''}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedItemForDetails(null)}
+                className="btn btn-secondary btn-sm"
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            {/* Obligation Breakdown Card */}
+            <div
+              style={{
+                background: 'var(--bg-surface-secondary)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-md)',
+                padding: 16,
+                marginBottom: 18,
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
+                  Installment #{selectedItemForDetails.installmentNumber} of {selectedItemForDetails.totalInstallments}
+                </div>
+                {selectedItemForDetails.daysOverdue > 0 ? (
+                  <span className="badge badge-danger">
+                    {selectedItemForDetails.daysOverdue} Days Overdue
+                  </span>
+                ) : (
+                  <span className="badge badge-warning">
+                    Due Date: {formatDateDDMMYYYY(selectedItemForDetails.dueDate)}
+                  </span>
+                )}
+              </div>
+
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, 1fr)',
+                  gap: 12,
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>EMI Scheduled Amount:</div>
+                  <div className="mono" style={{ fontSize: 14, fontWeight: 700, marginTop: 2 }}>
+                    {formatINR(selectedItemForDetails.expectedAmount)}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Amount Already Collected:</div>
+                  <div className="mono" style={{ fontSize: 14, fontWeight: 700, color: 'var(--success-text)', marginTop: 2 }}>
+                    {formatINR(selectedItemForDetails.paidAmount || 0)}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Remaining EMI Due:</div>
+                  <div className="mono" style={{ fontSize: 14, fontWeight: 700, color: 'var(--warning-text)', marginTop: 2 }}>
+                    {formatINR(selectedItemForDetails.remainingAmount)}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Late Payment Penalty:</div>
+                  <div className="mono" style={{ fontSize: 14, fontWeight: 700, color: selectedItemForDetails.penaltyAmount > 0 ? 'var(--danger-text)' : 'var(--text-muted)', marginTop: 2 }}>
+                    {selectedItemForDetails.penaltyAmount > 0 ? formatINR(selectedItemForDetails.penaltyAmount) : '₹0'}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ borderTop: '1px solid var(--border-subtle)', marginTop: 12, paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)' }}>Total Collection Amount:</span>
+                <span className="mono" style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)' }}>
+                  {formatINR((selectedItemForDetails.remainingAmount || selectedItemForDetails.expectedAmount) + (selectedItemForDetails.penaltyAmount || 0))}
+                </span>
+              </div>
+            </div>
+
+            {/* Authoritative Loan Amortization Schedule */}
+            <div style={{ marginBottom: 18 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 8, textTransform: 'uppercase' }}>
+                Full Loan Amortization Schedule
+              </div>
+              {loadingLoanDetails ? (
+                <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-muted)', fontSize: 12 }}>
+                  Loading loan schedule...
+                </div>
+              ) : loanDetails?.installments ? (
+                <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)' }}>
+                  <table className="crm-table" style={{ fontSize: 11 }}>
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Due Date</th>
+                        <th>Expected</th>
+                        <th>Paid</th>
+                        <th>Remaining</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {loanDetails.installments.map((inst: any) => (
+                        <tr key={inst.id} style={{ background: inst.id === selectedItemForDetails.installmentId ? 'var(--primary-subtle)' : undefined }}>
+                          <td className="mono" style={{ fontWeight: 700 }}>{inst.installmentNumber}</td>
+                          <td>{formatDateDDMMYYYY(inst.dueDate)}</td>
+                          <td className="mono">{formatINR(inst.expectedAmount)}</td>
+                          <td className="mono" style={{ color: inst.paidAmount > 0 ? 'var(--success-text)' : undefined }}>
+                            {formatINR(inst.paidAmount)}
+                          </td>
+                          <td className="mono" style={{ fontWeight: 600 }}>{formatINR(inst.remainingAmount)}</td>
+                          <td>
+                            <span
+                              className={`badge ${
+                                inst.status === 'PAID'
+                                  ? 'badge-success'
+                                  : inst.status === 'OVERDUE'
+                                  ? 'badge-danger'
+                                  : 'badge-neutral'
+                              }`}
+                              style={{ fontSize: 10 }}
+                            >
+                              {inst.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                  Schedule details available via standard collection API.
+                </div>
+              )}
+            </div>
+
+            {/* Modal Actions */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
+              <button
+                type="button"
+                onClick={() => setSelectedItemForDetails(null)}
+                className="btn btn-secondary btn-sm"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const item = selectedItemForDetails;
+                  setSelectedItemForDetails(null);
+                  setSelectedItemForPayment(item);
+                }}
+                className="btn btn-success btn-sm"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
+                <DollarSign size={13} />
+                <span>Collect This EMI</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Record Payment Modal using approved collection workflow (Requirement 4.C) */}
       {selectedItemForPayment && (
         <RecordPaymentModal
           isOpen={!!selectedItemForPayment}

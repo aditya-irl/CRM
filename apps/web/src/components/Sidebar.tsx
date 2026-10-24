@@ -75,7 +75,7 @@ const SidebarComponent: React.FC<SidebarProps> = ({
   const items: Array<{ id: NavTab; label: string; icon: React.ReactNode; hiddenForAgent?: boolean }> = [
     {
       id: 'dashboard',
-      label: isDealer ? 'Store Dashboard' : isAgent ? 'Recovery Dashboard' : 'Operations Dashboard',
+      label: isDealer ? 'Store Dashboard' : isAgent ? 'Collection Dashboard' : 'Operations Dashboard',
       icon: isDealer ? <Store size={17} /> : <LayoutDashboard size={17} />,
     },
     { id: 'dealers', label: 'Dealer Stores', icon: <Store size={17} />, hiddenForAgent: true },
@@ -106,23 +106,27 @@ const SidebarComponent: React.FC<SidebarProps> = ({
     { id: 'direct-collections', label: 'Direct Collections', icon: <Building2 size={17} />, hiddenForAgent: true },
     {
       id: 'customers',
-      label: isDealer ? 'Store Customers' : isAgent ? 'My Customers' : 'Customers & Profiles',
+      label: isDealer ? 'Store Customers' : 'Customers & Profiles',
       icon: <Users size={17} />,
+      hiddenForAgent: true,
     },
     {
       id: 'devices',
       label: 'Financed Devices',
       icon: <Smartphone size={17} />,
+      hiddenForAgent: true,
     },
     {
       id: 'queue',
-      label: isAgent ? 'Recovery Queue' : 'Collection Queue',
+      label: 'Collection Queue',
       icon: <Clock size={17} />,
+      hiddenForAgent: true,
     },
     {
       id: 'loans',
-      label: isAgent ? 'My Loans' : 'Loans & EMI Terms',
+      label: 'Loans & EMI Terms',
       icon: <CreditCard size={17} />,
+      hiddenForAgent: true,
     },
     { id: 'payments', label: 'Payments Ledger', icon: <Receipt size={17} />, hiddenForAgent: true },
     { id: 'reports', label: 'Reports & Analytics', icon: <FileSpreadsheet size={17} />, hiddenForAgent: true },

@@ -294,10 +294,12 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
           </p>
         </div>
 
-        <button onClick={() => setShowWizard(true)} className="btn btn-primary">
-          <Plus size={15} />
-          <span>Onboard New Customer</span>
-        </button>
+        {currentUser?.role !== UserRole.COLLECTION_AGENT && (
+          <button onClick={() => setShowWizard(true)} className="btn btn-primary">
+            <Plus size={15} />
+            <span>Onboard New Customer</span>
+          </button>
+        )}
       </div>
 
       {/* Filter and Search Bar with Manual Route Input */}
@@ -385,15 +387,17 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
         </table>
       </div>
 
-      {/* 5-Step Customer Onboarding Wizard */}
-      <AddCustomerWizard
-        isOpen={showWizard}
-        onClose={() => setShowWizard(false)}
-        onSuccess={() => {
-          setShowWizard(false);
-          loadData();
-        }}
-      />
+      {/* 5-Step Customer Onboarding Wizard (Restricted to Authorized Roles) */}
+      {currentUser?.role !== UserRole.COLLECTION_AGENT && (
+        <AddCustomerWizard
+          isOpen={showWizard}
+          onClose={() => setShowWizard(false)}
+          onSuccess={() => {
+            setShowWizard(false);
+            loadData();
+          }}
+        />
+      )}
 
       {/* Central Customer Profile Modal with Clear [ Edit Customer ] Action */}
       {selectedCustomerId && customerDetail && (
