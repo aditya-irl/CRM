@@ -162,10 +162,10 @@ describe('Customer Payment Portal Frontend Tests', () => {
       // Destination check: must use the centralized WhatsApp support contact
       expect(waUrl.startsWith(`https://wa.me/${WHATSAPP_SUPPORT_CONFIG.destination}?text=`)).toBe(true);
       expect(WHATSAPP_SUPPORT_CONFIG.destination).toBe('917252040782');
-      expect(WHATSAPP_SUPPORT_CONFIG.displayName).toBe('Sparse Aggrawal');
+      expect(WHATSAPP_SUPPORT_CONFIG.displayName).toBe('Sparsh Aggrawal');
 
       // Default pre-filled message must match prompt and remain editable
-      expect(waUrl).toContain(encodeURIComponent('Hello Sparse Aggrawal, I need assistance regarding my CRM account/loan. My query is: '));
+      expect(waUrl).toContain(encodeURIComponent('Hello Sparsh Aggrawal, I need assistance regarding my CRM account/loan. My query is: '));
 
       // Security & Privacy check: must NOT leak customer names, loan IDs, balances, tokens, or KYC
       expect(waUrl).not.toContain(encodeURIComponent(samplePortalData.customerName));

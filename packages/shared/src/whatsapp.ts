@@ -4,14 +4,14 @@
  */
 
 export const WHATSAPP_SUPPORT_CONFIG = {
-  displayName: 'Sparse Aggrawal',
+  displayName: 'Sparsh Aggrawal',
   rawNumber: '7252040782',
   countryCode: '91',
   destination: '917252040782',
   formattedPhone: '+91 72520 40782',
-  defaultCustomerMessage: 'Hello Sparse Aggrawal, I need assistance regarding my CRM account/loan. My query is: ',
-  defaultPortalMessage: 'Hello Sparse Aggrawal, I need assistance regarding the CRM portal. My query is: ',
-  defaultPaymentMessage: 'Hello Sparse Aggrawal, I need assistance regarding my EMI payment. My query is: ',
+  defaultCustomerMessage: 'Hello Sparsh Aggrawal, I need assistance regarding my CRM account/loan. My query is: ',
+  defaultPortalMessage: 'Hello Sparsh Aggrawal, I need assistance regarding the CRM portal. My query is: ',
+  defaultPaymentMessage: 'Hello Sparsh Aggrawal, I need assistance regarding my EMI payment. My query is: ',
 } as const;
 
 /**
@@ -42,7 +42,7 @@ export function buildWhatsAppUrl(destination: string, message?: string): string 
 }
 
 /**
- * Builds the official WhatsApp URL for the centralized support contact (Sparse Aggrawal).
+ * Builds the official WhatsApp URL for the centralized support contact (Sparsh Aggrawal).
  * Privacy Safe: does NOT automatically embed customer names, loan IDs, balances, or KYC data.
  */
 export function buildWhatsAppSupportUrl(customMessage?: string): string {

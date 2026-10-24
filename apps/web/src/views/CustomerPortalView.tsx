@@ -341,7 +341,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
     }
   };
 
-  // WhatsApp Pay Action - Centralized Support Contact (Sparse Aggrawal)
+  // WhatsApp Pay Action - Centralized Support Contact (Sparsh Aggrawal)
   const handlePayViaWhatsApp = (_customAmount?: number, _instNumber?: number) => {
     const payMsg = lang === 'hi'
       ? `नमस्ते ${WHATSAPP_SUPPORT_CONFIG.displayName}, मुझे अपने EMI भुगतान के संबंध में सहायता चाहिए। मेरा प्रश्न है: `
