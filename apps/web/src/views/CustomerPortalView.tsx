@@ -8,6 +8,8 @@ import {
   VerificationSection,
   ICustomerPortalProfile,
   ICustomerCorrectionRequest,
+  WHATSAPP_SUPPORT_CONFIG,
+  buildWhatsAppSupportUrl,
 } from '@crm/shared';
 import {
   ShieldCheck,
@@ -108,7 +110,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
       overdueDueLabel: 'Overdue Amount',
       penaltyLabel: 'Applicable Late Penalty',
       totalDueLabel: 'Total Overdue Balance',
-      contactBtn: 'Contact Now',
+      contactBtn: 'Contact on WhatsApp',
       whatsappBtn: 'Pay via WhatsApp',
     },
     hi: {
@@ -117,22 +119,22 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
       overdueDueLabel: 'बकाया राशि',
       penaltyLabel: 'लागू पेनल्टी',
       totalDueLabel: 'कुल देय राशि',
-      contactBtn: 'अभी संपर्क करें',
+      contactBtn: 'व्हाट्सएप पर संपर्क करें',
       whatsappBtn: 'व्हाट्सएप से भुगतान करें',
     },
   };
 
   const handleContactNow = () => {
-    if (!data) return;
-    const supportPhone = ((import.meta as any).env?.VITE_FINANCE_WHATSAPP_NUMBER as string | undefined) || '';
-    if (supportPhone && supportPhone.trim().length >= 10) {
-      const cleanPhone = supportPhone.replace(/\D/g, '');
-      const msg = lang === 'hi'
-        ? `नमस्ते, मैं अपने ऋण खाता संख्या ${data.loanAccountNo} के संबंध में संपर्क कर रहा हूँ। कृपया बकाया भुगतान में सहायता करें।`
-        : `Hello Shubh Pvt Ltd Finance Support, I am contacting regarding my loan account ${data.loanAccountNo}. Please provide payment assistance.`;
-      const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
-      window.open(waUrl, '_blank', 'noopener,noreferrer');
-    } else {
+    const defaultMsg = lang === 'hi'
+      ? `नमस्ते ${WHATSAPP_SUPPORT_CONFIG.displayName}, मुझे अपने CRM खाते/ऋण के संबंध में सहायता चाहिए। मेरा प्रश्न है: `
+      : WHATSAPP_SUPPORT_CONFIG.defaultCustomerMessage;
+    const waUrl = buildWhatsAppSupportUrl(defaultMsg);
+    try {
+      const opened = window.open(waUrl, '_blank', 'noopener,noreferrer');
+      if (!opened) {
+        setShowContactModal(true);
+      }
+    } catch {
       setShowContactModal(true);
     }
   };
@@ -339,30 +341,12 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
     }
   };
 
-  // WhatsApp Pay Action
-  const handlePayViaWhatsApp = (customAmount?: number, instNumber?: number) => {
-    if (!data) return;
-
-    // Use customer's real phone number from backend (fallback to masked if not provided)
-    const rawPhone = data.customerPhone || data.maskedPhone || '';
-    const cleanPhone = rawPhone.replace(/\D/g, '');
-
-    const payAmount = customAmount !== undefined ? customAmount : data.emiAmount;
-    const formattedAmount = formatINR(payAmount);
-    const dueDate = data.nextDueDate ? formatDateDDMMYYYY(data.nextDueDate) : 'Immediate';
-    const lines = [
-      'Hello, I want to make my EMI payment.',
-      '',
-      `Loan Account: ${data.loanAccountNo}`,
-    ];
-    if (instNumber) {
-      lines.push(`EMI Installment: #${instNumber}`);
-    }
-    lines.push(`Amount: ${formattedAmount}`);
-    lines.push(`Due Date: ${dueDate}`);
-
-    const msg = lines.join('\n');
-    const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
+  // WhatsApp Pay Action - Centralized Support Contact (Sparse Aggrawal)
+  const handlePayViaWhatsApp = (_customAmount?: number, _instNumber?: number) => {
+    const payMsg = lang === 'hi'
+      ? `नमस्ते ${WHATSAPP_SUPPORT_CONFIG.displayName}, मुझे अपने EMI भुगतान के संबंध में सहायता चाहिए। मेरा प्रश्न है: `
+      : WHATSAPP_SUPPORT_CONFIG.defaultPaymentMessage;
+    const waUrl = buildWhatsAppSupportUrl(payMsg);
     window.open(waUrl, '_blank', 'noopener,noreferrer');
   };
 
@@ -470,6 +454,31 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
             </button>
           </div>
 
+          <a
+            href={buildWhatsAppSupportUrl()}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-sm"
+            style={{
+              background: '#25D366',
+              color: '#ffffff',
+              border: 'none',
+              fontWeight: 600,
+              fontSize: 12,
+              gap: 6,
+              textDecoration: 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '6px 12px',
+              borderRadius: 'var(--radius-sm, 6px)',
+              cursor: 'pointer',
+            }}
+            title={`Contact ${WHATSAPP_SUPPORT_CONFIG.displayName} on WhatsApp (${WHATSAPP_SUPPORT_CONFIG.formattedPhone})`}
+          >
+            <MessageCircle size={14} />
+            <span>{lang === 'hi' ? 'व्हाट्सएप सहायता' : 'WhatsApp Support'}</span>
+          </a>
+
           {data && (
             <button
               onClick={() => fetchPortalData(true)}
@@ -557,6 +566,31 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
               <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 12 }}>
                 If you believe this is an error, please contact your loan officer or support team to request an updated access link.
               </p>
+              <div style={{ marginTop: 16 }}>
+                <a
+                  href={buildWhatsAppSupportUrl(`Hello ${WHATSAPP_SUPPORT_CONFIG.displayName}, I need assistance accessing my CRM customer portal link. My query is: `)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-sm"
+                  style={{
+                    background: '#25D366',
+                    color: '#ffffff',
+                    border: 'none',
+                    fontWeight: 600,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '8px 16px',
+                    borderRadius: 6,
+                    textDecoration: 'none',
+                    boxShadow: '0 2px 4px rgba(37, 211, 102, 0.2)',
+                  }}
+                  id="error-contact-whatsapp-btn"
+                >
+                  <MessageCircle size={15} />
+                  <span>Contact Support on WhatsApp</span>
+                </a>
+              </div>
             </div>
           </div>
         )}
@@ -720,8 +754,8 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                       onClick={handleContactNow}
                       className="btn btn-primary"
                       style={{
-                        background: '#d97706',
-                        borderColor: '#b45309',
+                        background: '#25D366',
+                        borderColor: '#16a34a',
                         color: '#ffffff',
                         fontWeight: 700,
                         fontSize: 14,
@@ -729,10 +763,11 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                         display: 'inline-flex',
                         alignItems: 'center',
                         gap: 8,
-                        boxShadow: '0 2px 4px rgba(217, 119, 6, 0.2)',
+                        boxShadow: '0 2px 4px rgba(37, 211, 102, 0.25)',
                       }}
+                      title={`Contact ${WHATSAPP_SUPPORT_CONFIG.displayName} on WhatsApp`}
                     >
-                      <PhoneCall size={16} />
+                      <MessageCircle size={16} />
                       <span>{overdueCopy[lang].contactBtn}</span>
                     </button>
                   </div>
@@ -2504,11 +2539,36 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                 padding: '12px 0 24px 0',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: 4,
+                alignItems: 'center',
+                gap: 8,
               }}
             >
-              <div>Need help with your loan or payment? Reach out to our customer support.</div>
-              <div>Alpha Mobile Gallery • Shubh Pvt Ltd • Regulated Lending & Collection CRM</div>
+              <div>Need help with your loan or payment? Reach out to our customer support on WhatsApp.</div>
+              <a
+                href={buildWhatsAppSupportUrl()}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-sm"
+                style={{
+                  background: '#25D366',
+                  color: '#ffffff',
+                  border: 'none',
+                  fontWeight: 600,
+                  fontSize: 12,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '7px 14px',
+                  borderRadius: 6,
+                  textDecoration: 'none',
+                  boxShadow: '0 2px 4px rgba(37, 211, 102, 0.2)',
+                }}
+                id="customer-portal-footer-whatsapp-btn"
+              >
+                <MessageCircle size={14} />
+                <span>Contact on WhatsApp: {WHATSAPP_SUPPORT_CONFIG.displayName} ({WHATSAPP_SUPPORT_CONFIG.formattedPhone})</span>
+              </a>
+              <div style={{ marginTop: 4 }}>Alpha Mobile Gallery • Shubh Pvt Ltd • Regulated Lending & Collection CRM</div>
             </div>
           </>
         );
@@ -2539,18 +2599,18 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                     width: 38,
                     height: 38,
                     borderRadius: '50%',
-                    background: '#eff6ff',
+                    background: '#f0fdf4',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    color: 'var(--primary)',
+                    color: '#16a34a',
                   }}
                 >
-                  <HelpCircle size={22} />
+                  <MessageCircle size={22} />
                 </div>
                 <div>
                   <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
-                    {lang === 'hi' ? 'सहायता संपर्क जानकारी' : 'Support Contact Information'}
+                    {lang === 'hi' ? 'व्हाट्सएप सहायता संपर्क' : 'WhatsApp Support Contact'}
                   </h3>
                   <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                     Alpha Mobile Gallery • Shubh Pvt Ltd
@@ -2568,35 +2628,64 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
             </div>
 
             <div style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text-secondary)', marginBottom: 20 }}>
+              <div
+                style={{
+                  background: 'var(--bg-surface-secondary)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: 14,
+                  marginBottom: 14,
+                }}
+              >
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                  {lang === 'hi' ? 'सहायता प्रतिनिधि' : 'Dedicated Support Officer'}
+                </div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginTop: 2 }}>
+                  {WHATSAPP_SUPPORT_CONFIG.displayName}
+                </div>
+                <div style={{ fontSize: 13, color: 'var(--primary)', fontWeight: 600, marginTop: 2 }}>
+                  {WHATSAPP_SUPPORT_CONFIG.formattedPhone}
+                </div>
+              </div>
+
               {lang === 'hi' ? (
-                <>
-                  <p style={{ margin: '0 0 10px 0' }}>
-                    समर्थन संपर्क विवरण वर्तमान में प्रशासन द्वारा अद्यतन किए जा रहे हैं।
-                  </p>
-                  <p style={{ margin: 0 }}>
-                    बकाया EMI भुगतान अथवा रसीद सहायता के लिए कृपया अपनी निकटतम <strong>अल्फा मोबाइल गैलरी</strong> शाखा पर संपर्क करें अथवा अपने ऋण अनुबंध दस्तावेज में दिए गए शाखा पते पर संपर्क करें।
-                  </p>
-                </>
+                <p style={{ margin: 0 }}>
+                  अपने खाते, बकाया EMI भुगतान अथवा रसीद सत्यापन में सहायता के लिए आप सीधे व्हाट्सएप पर संपर्क कर सकते हैं।
+                </p>
               ) : (
-                <>
-                  <p style={{ margin: '0 0 10px 0' }}>
-                    Support contact details are currently being updated by the administration.
-                  </p>
-                  <p style={{ margin: 0 }}>
-                    For immediate assistance regarding your overdue EMI payment or receipt confirmation, please visit your nearest <strong>Alpha Mobile Gallery</strong> store or refer to the branch contact information in your physical loan agreement.
-                  </p>
-                </>
+                <p style={{ margin: 0 }}>
+                  For real-time assistance regarding your loan account, EMI payments, or receipt confirmation, reach out directly on WhatsApp.
+                </p>
               )}
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
               <button
                 type="button"
                 onClick={() => setShowContactModal(false)}
-                className="btn btn-primary btn-sm"
+                className="btn btn-secondary btn-sm"
               >
-                {lang === 'hi' ? 'समझ गया' : 'Understood'}
+                {lang === 'hi' ? 'बंद करें' : 'Close'}
               </button>
+              <a
+                href={buildWhatsAppSupportUrl()}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-primary btn-sm"
+                style={{
+                  background: '#25D366',
+                  borderColor: '#16a34a',
+                  color: '#ffffff',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  textDecoration: 'none',
+                }}
+                id="modal-contact-whatsapp-btn"
+              >
+                <MessageCircle size={15} />
+                <span>{lang === 'hi' ? 'व्हाट्सएप पर संपर्क करें' : 'Contact on WhatsApp'}</span>
+              </a>
             </div>
           </div>
         </div>

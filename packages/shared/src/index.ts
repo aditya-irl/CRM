@@ -4,3 +4,4 @@ export * from './financial';
 export * from './masking';
 export * from './validation';
 export * from './datetime';
+export * from './whatsapp';

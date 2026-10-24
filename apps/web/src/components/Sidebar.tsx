@@ -1,5 +1,5 @@
 import React from 'react';
-import { IUser, UserRole } from '@crm/shared';
+import { IUser, UserRole, WHATSAPP_SUPPORT_CONFIG, buildWhatsAppSupportUrl } from '@crm/shared';
 import {
   LayoutDashboard,
   Users,
@@ -15,6 +15,7 @@ import {
   UserCheck,
   Building2,
   Smartphone,
+  MessageCircle,
 } from 'lucide-react';
 
 export type NavTab =
@@ -228,6 +229,42 @@ const SidebarComponent: React.FC<SidebarProps> = ({
           );
         })}
       </nav>
+
+      {/* WhatsApp Support Assistance */}
+      <div style={{ marginTop: 12, flexShrink: 0 }}>
+        <a
+          href={buildWhatsAppSupportUrl(WHATSAPP_SUPPORT_CONFIG.defaultPortalMessage)}
+          target="_blank"
+          rel="noopener noreferrer"
+          id="sidebar-whatsapp-support-btn"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '8px 12px',
+            borderRadius: 'var(--radius-md)',
+            background: '#f0fdf4',
+            border: '1px solid #bbf7d0',
+            color: '#15803d',
+            textDecoration: 'none',
+            fontSize: 12,
+            fontWeight: 600,
+            transition: 'all 0.15s ease',
+          }}
+          title={`Contact ${WHATSAPP_SUPPORT_CONFIG.displayName} on WhatsApp (${WHATSAPP_SUPPORT_CONFIG.formattedPhone})`}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <MessageCircle size={16} color="#16a34a" />
+            <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
+              <span style={{ fontWeight: 700, color: '#166534' }}>WhatsApp Support</span>
+              <span style={{ fontSize: 10, color: '#15803d' }}>{WHATSAPP_SUPPORT_CONFIG.displayName}</span>
+            </div>
+          </div>
+          <span style={{ fontSize: 10, background: '#dcfce7', padding: '2px 6px', borderRadius: 10, fontWeight: 700 }}>
+            Help
+          </span>
+        </a>
+      </div>
 
       {/* Security & Ledger Status */}
       <div

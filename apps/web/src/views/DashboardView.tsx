@@ -8,6 +8,7 @@ import {
   formatINR,
   formatDisplayDate,
   CollectionSource,
+  WHATSAPP_SUPPORT_CONFIG,
 } from '@crm/shared';
 import {
   TrendingUp,
@@ -1554,7 +1555,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   SHUBH PVT LTD
                 </div>
                 <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
-                  {receiptData.financeCompany?.phone || '+91 80000 12345'} • support@alphamobilegallery.com
+                  {receiptData.financeCompany?.phone || WHATSAPP_SUPPORT_CONFIG.formattedPhone} • support@alphamobilegallery.com
                 </div>
                 <div style={{ marginTop: 8, display: 'inline-block', padding: '3px 10px', background: '#f1f5f9', borderRadius: 4, fontWeight: 700, fontSize: 11 }}>
                   OFFICIAL PAYMENT RECEIPT

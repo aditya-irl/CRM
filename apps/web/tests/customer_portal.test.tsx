@@ -2,7 +2,7 @@ import React from 'react';
 import { renderToString } from 'react-dom/server';
 import { CustomerPortalView } from '../src/views/CustomerPortalView';
 import { ApiClient, ICustomerPortalLoanData } from '../src/services/api';
-import { formatINR } from '@crm/shared';
+import { formatINR, WHATSAPP_SUPPORT_CONFIG, buildWhatsAppSupportUrl } from '@crm/shared';
 
 // Mock localStorage and sessionStorage for node test environment
 const storageStore: Record<string, string> = {};
@@ -155,31 +155,23 @@ describe('Customer Payment Portal Frontend Tests', () => {
     });
   });
 
-  describe('4. WhatsApp Pay Now Message Formatting', () => {
-    test('generates correct wa.me link with customer phone and encoded loan payment details', () => {
-      const customerPhone = (samplePortalData.customerPhone || '').replace(/\D/g, '');
-      const formattedAmount = formatINR(samplePortalData.emiAmount);
-      const dueDate = samplePortalData.nextDueDate || 'Immediate';
+  describe('4. WhatsApp Centralized Support & Pay Formatting', () => {
+    test('generates correct wa.me link with standardized destination and privacy-safe message', () => {
+      const waUrl = buildWhatsAppSupportUrl();
 
-      const msg = [
-        'Hello, I want to make my EMI payment.',
-        '',
-        `Loan Account: ${samplePortalData.loanAccountNo}`,
-        `EMI Amount: ${formattedAmount}`,
-        `Due Date: ${dueDate}`,
-      ].join('\n');
+      // Destination check: must use the centralized WhatsApp support contact
+      expect(waUrl.startsWith(`https://wa.me/${WHATSAPP_SUPPORT_CONFIG.destination}?text=`)).toBe(true);
+      expect(WHATSAPP_SUPPORT_CONFIG.destination).toBe('917252040782');
+      expect(WHATSAPP_SUPPORT_CONFIG.displayName).toBe('Sparse Aggrawal');
 
-      const waUrl = `https://wa.me/${customerPhone}?text=${encodeURIComponent(msg)}`;
+      // Default pre-filled message must match prompt and remain editable
+      expect(waUrl).toContain(encodeURIComponent('Hello Sparse Aggrawal, I need assistance regarding my CRM account/loan. My query is: '));
 
-      // Verification checks
-      expect(waUrl.startsWith('https://wa.me/919876543210?text=')).toBe(true);
-      expect(waUrl).toContain(encodeURIComponent('Loan Account: LN-2026-7842'));
-      expect(waUrl).toContain(encodeURIComponent('EMI Amount: ₹4,500.00'));
-      expect(waUrl).toContain(encodeURIComponent('Due Date: 2026-10-10'));
-
-      // Security check: must NOT leak portal token, database secrets, or KYC
+      // Security & Privacy check: must NOT leak customer names, loan IDs, balances, tokens, or KYC
+      expect(waUrl).not.toContain(encodeURIComponent(samplePortalData.customerName));
+      expect(waUrl).not.toContain(encodeURIComponent(samplePortalData.loanAccountNo));
+      expect(waUrl).not.toContain('4,500');
       expect(waUrl).not.toContain('cpt_');
-      expect(waUrl).not.toContain('token');
       expect(waUrl).not.toContain('aadhaar');
 
       // State check: sample data remains intact (does not mutate payment/EMI state)
@@ -270,7 +262,7 @@ describe('Customer Payment Portal Frontend Tests', () => {
       );
       expect(html).toContain('Overdue Amount');
       expect(html).toContain('Applicable Late Penalty');
-      expect(html).toContain('Contact Now');
+      expect(html).toContain('Contact on WhatsApp');
     });
 
     test('overdue announcement is suppressed when loan has no overdue installments', () => {
