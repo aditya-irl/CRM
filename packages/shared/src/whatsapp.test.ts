@@ -13,6 +13,7 @@ describe('WhatsApp Centralized Support Configuration & Helpers', () => {
     expect(WHATSAPP_SUPPORT_CONFIG.destination).toBe('917252040782');
     expect(WHATSAPP_SUPPORT_CONFIG.destination.length).toBe(12);
     expect(WHATSAPP_SUPPORT_CONFIG.formattedPhone).toBe('+91 72520 40782');
+    expect(WHATSAPP_SUPPORT_CONFIG.email).toBe('alphamobilegallery92@gmail.com');
   });
 
   test('2. normalizeWhatsAppDestination handles 10-digit, prefixed, and spaced numbers', () => {

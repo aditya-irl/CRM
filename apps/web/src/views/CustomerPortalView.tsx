@@ -2644,7 +2644,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                   {WHATSAPP_SUPPORT_CONFIG.displayName}
                 </div>
                 <div style={{ fontSize: 13, color: 'var(--primary)', fontWeight: 600, marginTop: 2 }}>
-                  {WHATSAPP_SUPPORT_CONFIG.formattedPhone}
+                  {WHATSAPP_SUPPORT_CONFIG.formattedPhone} • {WHATSAPP_SUPPORT_CONFIG.email}
                 </div>
               </div>
 

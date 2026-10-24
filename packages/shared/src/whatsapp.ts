@@ -9,6 +9,7 @@ export const WHATSAPP_SUPPORT_CONFIG = {
   countryCode: '91',
   destination: '917252040782',
   formattedPhone: '+91 72520 40782',
+  email: 'alphamobilegallery92@gmail.com',
   defaultCustomerMessage: 'Hello Sparsh Aggrawal, I need assistance regarding my CRM account/loan. My query is: ',
   defaultPortalMessage: 'Hello Sparsh Aggrawal, I need assistance regarding the CRM portal. My query is: ',
   defaultPaymentMessage: 'Hello Sparsh Aggrawal, I need assistance regarding my EMI payment. My query is: ',

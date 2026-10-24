@@ -1180,7 +1180,7 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({ user }) => {
                 SHUBH PVT LTD
               </div>
               <div style={{ fontSize: 11, color: '#64748b', marginTop: 3 }}>
-                Helpline: {selectedReceipt.financeCompany?.supportPhone || WHATSAPP_SUPPORT_CONFIG.formattedPhone} • Official Payment Receipt
+                Helpline: {selectedReceipt.financeCompany?.supportPhone || WHATSAPP_SUPPORT_CONFIG.formattedPhone} • {WHATSAPP_SUPPORT_CONFIG.email} • Official Payment Receipt
               </div>
 
               <div
