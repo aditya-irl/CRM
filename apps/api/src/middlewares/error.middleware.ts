@@ -100,6 +100,11 @@ export function errorHandler(err: Error, req: Request, res: Response, _next: Nex
 
   // Handle PostgreSQL syntax/format error (e.g., invalid UUID 22P02)
   if ((err as any).code === '22P02') {
+    console.error('[PostgreSQL 22P02 Format Error]', {
+      message: (err as any).message,
+      detail: (err as any).detail,
+      traceId,
+    });
     return res.status(400).json({
       success: false,
       error: {

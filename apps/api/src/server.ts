@@ -12,6 +12,8 @@ import { BackgroundScheduler } from './jobs/scheduler';
 
 import { env } from './config/env';
 
+import { runPostgresMigrations } from './database/migrate';
+
 const PORT = env.PORT || 4000;
 
 // ─── Startup ─────────────────────────────────────────────────────────────────
@@ -20,6 +22,10 @@ const PORT = env.PORT || 4000;
 if (env.DATABASE_DRIVER === 'sqlite') {
   initDatabase();
   seedDatabase();
+} else if (env.DATABASE_DRIVER === 'postgres' || process.env.NODE_ENV === 'production') {
+  runPostgresMigrations().catch((err) => {
+    console.error('[Postgres Migrations] Startup migration run warning:', err.message);
+  });
 }
 
 const httpServer = http.createServer(app);

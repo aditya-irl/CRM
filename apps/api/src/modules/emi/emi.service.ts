@@ -56,8 +56,8 @@ export class EMIService {
         (SELECT TO_CHAR(cl.promised_payment_date, 'YYYY-MM-DD') FROM call_logs cl WHERE cl.customer_id = c.id ORDER BY cl.call_timestamp DESC LIMIT 1) as promised_payment_date,
         (SELECT TO_CHAR(p.payment_timestamp, 'YYYY-MM-DD') FROM payments p WHERE p.loan_id = l.id AND p.status = 'SUCCESS' AND p.is_reversal = FALSE ORDER BY p.payment_timestamp DESC LIMIT 1) as last_payment_date,
         (SELECT p.amount FROM payments p WHERE p.loan_id = l.id AND p.status = 'SUCCESS' AND p.is_reversal = FALSE ORDER BY p.payment_timestamp DESC LIMIT 1) as last_payment_amount,
-        (SELECT p.amount FROM payments p WHERE p.emi_id = e.id AND p.status IN ('PENDING_APPROVAL', 'PENDING_VERIFICATION') LIMIT 1) as pending_collection_amount,
-        (SELECT p.id FROM payments p WHERE p.emi_id = e.id AND p.status IN ('PENDING_APPROVAL', 'PENDING_VERIFICATION') LIMIT 1) as pending_payment_id
+        (SELECT p.amount FROM payments p WHERE p.emi_id = e.id AND p.status::text IN ('PENDING_APPROVAL', 'PENDING_VERIFICATION') LIMIT 1) as pending_collection_amount,
+        (SELECT p.id FROM payments p WHERE p.emi_id = e.id AND p.status::text IN ('PENDING_APPROVAL', 'PENDING_VERIFICATION') LIMIT 1) as pending_payment_id
       FROM emi_installments e
       JOIN loans l ON e.loan_id = l.id
       JOIN customers c ON e.customer_id = c.id
@@ -101,13 +101,15 @@ export class EMIService {
       params.push(businessToday);
     }
 
-    if (filters.route) {
+    const trimmedRoute = typeof filters.route === 'string' ? filters.route.trim() : '';
+    if (trimmedRoute) {
       sql += ` AND c.area_route = $${paramIndex++}`;
-      params.push(filters.route);
+      params.push(trimmedRoute);
     }
 
-    if (filters.search) {
-      const s = `%${filters.search}%`;
+    const trimmedSearch = typeof filters.search === 'string' ? filters.search.trim() : '';
+    if (trimmedSearch) {
+      const s = `%${trimmedSearch}%`;
       sql += ` AND (c.full_name ILIKE $${paramIndex} OR c.primary_phone ILIKE $${paramIndex} OR c.customer_code ILIKE $${paramIndex} OR l.loan_account_no ILIKE $${paramIndex})`;
       params.push(s);
       paramIndex++;
@@ -321,7 +323,7 @@ export class EMIService {
        FROM payments
        WHERE (collected_by_agent_id = $1 OR agent_id = $1)
          AND DATE(payment_timestamp AT TIME ZONE 'Asia/Kolkata') = $2::date
-         AND status IN ('PENDING_APPROVAL', 'PENDING_VERIFICATION') AND is_reversal = FALSE`,
+         AND status::text IN ('PENDING_APPROVAL', 'PENDING_VERIFICATION') AND is_reversal = FALSE`,
       [targetAgentId, businessToday]
     );
 
@@ -501,7 +503,7 @@ export class EMIService {
       // Concurrency check: prevent penalty changes if an active collection is pending approval on this EMI
       const pendingPayRes = await client.query(
         `SELECT id, status, amount FROM payments
-         WHERE emi_id = $1 AND status IN ('PENDING_APPROVAL', 'PENDING_VERIFICATION')
+         WHERE emi_id = $1 AND status::text IN ('PENDING_APPROVAL', 'PENDING_VERIFICATION')
          LIMIT 1`,
         [emi.id]
       );

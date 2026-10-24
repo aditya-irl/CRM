@@ -1053,10 +1053,12 @@ export class ApiClient {
   // Agent Queue
   public static async getAgentQueue(status?: string, route?: string, search?: string) {
     const params = new URLSearchParams();
-    if (status) params.append('status', status);
-    if (route) params.append('route', route);
-    if (search) params.append('search', search);
-    const res = await this.request<any>(`/emi/queue?${params.toString()}`);
+    if (status && status !== 'ALL') params.append('status', status.trim());
+    if (route && route.trim()) params.append('route', route.trim());
+    if (search && search.trim()) params.append('search', search.trim());
+    const queryString = params.toString();
+    const endpoint = queryString ? `/emi/queue?${queryString}` : '/emi/queue';
+    const res = await this.request<any>(endpoint);
     return Array.isArray(res) ? res : res?.items || [];
   }
 
