@@ -6,27 +6,28 @@ import { Sidebar, NavTab } from './components/Sidebar';
 import { LoginView } from './views/LoginView';
 import { ChangePasswordView } from './views/ChangePasswordView';
 import { DealerDashboardView } from './views/DealerDashboardView';
+import { AddCustomerWizard } from './components/AddCustomerWizard';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { lazyWithRetry } from './utils/lazyWithRetry';
 
-// Route-level code splitting for optimized bundle delivery
-const DashboardView = lazy(() => import('./views/DashboardView').then((m) => ({ default: m.DashboardView })));
-const DealersView = lazy(() => import('./views/DealersView').then((m) => ({ default: m.DealersView })));
-const DealerCollectionsView = lazy(() => import('./views/DealerCollectionsView').then((m) => ({ default: m.DealerCollectionsView })));
-const DealerSettlementsView = lazy(() => import('./views/DealerSettlementsView').then((m) => ({ default: m.DealerSettlementsView })));
-const AgentCollectionsView = lazy(() => import('./views/AgentCollectionsView').then((m) => ({ default: m.AgentCollectionsView })));
-const DirectCollectionsView = lazy(() => import('./views/DirectCollectionsView').then((m) => ({ default: m.DirectCollectionsView })));
-const QueueView = lazy(() => import('./views/QueueView').then((m) => ({ default: m.QueueView })));
-const LoansView = lazy(() => import('./views/LoansView').then((m) => ({ default: m.LoansView })));
-const CustomersView = lazy(() => import('./views/CustomersView').then((m) => ({ default: m.CustomersView })));
-const DevicesView = lazy(() => import('./views/DevicesView').then((m) => ({ default: m.DevicesView })));
-const PaymentsView = lazy(() => import('./views/PaymentsView').then((m) => ({ default: m.PaymentsView })));
-const ReportsView = lazy(() => import('./views/ReportsView').then((m) => ({ default: m.ReportsView })));
-const AuditView = lazy(() => import('./views/AuditView').then((m) => ({ default: m.AuditView })));
-const AddCustomerWizard = lazy(() => import('./components/AddCustomerWizard').then((m) => ({ default: m.AddCustomerWizard })));
-const CustomerPortalView = lazy(() => import('./views/CustomerPortalView').then((m) => ({ default: m.CustomerPortalView })));
-const AgentDashboardView = lazy(() => import('./views/AgentDashboardView').then((m) => ({ default: m.AgentDashboardView })));
-const AgentsView = lazy(() => import('./views/AgentsView').then((m) => ({ default: m.AgentsView })));
-const DealerPayablesView = lazy(() => import('./views/DealerPayablesView').then((m) => ({ default: m.DealerPayablesView })));
+// Route-level code splitting with resilient auto-retry and deployment update recovery
+const DashboardView = lazyWithRetry(() => import('./views/DashboardView').then((m) => ({ default: m.DashboardView })));
+const DealersView = lazyWithRetry(() => import('./views/DealersView').then((m) => ({ default: m.DealersView })));
+const DealerCollectionsView = lazyWithRetry(() => import('./views/DealerCollectionsView').then((m) => ({ default: m.DealerCollectionsView })));
+const DealerSettlementsView = lazyWithRetry(() => import('./views/DealerSettlementsView').then((m) => ({ default: m.DealerSettlementsView })));
+const AgentCollectionsView = lazyWithRetry(() => import('./views/AgentCollectionsView').then((m) => ({ default: m.AgentCollectionsView })));
+const DirectCollectionsView = lazyWithRetry(() => import('./views/DirectCollectionsView').then((m) => ({ default: m.DirectCollectionsView })));
+const QueueView = lazyWithRetry(() => import('./views/QueueView').then((m) => ({ default: m.QueueView })));
+const LoansView = lazyWithRetry(() => import('./views/LoansView').then((m) => ({ default: m.LoansView })));
+const CustomersView = lazyWithRetry(() => import('./views/CustomersView').then((m) => ({ default: m.CustomersView })));
+const DevicesView = lazyWithRetry(() => import('./views/DevicesView').then((m) => ({ default: m.DevicesView })));
+const PaymentsView = lazyWithRetry(() => import('./views/PaymentsView').then((m) => ({ default: m.PaymentsView })));
+const ReportsView = lazyWithRetry(() => import('./views/ReportsView').then((m) => ({ default: m.ReportsView })));
+const AuditView = lazyWithRetry(() => import('./views/AuditView').then((m) => ({ default: m.AuditView })));
+const CustomerPortalView = lazyWithRetry(() => import('./views/CustomerPortalView').then((m) => ({ default: m.CustomerPortalView })));
+const AgentDashboardView = lazyWithRetry(() => import('./views/AgentDashboardView').then((m) => ({ default: m.AgentDashboardView })));
+const AgentsView = lazyWithRetry(() => import('./views/AgentsView').then((m) => ({ default: m.AgentsView })));
+const DealerPayablesView = lazyWithRetry(() => import('./views/DealerPayablesView').then((m) => ({ default: m.DealerPayablesView })));
 
 const getTabFromHash = (): NavTab | null => {
   if (typeof window === 'undefined') return null;
@@ -58,7 +59,13 @@ export const App: React.FC = () => {
 
   if (isPortalRoute) {
     const portalToken = new URLSearchParams(window.location.search).get('token');
-    return <CustomerPortalView token={portalToken} />;
+    return (
+      <ErrorBoundary fallbackTitle="Portal View Interrupted">
+        <Suspense fallback={<ViewFallback />}>
+          <CustomerPortalView token={portalToken} />
+        </Suspense>
+      </ErrorBoundary>
+    );
   }
 
   const [user, setUser] = useState<IUser | null>(ApiClient.getUser());
@@ -325,17 +332,15 @@ export const App: React.FC = () => {
       </div>
 
       {/* Global Add Customer Wizard */}
-      <Suspense fallback={null}>
-        <AddCustomerWizard
-          isOpen={showAddCustomerWizard && !isAgent}
-          onClose={() => setShowAddCustomerWizard(false)}
-          onSuccess={() => {
-            setShowAddCustomerWizard(false);
-            setCustomersRefreshTrigger((prev) => prev + 1);
-            setActiveTab('customers');
-          }}
-        />
-      </Suspense>
+      <AddCustomerWizard
+        isOpen={showAddCustomerWizard && !isAgent}
+        onClose={() => setShowAddCustomerWizard(false)}
+        onSuccess={() => {
+          setShowAddCustomerWizard(false);
+          setCustomersRefreshTrigger((prev) => prev + 1);
+          setActiveTab('customers');
+        }}
+      />
     </div>
   );
 };
