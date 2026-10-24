@@ -156,6 +156,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
   const [penaltyModalEmi, setPenaltyModalEmi] = useState<any | null>(null);
   const [penaltyAmount, setPenaltyAmount] = useState<string>('');
   const [penaltyReason, setPenaltyReason] = useState<string>('');
+  const [penaltyConfirmed, setPenaltyConfirmed] = useState(false);
   const [submittingPenalty, setSubmittingPenalty] = useState(false);
   const [penaltyError, setPenaltyError] = useState<string | null>(null);
   const [penaltySuccess, setPenaltySuccess] = useState<string | null>(null);
@@ -367,30 +368,53 @@ export const LoansView: React.FC<LoansViewProps> = ({
   const handleOpenAddPenalty = (inst: any) => {
     setPenaltyModalEmi(inst);
     setPenaltyAmount('');
-    setPenaltyReason('Late payment beyond grace period');
+    const isOverdue = inst.status === 'OVERDUE' || Number(inst.daysOverdue ?? inst.days_overdue ?? 0) > 0;
+    setPenaltyReason(isOverdue ? 'Late payment penalty' : 'Advance penalty / pre-collection charge');
+    setPenaltyConfirmed(false);
     setPenaltyError(null);
     setPenaltySuccess(null);
   };
 
   const handleSubmitPenalty = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!penaltyModalEmi || !selectedLoanDetail) return;
+    if (!penaltyModalEmi || !selectedLoanDetail || submittingPenalty) return;
+
+    const numAmount = Number(penaltyAmount);
+    if (isNaN(numAmount) || !isFinite(numAmount) || numAmount <= 0) {
+      setPenaltyError('Please enter a valid penalty amount greater than zero.');
+      return;
+    }
+
+    if (!penaltyReason || !penaltyReason.trim()) {
+      setPenaltyError('Please provide a reason for adding this penalty.');
+      return;
+    }
+
+    if (!penaltyConfirmed) {
+      setPenaltyError('Please explicitly confirm the penalty addition before saving.');
+      return;
+    }
+
     setSubmittingPenalty(true);
     setPenaltyError(null);
     setPenaltySuccess(null);
 
     try {
+      const idempotencyKey = `pen_${penaltyModalEmi.id}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       await ApiClient.addEmiPenalty(
         penaltyModalEmi.id,
-        Number(penaltyAmount),
-        penaltyReason
+        numAmount,
+        penaltyReason.trim(),
+        idempotencyKey
       );
-      setPenaltySuccess('Penalty added successfully.');
-      // Refresh EMI/payment data from server
+      setPenaltySuccess('Penalty added successfully. Loan balance and customer portal updated.');
+      // Refresh EMI/payment data from server and main loans list
       await handleViewLoan(selectedLoanDetail.loan.id, 'schedule');
+      loadData();
       setTimeout(() => {
         setPenaltyModalEmi(null);
-      }, 1000);
+        setPenaltyConfirmed(false);
+      }, 1200);
     } catch (err: any) {
       setPenaltyError(err.message || 'Failed to add penalty');
     } finally {
@@ -2069,6 +2093,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
 
                               {selectedLoanDetail.loan.status === 'ACTIVE' &&
                                 inst.status !== 'PAID' &&
+                                inst.status !== 'CANCELLED' &&
                                 remainingAmount > 0 &&
                                 (canAddPenaltyRole && (
                                   currentUser?.role === UserRole.SUPER_ADMIN ||
@@ -2084,7 +2109,9 @@ export const LoansView: React.FC<LoansViewProps> = ({
                                   title={
                                     currentUser?.role === UserRole.DEALER && !allowDealerPenalty
                                       ? 'Dealer penalty creation is disabled by Super Admin'
-                                      : 'Add Late Payment Penalty'
+                                      : isOverdue
+                                      ? 'Add Late Payment Penalty'
+                                      : 'Add Advance Penalty'
                                   }
                                   style={{
                                     fontSize: 11,
@@ -2361,17 +2388,38 @@ export const LoansView: React.FC<LoansViewProps> = ({
         </div>
       )}
 
-      {/* ─── ADD LATE PAYMENT PENALTY MODAL ───────────────────────── */}
+      {/* ─── ADD PENALTY MODAL (OVERDUE OR ADVANCE) ───────────────────────── */}
       {penaltyModalEmi && (
-        <div className="modal-backdrop">
-          <div className="modal-content" style={{ maxWidth: 440 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <h3 style={{ fontSize: 17, fontWeight: 700, margin: 0 }}>Add Late Payment Penalty</h3>
-              <button type="button" onClick={() => setPenaltyModalEmi(null)} className="btn-icon">
-                <X size={18} />
-              </button>
-            </div>
-
+        <div
+          className="modal-overlay"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1200,
+            background: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+          onClick={() => !submittingPenalty && setPenaltyModalEmi(null)}
+        >
+          <div
+            className="modal-content"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: 480,
+              width: '100%',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              padding: 24,
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border-strong)',
+              borderRadius: 'var(--radius-lg)',
+              boxShadow: 'var(--shadow-modal)',
+            }}
+          >
             {(() => {
               const origEmi = Number(penaltyModalEmi.expectedAmount ?? penaltyModalEmi.expected_amount ?? 0);
               const remEmi = Number(penaltyModalEmi.remainingAmount ?? penaltyModalEmi.remaining_amount ?? 0);
@@ -2382,178 +2430,298 @@ export const LoansView: React.FC<LoansViewProps> = ({
               const customerCode = (selectedLoanDetail?.loan as any)?.customerCode || (selectedLoanDetail?.loan as any)?.customer_code;
               const loanAccNo = selectedLoanDetail?.loan?.loanAccountNo || (selectedLoanDetail?.loan as any)?.loan_account_no || '—';
               const dueDateVal = penaltyModalEmi.dueDate || penaltyModalEmi.due_date;
+              const isOverdue = penaltyModalEmi.status === 'OVERDUE' || Number(penaltyModalEmi.daysOverdue ?? penaltyModalEmi.days_overdue ?? 0) > 0;
+              const instNumber = penaltyModalEmi.installmentNumber ?? penaltyModalEmi.installment_number;
+              const currentLoanBalance = Number(selectedLoanDetail?.loan?.outstandingBalance ?? selectedLoanDetail?.loan?.outstanding_balance ?? 0);
+              const newLoanBalance = currentLoanBalance + newPenaltyNum;
 
               return (
-                <div
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 8,
-                    fontSize: 13,
-                    background: 'var(--bg-app)',
-                    padding: 14,
-                    borderRadius: 'var(--radius-md)',
-                    marginBottom: 16,
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Customer:</span>
-                    <span style={{ fontWeight: 700 }}>
-                      {customerName} {customerCode ? `(${customerCode})` : ''}
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Loan Account:</span>
-                    <span className="mono font-bold" style={{ color: 'var(--primary)' }}>
-                      {loanAccNo}
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>EMI Installment:</span>
-                    <span style={{ fontWeight: 700 }}>
-                      #{penaltyModalEmi.installmentNumber ?? penaltyModalEmi.installment_number}
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Due Date:</span>
-                    <span className="mono">{dueDateVal ? formatDateDDMMYYYY(dueDateVal) : '—'}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Scheduled EMI:</span>
-                    <span style={{ fontWeight: 600 }}>{formatINR(origEmi)}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Unpaid Installment Balance:</span>
-                    <span style={{ fontWeight: 600, color: 'var(--danger-text)' }}>
-                      {formatINR(remEmi)}
-                    </span>
-                  </div>
-                  {existingPenalty > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--text-secondary)' }}>Existing Penalty:</span>
-                      <span style={{ fontWeight: 600, color: 'var(--danger-text)' }}>
-                        {formatINR(existingPenalty)}
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                    <div>
+                      <h3 style={{ fontSize: 17, fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
+                        {isOverdue ? 'Add Late Payment Penalty' : 'Add Advance Penalty / Fee'}
+                      </h3>
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                        EMI #{instNumber} • {isOverdue ? 'Overdue Installment' : 'Upcoming Eligible Installment'}
                       </span>
                     </div>
-                  )}
-                  {newPenaltyNum > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--text-secondary)' }}>New Penalty to Add:</span>
-                      <span className="mono font-bold" style={{ color: 'var(--danger-text)' }}>
-                        +{formatINR(newPenaltyNum)}
-                      </span>
-                    </div>
-                  )}
+                    <button
+                      type="button"
+                      onClick={() => !submittingPenalty && setPenaltyModalEmi(null)}
+                      className="btn-icon"
+                      disabled={submittingPenalty}
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
 
                   <div
                     style={{
-                      borderTop: '1px dashed var(--border-subtle)',
-                      paddingTop: 8,
-                      marginTop: 4,
                       display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
+                      flexDirection: 'column',
+                      gap: 8,
+                      fontSize: 13,
+                      background: 'var(--bg-app)',
+                      padding: 14,
+                      borderRadius: 'var(--radius-md)',
+                      marginBottom: 16,
+                      border: '1px solid var(--border-subtle)',
                     }}
                   >
-                    <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
-                      Calculated Total Due:
-                    </span>
-                    <strong className="mono" style={{ fontSize: 16, color: 'var(--danger-text)' }}>
-                      {formatINR(calculatedTotalDue)}
-                    </strong>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Customer:</span>
+                      <span style={{ fontWeight: 700 }}>
+                        {customerName} {customerCode ? `(${customerCode})` : ''}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Loan Account:</span>
+                      <span className="mono font-bold" style={{ color: 'var(--primary)' }}>
+                        {loanAccNo}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Installment:</span>
+                      <span style={{ fontWeight: 700 }}>
+                        #{instNumber} ({penaltyModalEmi.status || (isOverdue ? 'OVERDUE' : 'UPCOMING')})
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Due Date:</span>
+                      <span className="mono">{dueDateVal ? formatDateDDMMYYYY(dueDateVal) : '—'}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Scheduled EMI:</span>
+                      <span style={{ fontWeight: 600 }}>{formatINR(origEmi)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Unpaid Base Balance:</span>
+                      <span style={{ fontWeight: 600, color: 'var(--danger-text)' }}>
+                        {formatINR(remEmi)}
+                      </span>
+                    </div>
+                    {existingPenalty > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Existing Penalty:</span>
+                        <span style={{ fontWeight: 600, color: 'var(--danger-text)' }}>
+                          {formatINR(existingPenalty)}
+                        </span>
+                      </div>
+                    )}
+                    {newPenaltyNum > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Proposed Additional Penalty:</span>
+                        <span className="mono font-bold" style={{ color: 'var(--danger-text)' }}>
+                          +{formatINR(newPenaltyNum)}
+                        </span>
+                      </div>
+                    )}
+
+                    <div
+                      style={{
+                        borderTop: '1px dashed var(--border-subtle)',
+                        paddingTop: 8,
+                        marginTop: 4,
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                        Resulting Total Due on EMI:
+                      </span>
+                      <strong className="mono" style={{ fontSize: 16, color: 'var(--danger-text)' }}>
+                        {formatINR(calculatedTotalDue)}
+                      </strong>
+                    </div>
+
+                    <div
+                      style={{
+                        borderTop: '1px dashed var(--border-subtle)',
+                        paddingTop: 6,
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        fontSize: 12,
+                      }}
+                    >
+                      <span style={{ color: 'var(--text-secondary)' }}>
+                        Resulting Loan Outstanding:
+                      </span>
+                      <span className="mono font-bold" style={{ color: 'var(--text-primary)' }}>
+                        {formatINR(newLoanBalance)}
+                      </span>
+                    </div>
                   </div>
-                </div>
+
+                  {penaltyError && (
+                    <div
+                      style={{
+                        color: 'var(--danger)',
+                        background: 'var(--danger-bg)',
+                        padding: '10px 14px',
+                        borderRadius: 'var(--radius-md)',
+                        fontSize: 13,
+                        marginBottom: 14,
+                        border: '1px solid var(--danger-border, #fca5a5)',
+                      }}
+                    >
+                      {penaltyError}
+                    </div>
+                  )}
+
+                  {penaltySuccess && (
+                    <div
+                      style={{
+                        color: 'var(--success)',
+                        background: 'rgba(34, 197, 94, 0.1)',
+                        padding: '10px 14px',
+                        borderRadius: 'var(--radius-md)',
+                        fontSize: 13,
+                        marginBottom: 14,
+                        border: '1px solid rgba(34, 197, 94, 0.3)',
+                      }}
+                    >
+                      {penaltySuccess}
+                    </div>
+                  )}
+
+                  <form onSubmit={handleSubmitPenalty} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+                        Additional Penalty Amount to Add (₹) *
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="1"
+                        required
+                        className="form-input"
+                        value={penaltyAmount}
+                        onChange={(e) => {
+                          setPenaltyAmount(e.target.value);
+                          setPenaltyConfirmed(false);
+                        }}
+                        onBlur={(e) => setPenaltyAmount(normalizeNumericLeadingZeros(e.target.value))}
+                        placeholder="e.g. 500"
+                        disabled={submittingPenalty}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+                        Reason for Penalty *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        className="form-input"
+                        value={penaltyReason}
+                        onChange={(e) => setPenaltyReason(e.target.value)}
+                        placeholder={isOverdue ? 'e.g. Late payment beyond grace period' : 'e.g. Advance penalty charge'}
+                        disabled={submittingPenalty}
+                      />
+                    </div>
+
+                    {/* Explicit Confirmation Checkbox */}
+                    <div
+                      style={{
+                        background: 'var(--bg-app)',
+                        border: penaltyConfirmed ? '1px solid var(--primary)' : '1px solid var(--border-subtle)',
+                        borderRadius: 'var(--radius-md)',
+                        padding: '12px 14px',
+                        marginTop: 4,
+                      }}
+                    >
+                      <label
+                        style={{
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          gap: 10,
+                          cursor: newPenaltyNum > 0 && !submittingPenalty ? 'pointer' : 'not-allowed',
+                          fontSize: 12,
+                          userSelect: 'none',
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          id="confirm-penalty-checkbox"
+                          checked={penaltyConfirmed}
+                          onChange={(e) => setPenaltyConfirmed(e.target.checked)}
+                          disabled={submittingPenalty || newPenaltyNum <= 0}
+                          style={{ marginTop: 2, cursor: newPenaltyNum > 0 && !submittingPenalty ? 'pointer' : 'not-allowed' }}
+                        />
+                        <span>
+                          <strong>Explicit Confirmation:</strong> I confirm adding an additional penalty of{' '}
+                          <strong style={{ color: 'var(--danger-text)' }}>{formatINR(newPenaltyNum || 0)}</strong> to EMI #{instNumber}. The updated EMI total due will be{' '}
+                          <strong>{formatINR(calculatedTotalDue)}</strong> and loan balance will be{' '}
+                          <strong>{formatINR(newLoanBalance)}</strong>. This will immediately show in the customer portal before collection.
+                        </span>
+                      </label>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
+                      <button
+                        type="button"
+                        onClick={() => setPenaltyModalEmi(null)}
+                        className="btn btn-secondary"
+                        disabled={submittingPenalty}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="btn btn-primary"
+                        disabled={submittingPenalty || !penaltyConfirmed || newPenaltyNum <= 0 || !penaltyReason.trim()}
+                        style={{
+                          opacity: submittingPenalty || !penaltyConfirmed || newPenaltyNum <= 0 || !penaltyReason.trim() ? 0.6 : 1,
+                          cursor: submittingPenalty || !penaltyConfirmed || newPenaltyNum <= 0 || !penaltyReason.trim() ? 'not-allowed' : 'pointer',
+                        }}
+                      >
+                        {submittingPenalty ? 'Applying Penalty...' : 'Confirm & Apply Penalty'}
+                      </button>
+                    </div>
+                  </form>
+                </>
               );
             })()}
-
-            {penaltyError && (
-              <div
-                style={{
-                  color: 'var(--danger)',
-                  background: 'var(--danger-bg)',
-                  padding: '10px 14px',
-                  borderRadius: 'var(--radius-md)',
-                  fontSize: 13,
-                  marginBottom: 14,
-                }}
-              >
-                {penaltyError}
-              </div>
-            )}
-
-            {penaltySuccess && (
-              <div
-                style={{
-                  color: 'var(--success)',
-                  background: 'rgba(34, 197, 94, 0.1)',
-                  padding: '10px 14px',
-                  borderRadius: 'var(--radius-md)',
-                  fontSize: 13,
-                  marginBottom: 14,
-                }}
-              >
-                {penaltySuccess}
-              </div>
-            )}
-
-            <form onSubmit={handleSubmitPenalty} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-                  New Penalty Amount to Add (₹) *
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="1"
-                  required
-                  className="form-input"
-                  value={penaltyAmount}
-                  onChange={(e) => setPenaltyAmount(e.target.value)}
-                  onBlur={(e) => setPenaltyAmount(normalizeNumericLeadingZeros(e.target.value))}
-                  placeholder="e.g. 500"
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-                  Reason for Penalty *
-                </label>
-                <input
-                  type="text"
-                  required
-                  className="form-input"
-                  value={penaltyReason}
-                  onChange={(e) => setPenaltyReason(e.target.value)}
-                  placeholder="e.g. Late payment beyond grace period"
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
-                <button
-                  type="button"
-                  onClick={() => setPenaltyModalEmi(null)}
-                  className="btn btn-secondary"
-                  disabled={submittingPenalty}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={submittingPenalty}
-                >
-                  {submittingPenalty ? 'Adding...' : 'Add Penalty'}
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       )}
 
       {/* ─── PENALTY HISTORY & WAIVER MODAL ───────────────────────── */}
       {historyModalEmi && (
-        <div className="modal-backdrop">
-          <div className="modal-content" style={{ maxWidth: 640 }}>
+        <div
+          className="modal-overlay"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1200,
+            background: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+          onClick={() => setHistoryModalEmi(null)}
+        >
+          <div
+            className="modal-content"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: 640,
+              width: '100%',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              padding: 24,
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border-strong)',
+              borderRadius: 'var(--radius-lg)',
+              boxShadow: 'var(--shadow-modal)',
+            }}
+          >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <div>
                 <h3 style={{ fontSize: 17, fontWeight: 700, margin: 0 }}>

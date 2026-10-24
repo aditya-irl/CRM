@@ -1242,12 +1242,27 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                           <RefreshCw size={18} className="animate-spin" />
                           <span>{paymentPhase === 'redirecting' ? 'Redirecting to Checkout...' : 'Connecting to Gateway...'}</span>
                         </>
-                      ) : (
-                        <>
-                          <CreditCard size={18} />
-                          <span>Pay EMI ({formatINR(data.emiAmount)})</span>
-                        </>
-                      )}
+                      ) : (() => {
+                        const nextUnpaidInst = data.installments?.find(
+                          (i) => i.status !== 'PAID' && ((i.remainingAmount ?? 0) > 0 || (i.penaltyAmount ?? 0) > 0)
+                        );
+                        const heroPayableAmount = nextUnpaidInst
+                          ? (nextUnpaidInst.totalDue !== undefined ? nextUnpaidInst.totalDue : (nextUnpaidInst.remainingAmount + (nextUnpaidInst.penaltyAmount || 0)))
+                          : data.emiAmount;
+                        return (
+                          <>
+                            <CreditCard size={18} />
+                            <span>
+                              Pay EMI ({formatINR(heroPayableAmount)})
+                              {nextUnpaidInst && (nextUnpaidInst.penaltyAmount || 0) > 0 && (
+                                <span style={{ fontSize: 11, marginLeft: 6, opacity: 0.9 }}>
+                                  (incl. {formatINR(nextUnpaidInst.penaltyAmount || 0)} penalty)
+                                </span>
+                              )}
+                            </span>
+                          </>
+                        );
+                      })()}
                     </button>
                     <button
                       type="button"

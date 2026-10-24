@@ -81,11 +81,15 @@ router.post(
     try {
       const { emiId } = req.params;
       const { amount, reason } = req.body;
-      const result = await EMIService.addPenalty(emiId, amount, reason, req.user!);
+      const idempotencyKey =
+        (req.headers['idempotency-key'] as string) ||
+        (req.headers['x-idempotency-key'] as string) ||
+        req.body?.idempotencyKey;
+      const result = await EMIService.addPenalty(emiId, amount, reason, req.user!, idempotencyKey);
       return res.status(201).json({
         success: true,
         data: result,
-        message: 'Late-payment penalty added successfully',
+        message: 'Penalty added successfully',
         timestamp: new Date().toISOString(),
       });
     } catch (err) {

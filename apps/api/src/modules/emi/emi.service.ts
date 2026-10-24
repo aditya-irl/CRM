@@ -424,7 +424,8 @@ export class EMIService {
     emiId: string,
     amount: number | string,
     reason: string,
-    user: AuthenticatedUser
+    user: AuthenticatedUser,
+    idempotencyKey?: string
   ) {
     // 1. Role validation
     if (user.role === UserRole.COLLECTION_AGENT) {
@@ -463,7 +464,10 @@ export class EMIService {
     }
 
     const trimmedReason = reason.trim();
-    const penaltyId = uuidv4();
+    const penaltyId =
+      idempotencyKey && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idempotencyKey)
+        ? idempotencyKey
+        : uuidv4();
     const businessToday = getBusinessDate(undefined, 'Asia/Kolkata');
 
     // 3. Atomic transaction execution with row-level locks
@@ -491,9 +495,13 @@ export class EMIService {
         throw new ForbiddenError('You are not authorized to add a penalty to another partner store\'s loan');
       }
 
-      // 5. Authoritative server-side overdue validation
+      // 5. Authoritative server-side overdue validation & installment status checks
       if (emi.loan_status !== 'ACTIVE') {
         throw new AppError(`Cannot add penalty to a loan in ${emi.loan_status} status`, 400);
+      }
+
+      if (emi.status === 'CANCELLED') {
+        throw new AppError('Cannot add penalty to a cancelled installment', 400);
       }
 
       if (emi.status === EMIStatus.PAID || Number(emi.remaining_amount) <= 0) {
@@ -526,6 +534,59 @@ export class EMIService {
       }
 
       const calculatedDaysOverdue = Math.max(0, Math.max(Number(emi.days_overdue || 0), daysDiff));
+
+      // 5b. Idempotency and deduplication guard: prevent double-charging on network retries or double-clicks
+      const recentDupRes = await client.query(
+        `SELECT id, amount, status, reason, created_at
+         FROM emi_penalties
+         WHERE emi_installment_id = $1
+           AND created_by = $2
+           AND amount = $3
+           AND status = 'ACTIVE'
+           AND (
+             created_at >= (NOW() - INTERVAL '5 seconds')
+             OR ($4::text IS NOT NULL AND id::text = $4::text)
+           )
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [emi.id, user.id, penaltyDec.toNumber(), idempotencyKey || null]
+      );
+
+      if (recentDupRes.rows.length > 0) {
+        const dup = recentDupRes.rows[0];
+        const currentPenaltyTotal = Number(emi.penalty_amount || 0);
+        return {
+          penalty: {
+            id: dup.id,
+            emiInstallmentId: emi.id,
+            loanId: emi.loan_id,
+            amount: Number(dup.amount),
+            paidAmount: 0,
+            status: 'ACTIVE',
+            reason: dup.reason,
+            createdBy: user.id,
+            createdAt: dup.created_at,
+          },
+          installment: {
+            id: emi.id,
+            installmentNumber: Number(emi.installment_number),
+            dueDate,
+            daysOverdue: calculatedDaysOverdue,
+            expectedAmount: Number(emi.expected_amount),
+            paidAmount: Number(emi.paid_amount),
+            remainingAmount: Number(emi.remaining_amount),
+            penaltyAmount: currentPenaltyTotal,
+            totalDue: new Decimal(emi.remaining_amount).plus(new Decimal(currentPenaltyTotal)).toNumber(),
+            status: emi.status,
+          },
+          loan: {
+            id: emi.loan_id,
+            loanAccountNo: emi.loan_account_no,
+            outstandingBalance: Number(emi.loan_outstanding),
+          },
+          isDuplicateReplay: true,
+        };
+      }
 
       // 6. Insert immutable penalty record into emi_penalties
       await client.query(

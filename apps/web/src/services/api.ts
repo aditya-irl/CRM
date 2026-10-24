@@ -343,10 +343,13 @@ export class ApiClient {
    * Completely bypasses admin JWT, localStorage, and session management.
    */
   public static async getCustomerPortalLoan(token: string): Promise<ICustomerPortalLoanData> {
-    const url = buildApiUrl(`/portal/loan?token=${encodeURIComponent(token)}`);
+    const url = buildApiUrl(`/portal/loan?token=${encodeURIComponent(token)}&_t=${Date.now()}`);
     const res = await fetch(url, {
+      cache: 'no-store',
       headers: {
         'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
       },
     });
 
@@ -1981,7 +1984,8 @@ export class ApiClient {
   public static async addEmiPenalty(
     emiId: string,
     amount: number,
-    reason: string
+    reason: string,
+    idempotencyKey?: string
   ): Promise<{
     penalty: any;
     installment: any;
@@ -1993,7 +1997,8 @@ export class ApiClient {
       loan: any;
     }>(`/emi/${emiId}/penalties`, {
       method: 'POST',
-      body: JSON.stringify({ amount, reason }),
+      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+      body: JSON.stringify({ amount, reason, idempotencyKey }),
     });
   }
 
