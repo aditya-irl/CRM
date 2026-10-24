@@ -372,7 +372,47 @@ export class PaymentService {
         const paymentId = uuidv4();
 
         const isDealer = user.role === UserRole.DEALER;
-        const initialStatus = isDealer ? PaymentStatus.PENDING_VERIFICATION : PaymentStatus.SUCCESS;
+        const isAgent = user.role === UserRole.COLLECTION_AGENT;
+        const isPending = isDealer || isAgent;
+        const initialStatus = isDealer
+          ? PaymentStatus.PENDING_VERIFICATION
+          : isAgent
+          ? PaymentStatus.PENDING_APPROVAL
+          : PaymentStatus.SUCCESS;
+
+        const primaryEmiId = isPending
+          ? (data.emiId || targetInstForPenalty?.id || null)
+          : (allocation.allocatedPayments[0]?.emiId || null);
+
+        // Concurrency-safe duplicate pending collection check for this EMI obligation
+        if (isPending && primaryEmiId) {
+          const pendingCheck = await client.query(
+            `SELECT id, receipt_number, amount, status FROM payments
+             WHERE loan_id = $1 AND emi_id = $2
+               AND status IN ('PENDING_APPROVAL', 'PENDING_VERIFICATION')
+               AND is_reversal = FALSE
+             FOR UPDATE`,
+            [loan.id, primaryEmiId]
+          );
+
+          if (pendingCheck.rows.length > 0) {
+            const pendingSum = pendingCheck.rows.reduce(
+              (sum: Decimal, r: any) => sum.plus(new Decimal(r.amount)),
+              new Decimal(0)
+            );
+            const targetRow = installmentsRes.rows.find((r) => r.id === primaryEmiId);
+            const remainingObligation = targetRow
+              ? new Decimal(targetRow.remaining_amount).plus(new Decimal(targetRow.penalty_amount || 0))
+              : loanOutstanding;
+
+            if (pendingSum.plus(totalPaymentCollected).greaterThan(remainingObligation)) {
+              throw new AppError(
+                `A collection submission for this EMI is already pending approval (Receipt: ${pendingCheck.rows[0].receipt_number}, Amount: ₹${pendingCheck.rows[0].amount}). Additional submission of ₹${totalPaymentCollected.toNumber()} exceeds the remaining obligation (₹${remainingObligation.toNumber()}).`,
+                409
+              );
+            }
+          }
+        }
 
         // 8. Insert Payment Record
         const insertSql = `
@@ -385,7 +425,6 @@ export class PaymentService {
           RETURNING id, receipt_number, payment_timestamp
         `;
 
-        const primaryEmiId = isDealer ? (data.emiId || null) : (allocation.allocatedPayments[0]?.emiId || null);
         await client.query(insertSql, [
           paymentId,
           receiptNumber,
@@ -405,11 +444,21 @@ export class PaymentService {
           data.idempotencyKey || null,
         ]);
 
-        if (isDealer) {
+        if (isPending) {
           // Notify finance company administrators of pending approval request
           const adminUsers = await client.query(
             `SELECT id FROM users WHERE role IN ('SUPER_ADMIN', 'ADMIN') AND status = 'ACTIVE'`
           );
+          const notifType = isAgent
+            ? NotificationType.AGENT_COLLECTION_APPROVAL_REQUIRED
+            : NotificationType.DEALER_APPROVAL_REQUIRED;
+          const notifTitle = isAgent
+            ? 'Agent Collection Approval Required'
+            : 'Dealer Payment Collection Approval Required';
+          const notifBody = isAgent
+            ? `Field recovery collection of ₹${totalPaymentCollected.toNumber()} for Loan ${loan.loan_account_no} by Agent ${user.fullName} awaiting admin approval.`
+            : `Partner store collection of ₹${totalPaymentCollected.toNumber()} for Loan ${loan.loan_account_no} awaiting admin approval.`;
+
           for (const adm of adminUsers.rows) {
             await client.query(
               `INSERT INTO notifications (
@@ -418,15 +467,16 @@ export class PaymentService {
               [
                 uuidv4(),
                 adm.id,
-                NotificationType.DEALER_APPROVAL_REQUIRED,
-                'Dealer Payment Collection Approval Required',
-                `Partner store collection of ₹${totalPaymentCollected.toNumber()} for Loan ${loan.loan_account_no} awaiting admin approval.`,
+                notifType,
+                notifTitle,
+                notifBody,
                 JSON.stringify({
                   paymentId,
                   receiptNumber,
                   loanId: loan.id,
                   loanAccountNo: loan.loan_account_no,
                   dealerId: finalDealerId,
+                  agentId: finalAgentId,
                   customerId: data.customerId,
                   amount: totalPaymentCollected.toNumber(),
                 }),
@@ -449,7 +499,8 @@ export class PaymentService {
               paymentMode: data.paymentMode,
               collectionSource: source,
               dealerId: finalDealerId,
-              status: PaymentStatus.PENDING_VERIFICATION,
+              agentId: finalAgentId,
+              status: initialStatus,
             },
           });
 
@@ -463,14 +514,14 @@ export class PaymentService {
             amount: totalPaymentCollected.toNumber(),
             amountCollected: totalPaymentCollected.toNumber(),
             paymentAmount: paymentAmount.toNumber(),
-            penaltyAmount: hasManualPenalty ? penaltyAmount.toNumber() : 0,
+            penaltyAmount: isDealer ? (hasManualPenalty ? penaltyAmount.toNumber() : 0) : 0,
             paymentMode: data.paymentMode,
             collectionSource: source,
             dealerId: finalDealerId,
-            agentId: null,
+            agentId: finalAgentId,
             referenceNumber: data.referenceNumber || null,
             paymentTimestamp: now.toISOString(),
-            status: PaymentStatus.PENDING_VERIFICATION,
+            status: initialStatus,
             allocatedInstallments: [],
             remainingLoanOutstanding: Number(loan.outstanding_balance),
             loanStatus: loan.status,
@@ -692,7 +743,7 @@ export class PaymentService {
         throw new AppError('Payment has been reversed and cannot be approved', 400);
       }
 
-      if (payment.status !== PaymentStatus.PENDING_VERIFICATION) {
+      if (payment.status !== PaymentStatus.PENDING_VERIFICATION && payment.status !== PaymentStatus.PENDING_APPROVAL) {
         throw new AppError(`Cannot approve payment with current status: ${payment.status}`, 400);
       }
 
@@ -756,23 +807,30 @@ export class PaymentService {
         ) || installmentsRes.rows[0];
       }
 
-      if (penaltyAmount.greaterThan(0) && targetInstForPenalty) {
-        const penaltyId = uuidv4();
-        await client.query(
-          `INSERT INTO emi_penalties (
-            id, emi_installment_id, loan_id, amount, paid_amount, status, reason,
-            created_by, created_at, updated_at
-          ) VALUES ($1, $2, $3, $4, 0, 'ACTIVE', $5, $6, NOW(), NOW())`,
-          [
-            penaltyId,
-            targetInstForPenalty.id,
-            loan.id,
-            penaltyAmount.toNumber(),
-            'Late payment penalty assessed during collection',
-            user.id,
-          ]
+      const isDealerCollection = payment.collection_source === CollectionSource.DEALER || (payment.dealer_id && !payment.agent_id);
+      if (isDealerCollection && penaltyAmount.greaterThan(0) && targetInstForPenalty) {
+        const existingActivePen = await client.query(
+          `SELECT id FROM emi_penalties WHERE emi_installment_id = $1 AND status = 'ACTIVE'`,
+          [targetInstForPenalty.id]
         );
-        targetInstForPenalty.penalty_amount = penaltyAmount.toNumber();
+        if (existingActivePen.rows.length === 0) {
+          const penaltyId = uuidv4();
+          await client.query(
+            `INSERT INTO emi_penalties (
+              id, emi_installment_id, loan_id, amount, paid_amount, status, reason,
+              created_by, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, 0, 'ACTIVE', $5, $6, NOW(), NOW())`,
+            [
+              penaltyId,
+              targetInstForPenalty.id,
+              loan.id,
+              penaltyAmount.toNumber(),
+              'Late payment penalty assessed during collection',
+              user.id,
+            ]
+          );
+          targetInstForPenalty.penalty_amount = penaltyAmount.toNumber();
+        }
       }
 
       const unpaidInstallments = installmentsRes.rows.map((r) => ({
@@ -890,13 +948,31 @@ export class PaymentService {
         }
       }
 
+      // Notify originating agent if applicable
+      const agentId = payment.agent_id || payment.collected_by_agent_id;
+      if (agentId) {
+        await client.query(
+          `INSERT INTO notifications (
+            id, recipient_user_id, channel, type, title, body, status, scheduled_for, metadata, created_at
+          ) VALUES ($1, $2, 'IN_APP', $3, $4, $5, 'PENDING', NOW(), $6, NOW())`,
+          [
+            uuidv4(),
+            agentId,
+            NotificationType.AGENT_COLLECTION_APPROVED,
+            `Collection Approved: ${payment.receipt_number}`,
+            `Your collection of ₹${payment.amount} (Receipt: ${payment.receipt_number}) for Loan ${loan.loan_account_no} has been approved and allocated by administration.`,
+            JSON.stringify({ paymentId, receiptNumber: payment.receipt_number, amount: Number(payment.amount), status: PaymentStatus.SUCCESS }),
+          ]
+        );
+      }
+
       // 8. Immutable Audit Trail
       await AuditService.logWithClient(client, {
         userId: user.id,
         action: 'PAYMENT_APPROVED',
         entity: 'Payment',
         entityId: paymentId,
-        previousState: { status: PaymentStatus.PENDING_VERIFICATION },
+        previousState: { status: payment.status },
         newState: {
           status: PaymentStatus.SUCCESS,
           receiptNumber: payment.receipt_number,
@@ -964,6 +1040,10 @@ export class PaymentService {
         throw new AppError('Payment has already been reversed', 400);
       }
 
+      if (payment.status !== PaymentStatus.PENDING_VERIFICATION && payment.status !== PaymentStatus.PENDING_APPROVAL) {
+        throw new AppError(`Cannot reject payment with current status: ${payment.status}`, 400);
+      }
+
       // 2. Mark Payment as REJECTED without modifying loan or installments
       await client.query(
         `UPDATE payments
@@ -997,6 +1077,24 @@ export class PaymentService {
             ]
           );
         }
+      }
+
+      // Notify originating agent if applicable
+      const agentId = payment.agent_id || payment.collected_by_agent_id;
+      if (agentId) {
+        await client.query(
+          `INSERT INTO notifications (
+            id, recipient_user_id, channel, type, title, body, status, scheduled_for, metadata, created_at
+          ) VALUES ($1, $2, 'IN_APP', $3, $4, $5, 'PENDING', NOW(), $6, NOW())`,
+          [
+            uuidv4(),
+            agentId,
+            NotificationType.AGENT_COLLECTION_REJECTED,
+            `Collection Rejected: ${payment.receipt_number}`,
+            `Your collection submission of ₹${payment.amount} (Receipt: ${payment.receipt_number}) was rejected by administration. Reason: ${reason.trim()}`,
+            JSON.stringify({ paymentId, receiptNumber: payment.receipt_number, amount: Number(payment.amount), status: PaymentStatus.REJECTED, reason: reason.trim() }),
+          ]
+        );
       }
 
       // 3. Immutable Audit Trail
@@ -1615,8 +1713,11 @@ export class PaymentService {
     const totalCollected = Number(payment.amount);
     const recordedPenalty = Number(payment.penalty_amount || 0);
     const paymentAmount = Number(new Decimal(totalCollected).minus(recordedPenalty).toNumber());
+    const isPending = payment.status === PaymentStatus.PENDING_APPROVAL || payment.status === PaymentStatus.PENDING_VERIFICATION;
+    const isApproved = payment.status === PaymentStatus.SUCCESS;
+    const receiptTitle = isApproved ? 'Official Payment Receipt' : (isPending ? 'Collection Submission Acknowledgment' : 'Payment Record');
 
-    const allocations = allocRows.map((a: any, idx: number) => {
+    const allocations = isApproved ? allocRows.map((a: any, idx: number) => {
       let penComp = Number(a.penalty_component);
       if (penComp === 0 && recordedPenalty > 0 && idx === 0) {
         penComp = recordedPenalty;
@@ -1629,11 +1730,14 @@ export class PaymentService {
         penaltyComponent: penComp,
         totalAmount: Number(a.total_amount),
       };
-    });
+    }) : [];
 
     return {
       receiptNumber: payment.receipt_number,
       paymentId: payment.id,
+      receiptTitle,
+      isPending,
+      isApproved,
       amount: totalCollected,
       amountCollected: totalCollected,
       paymentAmount,

@@ -23,6 +23,7 @@ import {
   AlertCircle,
   HelpCircle,
   Plus,
+  Clock,
 } from 'lucide-react';
 import { BrandLogo } from './BrandLogo';
 
@@ -494,165 +495,238 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
         {receipt ? (
           /* Official Payment Receipt Card */
           <div>
-            <div style={{ textAlign: 'center', marginBottom: 16 }}>
-              <div
-                style={{
-                  width: 52,
-                  height: 52,
-                  borderRadius: '50%',
-                  background: 'var(--success-subtle, #dcfce7)',
-                  color: 'var(--success, #16a34a)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  margin: '0 auto 10px',
-                }}
-              >
-                <CheckCircle2 size={32} />
-              </div>
-              <h3 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
-                Payment Recorded Successfully
-              </h3>
-              <div className="mono font-bold" style={{ color: 'var(--primary)', fontSize: 14, marginTop: 4 }}>
-                {receipt.receiptNumber}
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                Date: {formatDateDDMMYYYY(receipt.paymentTimestamp || new Date().toISOString())}
-              </div>
-            </div>
-
             {(() => {
-              const receiptAllocations = receipt.allocatedInstallments || receipt.allocations || [];
-              const receiptPenaltyAllocated = receiptAllocations.reduce(
-                (sum: number, a: any) => sum + (Number(a.allocatedToPenalty ?? a.penaltyComponent ?? 0) || 0),
-                0
-              );
-              const receiptPIAllocated = receiptAllocations.reduce(
-                (sum: number, a: any) =>
-                  sum +
-                  (Number(a.allocatedToPrincipal ?? a.principalComponent ?? 0) +
-                    Number(a.allocatedToInterest ?? a.interestComponent ?? 0)),
-                0
-              );
-              const collectedAmt = Number(receipt.amountCollected || receipt.amount || 0);
-              const effectivePenalty =
-                receiptPenaltyAllocated > 0
-                  ? receiptPenaltyAllocated
-                  : Number(receipt.penaltyAmount || 0);
-              const effectivePayment =
-                receipt.paymentAmount !== undefined
-                  ? Number(receipt.paymentAmount)
-                  : Math.max(0, collectedAmt - effectivePenalty);
+              const isPending =
+                receipt.status === 'PENDING_APPROVAL' ||
+                receipt.status === 'PENDING_VERIFICATION' ||
+                Boolean(receipt.isPending);
 
               return (
-                <div
-                  style={{
-                    background: 'var(--bg-surface-secondary)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: 16,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 8,
-                    fontSize: 13,
-                    marginBottom: 20,
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Borrower:</span>
-                    <strong>{receipt.customer?.name || selectedLoan?.customerName}</strong>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Loan Account:</span>
-                    <span className="mono font-bold">{receipt.loan?.accountNo || selectedLoan?.loanAccountNo}</span>
-                  </div>
-
-                  <div style={{ borderTop: '1px dashed var(--border-subtle)', margin: '4px 0' }} />
-
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Payment Amount:</span>
-                    <strong className="mono font-bold">
-                      {formatINR(effectivePayment)}
-                    </strong>
-                  </div>
-
-                  {effectivePenalty > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: 'var(--danger-text)' }}>Late Payment Penalty:</span>
-                      <strong className="mono font-bold" style={{ color: 'var(--danger-text)' }}>
-                        {formatINR(effectivePenalty)}
-                      </strong>
-                    </div>
-                  )}
-
-                  <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed var(--border-subtle)', paddingTop: 4 }}>
-                    <span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>Total Collected / Applied:</span>
-                    <strong className="mono font-bold" style={{ color: 'var(--success)', fontSize: 15 }}>
-                      {formatINR(collectedAmt)}
-                    </strong>
-                  </div>
-
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Principal & Interest Satisfied:</span>
-                    <strong className="mono">
-                      {formatINR(
-                        receiptPIAllocated > 0 ? receiptPIAllocated : effectivePayment
-                      )}
-                    </strong>
-                  </div>
-
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Payment Mode:</span>
-                    <span className="badge badge-route">{receipt.paymentMode}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Collection Source:</span>
-                    <span className="badge badge-terracotta">
-                      {receipt.collectionSource === 'DEALER'
-                        ? 'DEALER'
-                        : receipt.collectionSource === 'RECOVERY_AGENT'
-                        ? 'RECOVERY AGENT'
-                        : 'DIRECT'}
-                    </span>
-                  </div>
-                  {receipt.remainingLoanOutstanding !== undefined && (
+                <>
+                  <div style={{ textAlign: 'center', marginBottom: 16 }}>
                     <div
                       style={{
+                        width: 52,
+                        height: 52,
+                        borderRadius: '50%',
+                        background: isPending ? 'var(--warning-subtle, #fef3c7)' : 'var(--success-subtle, #dcfce7)',
+                        color: isPending ? 'var(--warning, #d97706)' : 'var(--success, #16a34a)',
                         display: 'flex',
-                        justifyContent: 'space-between',
-                        borderTop: '1px solid var(--border-subtle)',
-                        paddingTop: 8,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        margin: '0 auto 10px',
+                      }}
+                    >
+                      {isPending ? <Clock size={32} /> : <CheckCircle2 size={32} />}
+                    </div>
+                    <h3 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+                      {isPending ? 'Collection Submitted for Approval' : 'Payment Recorded Successfully'}
+                    </h3>
+                    <div
+                      className="mono font-bold"
+                      style={{
+                        color: isPending ? 'var(--warning-text, #b45309)' : 'var(--primary)',
+                        fontSize: 14,
                         marginTop: 4,
                       }}
                     >
-                      <span style={{ color: 'var(--text-secondary)' }}>Remaining Loan Balance:</span>
-                      <strong className="mono" style={{ color: 'var(--warning-text, #d97706)' }}>
-                        {formatINR(receipt.remainingLoanOutstanding)}
-                      </strong>
+                      {receipt.receiptNumber}
                     </div>
-                  )}
-                </div>
+                    {isPending && (
+                      <div style={{ marginTop: 4 }}>
+                        <span className="badge badge-warning" style={{ fontSize: 11, fontWeight: 700 }}>
+                          PENDING ADMIN APPROVAL
+                        </span>
+                      </div>
+                    )}
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                      {isPending ? 'Submitted' : 'Date'}:{' '}
+                      {formatDateDDMMYYYY(receipt.paymentTimestamp || new Date().toISOString())}
+                    </div>
+                    {isPending && (
+                      <div
+                        style={{
+                          marginTop: 10,
+                          padding: '8px 12px',
+                          borderRadius: 6,
+                          background: 'var(--warning-subtle, #fef3c7)',
+                          color: 'var(--warning-text, #92400e)',
+                          fontSize: 12,
+                          lineHeight: 1.4,
+                          textAlign: 'left',
+                          border: '1px solid var(--warning-border, #fcd34d)',
+                        }}
+                      >
+                        ℹ️ This collection is pending administrative approval. It will post to the official financial ledger once approved.
+                      </div>
+                    )}
+                  </div>
+
+                  {(() => {
+                    const receiptAllocations = receipt.allocatedInstallments || receipt.allocations || [];
+                    const receiptPenaltyAllocated = receiptAllocations.reduce(
+                      (sum: number, a: any) =>
+                        sum + (Number(a.allocatedToPenalty ?? a.penaltyComponent ?? 0) || 0),
+                      0
+                    );
+                    const receiptPIAllocated = receiptAllocations.reduce(
+                      (sum: number, a: any) =>
+                        sum +
+                        (Number(a.allocatedToPrincipal ?? a.principalComponent ?? 0) +
+                          Number(a.allocatedToInterest ?? a.interestComponent ?? 0)),
+                      0
+                    );
+                    const collectedAmt = Number(receipt.amountCollected || receipt.amount || 0);
+                    const effectivePenalty =
+                      receiptPenaltyAllocated > 0
+                        ? receiptPenaltyAllocated
+                        : Number(receipt.penaltyAmount || 0);
+                    const effectivePayment =
+                      receipt.paymentAmount !== undefined
+                        ? Number(receipt.paymentAmount)
+                        : Math.max(0, collectedAmt - effectivePenalty);
+
+                    return (
+                      <div
+                        style={{
+                          background: 'var(--bg-surface-secondary)',
+                          borderRadius: 'var(--radius-md)',
+                          padding: 16,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 8,
+                          fontSize: 13,
+                          marginBottom: 20,
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ color: 'var(--text-secondary)' }}>Borrower:</span>
+                          <strong>{receipt.customer?.name || selectedLoan?.customerName}</strong>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ color: 'var(--text-secondary)' }}>Loan Account:</span>
+                          <span className="mono font-bold">
+                            {receipt.loan?.accountNo || selectedLoan?.loanAccountNo}
+                          </span>
+                        </div>
+
+                        <div style={{ borderTop: '1px dashed var(--border-subtle)', margin: '4px 0' }} />
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ color: 'var(--text-secondary)' }}>
+                            {isPending ? 'Submitted Amount:' : 'Payment Amount:'}
+                          </span>
+                          <strong className="mono font-bold">
+                            {formatINR(isPending ? collectedAmt : effectivePayment)}
+                          </strong>
+                        </div>
+
+                        {effectivePenalty > 0 && !isPending && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <span style={{ color: 'var(--danger-text)' }}>Late Payment Penalty:</span>
+                            <strong className="mono font-bold" style={{ color: 'var(--danger-text)' }}>
+                              {formatINR(effectivePenalty)}
+                            </strong>
+                          </div>
+                        )}
+
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            borderTop: '1px dashed var(--border-subtle)',
+                            paddingTop: 4,
+                          }}
+                        >
+                          <span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>
+                            {isPending ? 'Total Collected (Pending Approval):' : 'Total Collected / Applied:'}
+                          </span>
+                          <strong
+                            className="mono font-bold"
+                            style={{
+                              color: isPending ? 'var(--warning-text, #d97706)' : 'var(--success)',
+                              fontSize: 15,
+                            }}
+                          >
+                            {formatINR(collectedAmt)}
+                          </strong>
+                        </div>
+
+                        {!isPending && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <span style={{ color: 'var(--text-secondary)' }}>
+                              Principal & Interest Satisfied:
+                            </span>
+                            <strong className="mono">
+                              {formatINR(
+                                receiptPIAllocated > 0 ? receiptPIAllocated : effectivePayment
+                              )}
+                            </strong>
+                          </div>
+                        )}
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ color: 'var(--text-secondary)' }}>Payment Mode:</span>
+                          <span className="badge badge-route">{receipt.paymentMode}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ color: 'var(--text-secondary)' }}>Collection Source:</span>
+                          <span className="badge badge-terracotta">
+                            {receipt.collectionSource === 'DEALER'
+                              ? 'DEALER'
+                              : receipt.collectionSource === 'RECOVERY_AGENT'
+                              ? 'RECOVERY AGENT'
+                              : 'DIRECT'}
+                          </span>
+                        </div>
+                        {receipt.remainingLoanOutstanding !== undefined && !isPending && (
+                          <div
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              borderTop: '1px solid var(--border-subtle)',
+                              paddingTop: 8,
+                              marginTop: 4,
+                            }}
+                          >
+                            <span style={{ color: 'var(--text-secondary)' }}>Remaining Loan Balance:</span>
+                            <strong className="mono" style={{ color: 'var(--warning-text, #d97706)' }}>
+                              {formatINR(receipt.remainingLoanOutstanding)}
+                            </strong>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <button
+                      type="button"
+                      onClick={() => window.print()}
+                      className="btn btn-secondary"
+                      style={{
+                        flex: 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                      }}
+                    >
+                      <Printer size={15} />
+                      <span>{isPending ? 'Print Acknowledgment' : 'Print Receipt'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="btn btn-primary"
+                      style={{ flex: 1 }}
+                    >
+                      Done
+                    </button>
+                  </div>
+                </>
               );
             })()}
-
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="btn btn-secondary"
-                style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-              >
-                <Printer size={15} />
-                <span>Print</span>
-              </button>
-              <button
-                type="button"
-                onClick={onClose}
-                className="btn btn-primary"
-                style={{ flex: 1 }}
-              >
-                Done
-              </button>
-            </div>
           </div>
         ) : showConfirmation ? (
           /* Pre-Submission Review & Confirmation Screen */

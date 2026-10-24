@@ -514,6 +514,9 @@ export interface IAgentQueueItem {
   assignedByName?: string | null;
   overdueEmisCount?: number;
   deviceDetails?: string | null;
+  hasPendingCollection?: boolean;
+  pendingCollectionAmount?: number;
+  pendingPaymentId?: string | null;
 }
 
 export interface IAssignLoanAgentRequest {
@@ -734,6 +737,8 @@ export interface IAgentCollectionSummary {
   monthCount: number;
   averageCollection: number;
   agentBreakdown: IAgentCollectionMetric[];
+  pendingCount?: number;
+  pendingAmount?: number;
 }
 
 export interface IAgentCollectionRecord {
@@ -746,17 +751,27 @@ export interface IAgentCollectionRecord {
   customerCode: string;
   customerPhone?: string;
   areaRoute?: string;
+  emiId?: string | null;
+  installmentNumber?: number | null;
+  emiDueDate?: string | null;
+  emiAmount?: number | null;
+  adminAssignedPenalty?: number | null;
   amount: number;
+  submittedAmount?: number;
   paymentMode: PaymentMode;
   collectionSource: CollectionSource;
   agentId: string;
   agentName: string;
+  agentPhone?: string | null;
   paymentTimestamp: string;
   status: PaymentStatus;
   isReversal: boolean;
   reversalReason?: string | null;
   referenceNumber?: string | null;
   notes?: string | null;
+  approvedBy?: string | null;
+  approvedByName?: string | null;
+  approvedAt?: string | null;
 }
 
 export interface IAgentCollectionLedgerResponse {

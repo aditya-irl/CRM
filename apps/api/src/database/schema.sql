@@ -194,6 +194,10 @@ CREATE INDEX IF NOT EXISTS idx_payments_receipt ON payments(receipt_number);
 CREATE INDEX IF NOT EXISTS idx_payments_collection_source ON payments(collection_source);
 CREATE INDEX IF NOT EXISTS idx_payments_dealer_id ON payments(dealer_id);
 CREATE INDEX IF NOT EXISTS idx_payments_dealer_source_date ON payments(collection_source, dealer_id, payment_timestamp);
+CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
+CREATE INDEX IF NOT EXISTS idx_payments_emi_id ON payments(emi_id);
+CREATE INDEX IF NOT EXISTS idx_payments_emi_status ON payments(emi_id, status);
+CREATE INDEX IF NOT EXISTS idx_payments_agent_status ON payments(agent_id, status);
 
 CREATE TABLE IF NOT EXISTS call_logs (
     id TEXT PRIMARY KEY,

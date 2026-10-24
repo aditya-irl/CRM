@@ -16,6 +16,7 @@ import Decimal from 'decimal.js';
 
 export interface AgentCollectionsFilterQuery {
   agentId?: string;
+  status?: string;
   startDate?: string;
   endDate?: string;
   search?: string;
@@ -62,6 +63,22 @@ export class AgentCollectionsService {
       queryParams.push(effectiveAgentId);
     }
 
+    if (filters.status) {
+      const s = filters.status.toUpperCase();
+      if (s === 'PENDING_APPROVAL' || s === 'PENDING') {
+        whereClauses.push(`p.status IN ('PENDING_APPROVAL', 'PENDING_VERIFICATION')`);
+      } else if (s === 'APPROVED' || s === 'SUCCESS') {
+        whereClauses.push(`p.status = 'SUCCESS' AND p.is_reversal = FALSE`);
+      } else if (s === 'REJECTED') {
+        whereClauses.push(`p.status = 'REJECTED'`);
+      } else if (s === 'REVERSED') {
+        whereClauses.push(`(p.status = 'REVERSED' OR p.is_reversal = TRUE)`);
+      } else {
+        whereClauses.push(`p.status = $${paramIndex++}`);
+        queryParams.push(filters.status);
+      }
+    }
+
     if (filters.startDate && filters.endDate) {
       whereClauses.push(
         `DATE(p.payment_timestamp AT TIME ZONE 'Asia/Kolkata') BETWEEN $${paramIndex++}::date AND $${paramIndex++}::date`
@@ -98,7 +115,9 @@ export class AgentCollectionsService {
         COALESCE(SUM(CASE WHEN p.status = 'SUCCESS' AND p.is_reversal = FALSE AND DATE(p.payment_timestamp AT TIME ZONE 'Asia/Kolkata') = $${paramIndex}::date THEN p.amount ELSE 0 END), 0)::numeric as today_collections,
         COUNT(CASE WHEN p.status = 'SUCCESS' AND p.is_reversal = FALSE AND DATE(p.payment_timestamp AT TIME ZONE 'Asia/Kolkata') = $${paramIndex}::date THEN 1 END)::int as today_count,
         COALESCE(SUM(CASE WHEN p.status = 'SUCCESS' AND p.is_reversal = FALSE AND DATE_TRUNC('month', p.payment_timestamp AT TIME ZONE 'Asia/Kolkata') = DATE_TRUNC('month', $${paramIndex}::date) THEN p.amount ELSE 0 END), 0)::numeric as month_collections,
-        COUNT(CASE WHEN p.status = 'SUCCESS' AND p.is_reversal = FALSE AND DATE_TRUNC('month', p.payment_timestamp AT TIME ZONE 'Asia/Kolkata') = DATE_TRUNC('month', $${paramIndex}::date) THEN 1 END)::int as month_count
+        COUNT(CASE WHEN p.status = 'SUCCESS' AND p.is_reversal = FALSE AND DATE_TRUNC('month', p.payment_timestamp AT TIME ZONE 'Asia/Kolkata') = DATE_TRUNC('month', $${paramIndex}::date) THEN 1 END)::int as month_count,
+        COALESCE(SUM(CASE WHEN p.status IN ('PENDING_APPROVAL', 'PENDING_VERIFICATION') AND p.is_reversal = FALSE THEN p.amount ELSE 0 END), 0)::numeric as pending_amount,
+        COUNT(CASE WHEN p.status IN ('PENDING_APPROVAL', 'PENDING_VERIFICATION') AND p.is_reversal = FALSE THEN 1 END)::int as pending_count
       FROM payments p
       JOIN loans l ON p.loan_id = l.id
       JOIN customers c ON p.customer_id = c.id
@@ -169,6 +188,9 @@ export class AgentCollectionsService {
       };
     });
 
+    const pendingAmountNum = Number(summaryRow?.pending_amount || 0);
+    const pendingCountNum = Number(summaryRow?.pending_count || 0);
+
     const summary: IAgentCollectionSummary = {
       totalCollections: totalCollectionsNum,
       paymentCount: paymentCountNum,
@@ -177,6 +199,8 @@ export class AgentCollectionsService {
       monthCollections: monthCollectionsNum,
       monthCount: monthCountNum,
       averageCollection: averageCollectionNum,
+      pendingCount: pendingCountNum,
+      pendingAmount: pendingAmountNum,
       agentBreakdown,
     };
 
@@ -206,6 +230,15 @@ export class AgentCollectionsService {
         p.reversal_reason,
         p.reference_number,
         p.notes,
+        p.created_at,
+        p.approved_at,
+        p.approved_by,
+        p.emi_id,
+        app_u.full_name as approved_by_name,
+        e.installment_number,
+        TO_CHAR(e.due_date, 'YYYY-MM-DD') as emi_due_date,
+        e.expected_amount as emi_amount,
+        e.penalty_amount as admin_assigned_penalty,
         l.id as loan_id,
         l.loan_account_no,
         c.id as customer_id,
@@ -213,11 +246,14 @@ export class AgentCollectionsService {
         c.customer_code,
         c.primary_phone as customer_phone,
         c.area_route,
-        u.full_name as agent_name
+        u.full_name as agent_name,
+        u.phone as agent_phone
       FROM payments p
       JOIN loans l ON p.loan_id = l.id
       JOIN customers c ON p.customer_id = c.id
       JOIN users u ON p.agent_id = u.id
+      LEFT JOIN emi_installments e ON p.emi_id = e.id
+      LEFT JOIN users app_u ON p.approved_by = app_u.id
       ${whereSql}
       ORDER BY p.payment_timestamp DESC
       LIMIT $${paramIndex++} OFFSET $${paramIndex++}
@@ -239,12 +275,23 @@ export class AgentCollectionsService {
       collectionSource: r.collection_source as CollectionSource,
       agentId: r.agent_id,
       agentName: r.agent_name,
+      agentPhone: r.agent_phone || undefined,
       paymentTimestamp: r.payment_timestamp,
       status: r.status as PaymentStatus,
       isReversal: Boolean(r.is_reversal) || r.status === 'REVERSED',
       reversalReason: r.reversal_reason,
       referenceNumber: r.reference_number,
       notes: r.notes,
+      emiId: r.emi_id || undefined,
+      installmentNumber: r.installment_number ? Number(r.installment_number) : undefined,
+      emiDueDate: r.emi_due_date || undefined,
+      emiAmount: r.emi_amount ? Number(r.emi_amount) : undefined,
+      adminAssignedPenalty: r.admin_assigned_penalty ? Number(r.admin_assigned_penalty) : undefined,
+      submittedAmount: Number(r.amount),
+      approvedBy: r.approved_by || undefined,
+      approvedByName: r.approved_by_name || undefined,
+      approvedAt: r.approved_at || undefined,
+      createdAt: r.created_at || undefined,
     }));
 
     return {

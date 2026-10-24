@@ -7,6 +7,7 @@ import {
   formatDateDDMMYYYY,
   PaymentMode,
   PaymentStatus,
+  UserRole,
 } from '@crm/shared';
 import { ApiClient } from '../services/api';
 import {
@@ -28,6 +29,8 @@ import {
   ShieldCheck,
   Phone,
   User,
+  Clock,
+  Check,
 } from 'lucide-react';
 
 type DateFilterType = 'ALL' | 'TODAY' | 'YESTERDAY' | 'THIS_WEEK' | 'THIS_MONTH' | 'CUSTOM';
@@ -39,9 +42,16 @@ interface AgentCollectionsViewProps {
 export const AgentCollectionsView: React.FC<AgentCollectionsViewProps> = ({
   initialAgentId,
 }) => {
+  const [currentUser] = useState<IUser | null>(ApiClient.getUser());
+  const isAdminRole =
+    currentUser?.role === UserRole.SUPER_ADMIN ||
+    currentUser?.role === UserRole.ADMIN ||
+    currentUser?.role === UserRole.BRANCH_MANAGER;
+
   const [agents, setAgents] = useState<any[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string>(initialAgentId || '');
   const [dateFilter, setDateFilter] = useState<DateFilterType>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [search, setSearch] = useState('');
@@ -54,6 +64,11 @@ export const AgentCollectionsView: React.FC<AgentCollectionsViewProps> = ({
   const [limit, setLimit] = useState(25);
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
+
+  // Approval / Rejection states
+  const [processingActionId, setProcessingActionId] = useState<string | null>(null);
+  const [rejectModalPayment, setRejectModalPayment] = useState<IAgentCollectionRecord | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
 
   // Selected Record Detail Drawer
   const [selectedRecord, setSelectedRecord] = useState<IAgentCollectionRecord | null>(null);
@@ -125,6 +140,7 @@ export const AgentCollectionsView: React.FC<AgentCollectionsViewProps> = ({
       const dates = getDateRange(dateFilter);
       const res = await ApiClient.getAgentCollections({
         agentId: selectedAgentId || undefined,
+        status: statusFilter === 'ALL' ? undefined : statusFilter,
         startDate: dates.start,
         endDate: dates.end,
         search: search || undefined,
@@ -145,12 +161,50 @@ export const AgentCollectionsView: React.FC<AgentCollectionsViewProps> = ({
 
   useEffect(() => {
     fetchData();
-  }, [selectedAgentId, dateFilter, startDate, endDate, page, limit]);
+  }, [selectedAgentId, statusFilter, dateFilter, startDate, endDate, page, limit]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setPage(1);
     fetchData();
+  };
+
+  const handleApprove = async (r: IAgentCollectionRecord) => {
+    if (
+      !window.confirm(
+        `Approve collection submission of ${formatINR(r.amount)} for Loan ${r.loanAccountNo} (${r.customerName})?\n\nThis will post the payment to the official ledger and allocate it to the borrower's EMI schedule.`
+      )
+    ) {
+      return;
+    }
+    setProcessingActionId(r.id);
+    try {
+      await ApiClient.approvePayment(r.id);
+      await fetchData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to approve payment');
+    } finally {
+      setProcessingActionId(null);
+    }
+  };
+
+  const handleConfirmReject = async () => {
+    if (!rejectionReason.trim()) {
+      alert('Rejection reason is required');
+      return;
+    }
+    if (!rejectModalPayment) return;
+    setProcessingActionId(rejectModalPayment.id);
+    try {
+      await ApiClient.rejectPayment(rejectModalPayment.id, rejectionReason.trim());
+      setRejectModalPayment(null);
+      setRejectionReason('');
+      await fetchData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to reject payment');
+    } finally {
+      setProcessingActionId(null);
+    }
   };
 
   const handleOpenReceipt = async (paymentId: string) => {
@@ -191,13 +245,57 @@ export const AgentCollectionsView: React.FC<AgentCollectionsViewProps> = ({
       </div>
 
       {/* 1. KPI Summary Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 16 }}>
+        {/* Pending Approval Queue Card */}
+        <div
+          className="crm-card"
+          style={{
+            padding: 18,
+            border: (summary?.pendingCount ?? 0) > 0 ? '1px solid var(--warning-border, #fcd34d)' : undefined,
+            background: (summary?.pendingCount ?? 0) > 0 ? 'var(--warning-subtle, #fffbeb)' : undefined,
+            cursor: 'pointer',
+          }}
+          onClick={() => {
+            setStatusFilter('PENDING');
+            setPage(1);
+          }}
+          title="Click to view pending collections queue"
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
+                Pending Admin Approval
+              </div>
+              <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: 'var(--warning-text, #b45309)', marginTop: 6 }}>
+                {summary ? formatINR(summary.pendingAmount ?? 0) : '—'}
+              </div>
+            </div>
+            <div
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--warning-subtle)',
+                color: 'var(--warning)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Clock size={20} />
+            </div>
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
+            <strong>{summary?.pendingCount ?? 0}</strong> submissions awaiting approval
+          </div>
+        </div>
+
         {/* Total Collections */}
         <div className="crm-card" style={{ padding: 18 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
               <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
-                Total Agent Collections
+                Approved Collections
               </div>
               <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-primary)', marginTop: 6 }}>
                 {summary ? formatINR(summary.totalCollections) : '—'}
@@ -219,7 +317,7 @@ export const AgentCollectionsView: React.FC<AgentCollectionsViewProps> = ({
             </div>
           </div>
           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
-            Active collections across all assigned field routes
+            Posted collections on official financial ledger
           </div>
         </div>
 
@@ -539,6 +637,72 @@ export const AgentCollectionsView: React.FC<AgentCollectionsViewProps> = ({
               />
             </div>
           )}
+
+          {/* Status Filter Tabs */}
+          <div
+            style={{
+              display: 'flex',
+              gap: 8,
+              alignItems: 'center',
+              paddingTop: 10,
+              borderTop: '1px solid var(--border-subtle)',
+              flexWrap: 'wrap',
+            }}
+          >
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginRight: 4 }}>
+              Approval Filter:
+            </span>
+            {[
+              { id: 'ALL', label: 'All Collections' },
+              {
+                id: 'PENDING',
+                label: 'Pending Approval',
+                badgeCount: summary?.pendingCount ?? 0,
+                isWarning: true,
+              },
+              { id: 'APPROVED', label: 'Approved (Posted)' },
+              { id: 'REJECTED', label: 'Rejected' },
+            ].map((st) => (
+              <button
+                key={st.id}
+                type="button"
+                onClick={() => {
+                  setStatusFilter(st.id as any);
+                  setPage(1);
+                }}
+                className={`btn btn-sm ${
+                  statusFilter === st.id
+                    ? st.isWarning
+                      ? 'btn-warning'
+                      : 'btn-primary'
+                    : 'btn-secondary'
+                }`}
+                style={{
+                  fontSize: 12,
+                  padding: '5px 12px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                <span>{st.label}</span>
+                {st.badgeCount !== undefined && st.badgeCount > 0 && (
+                  <span
+                    style={{
+                      background: statusFilter === st.id ? 'rgba(0,0,0,0.18)' : 'var(--warning-subtle)',
+                      color: statusFilter === st.id ? 'inherit' : 'var(--warning-text)',
+                      borderRadius: 10,
+                      padding: '1px 7px',
+                      fontSize: 10,
+                      fontWeight: 800,
+                    }}
+                  >
+                    {st.badgeCount}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -586,86 +750,210 @@ export const AgentCollectionsView: React.FC<AgentCollectionsViewProps> = ({
             <table className="crm-table">
               <thead>
                 <tr>
-                  <th>Payment Date</th>
-                  <th>Receipt Number</th>
+                  <th>Submission Date</th>
+                  <th>Receipt / Ref</th>
+                  <th>Recovery Agent</th>
                   <th>Borrower</th>
                   <th>Loan Account</th>
+                  <th>EMI # & Due Date</th>
                   <th>Amount</th>
                   <th>Payment Mode</th>
-                  <th>Recovery Agent</th>
                   <th>Status</th>
-                  <th>Actions</th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {records.map((r) => (
-                  <tr key={r.id}>
-                    <td className="mono" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                      <div>{formatDateDDMMYYYY(r.paymentTimestamp)}</div>
-                      <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-                        {new Date(r.paymentTimestamp).toLocaleTimeString('en-IN', { hour12: true })}
-                      </div>
-                    </td>
-                    <td className="mono" style={{ fontWeight: 700, color: 'var(--primary)' }}>
-                      {r.receiptNumber}
-                    </td>
-                    <td>
-                      <div style={{ fontWeight: 700 }}>{r.customerName}</div>
-                      <div className="mono" style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                        {r.customerCode} • {r.customerPhone || '—'}
-                      </div>
-                    </td>
-                    <td className="mono" style={{ fontSize: 12 }}>
-                      {r.loanAccountNo}
-                    </td>
-                    <td
-                      className="mono"
+                {records.map((r) => {
+                  const isPending =
+                    r.status === 'PENDING_APPROVAL' || r.status === 'PENDING_VERIFICATION';
+                  const isApproved = r.status === 'SUCCESS';
+                  const isRejected = r.status === 'REJECTED';
+
+                  return (
+                    <tr
+                      key={r.id}
                       style={{
-                        fontWeight: 800,
-                        color: r.isReversal ? 'var(--text-muted)' : 'var(--success-text)',
-                        textDecoration: r.isReversal ? 'line-through' : 'none',
+                        background: isPending ? 'var(--warning-subtle, #fffdf5)' : undefined,
                       }}
                     >
-                      {formatINR(r.amount)}
-                    </td>
-                    <td>
-                      <span className="badge badge-upcoming">{r.paymentMode}</span>
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                        <UserCheck size={13} color="var(--primary)" />
-                        <span style={{ fontWeight: 600 }}>{r.agentName}</span>
-                      </div>
-                    </td>
-                    <td>
-                      <span className={`badge ${r.isReversal ? 'badge-overdue' : 'badge-paid'}`}>
-                        {r.isReversal ? 'REVERSED' : 'PAID'}
-                      </span>
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button
-                          onClick={() => setSelectedRecord(r)}
-                          className="btn btn-secondary btn-sm"
-                          style={{ padding: '4px 8px', fontSize: 11 }}
-                          title="View Details Drawer"
-                        >
-                          <Eye size={12} />
-                          <span>Details</span>
-                        </button>
-                        <button
-                          onClick={() => handleOpenReceipt(r.id)}
-                          className="btn btn-secondary btn-sm"
-                          style={{ padding: '4px 8px', fontSize: 11 }}
-                          title="View Official Receipt"
-                        >
-                          <Receipt size={12} />
-                          <span>Receipt</span>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      <td className="mono" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                        <div>{formatDateDDMMYYYY(r.paymentTimestamp)}</div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                          {new Date(r.paymentTimestamp).toLocaleTimeString('en-IN', { hour12: true })}
+                        </div>
+                      </td>
+                      <td className="mono" style={{ fontWeight: 700, color: 'var(--primary)' }}>
+                        <div>{r.receiptNumber}</div>
+                        {r.referenceNumber && (
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                            Ref: {r.referenceNumber}
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                          <UserCheck size={13} color="var(--primary)" />
+                          <span style={{ fontWeight: 600 }}>{r.agentName}</span>
+                        </div>
+                        {r.agentPhone && (
+                          <div className="mono" style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                            {r.agentPhone}
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 700 }}>{r.customerName}</div>
+                        <div className="mono" style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                          {r.customerCode} • {r.customerPhone || '—'}
+                        </div>
+                      </td>
+                      <td className="mono" style={{ fontSize: 12 }}>
+                        {r.loanAccountNo}
+                      </td>
+                      <td>
+                        {r.installmentNumber ? (
+                          <div>
+                            <span style={{ fontWeight: 600, fontSize: 12 }}>
+                              EMI #{r.installmentNumber}
+                            </span>
+                            {r.emiDueDate && (
+                              <div className="mono" style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                                Due: {formatDateDDMMYYYY(r.emiDueDate)}
+                              </div>
+                            )}
+                            {Number(r.adminAssignedPenalty || 0) > 0 && (
+                              <div style={{ fontSize: 10, color: 'var(--danger-text)' }}>
+                                Fee: {formatINR(Number(r.adminAssignedPenalty))}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>—</span>
+                        )}
+                      </td>
+                      <td
+                        className="mono"
+                        style={{
+                          fontWeight: 800,
+                          color: isApproved
+                            ? 'var(--success-text)'
+                            : isPending
+                            ? 'var(--warning-text, #b45309)'
+                            : r.isReversal
+                            ? 'var(--text-muted)'
+                            : 'inherit',
+                          textDecoration: r.isReversal ? 'line-through' : 'none',
+                        }}
+                      >
+                        {formatINR(r.amount)}
+                      </td>
+                      <td>
+                        <span className="badge badge-upcoming">{r.paymentMode}</span>
+                      </td>
+                      <td>
+                        {isPending && (
+                          <span className="badge badge-warning" style={{ fontSize: 11, fontWeight: 700 }}>
+                            PENDING APPROVAL
+                          </span>
+                        )}
+                        {isApproved && (
+                          <span className="badge badge-success" style={{ fontSize: 11, fontWeight: 700 }}>
+                            APPROVED
+                          </span>
+                        )}
+                        {isRejected && (
+                          <div>
+                            <span
+                              className="badge badge-danger"
+                              style={{ fontSize: 11, fontWeight: 700 }}
+                              title={r.reversalReason || 'Rejected by Admin'}
+                            >
+                              REJECTED
+                            </span>
+                            {r.reversalReason && (
+                              <div
+                                style={{
+                                  fontSize: 10,
+                                  color: 'var(--danger-text)',
+                                  marginTop: 2,
+                                  maxWidth: 160,
+                                }}
+                              >
+                                {r.reversalReason}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {!isPending && !isApproved && !isRejected && (
+                          <span className={`badge ${r.isReversal ? 'badge-overdue' : 'badge-paid'}`}>
+                            {r.isReversal ? 'REVERSED' : r.status}
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                          {isPending && isAdminRole && (
+                            <>
+                              <button
+                                onClick={() => handleApprove(r)}
+                                disabled={processingActionId === r.id}
+                                className="btn btn-success btn-sm"
+                                style={{
+                                  padding: '4px 8px',
+                                  fontSize: 11,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                }}
+                                title="Approve payment submission and post to financial ledger"
+                              >
+                                <Check size={12} />
+                                <span>{processingActionId === r.id ? '...' : 'Approve'}</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setRejectModalPayment(r);
+                                  setRejectionReason('');
+                                }}
+                                disabled={processingActionId === r.id}
+                                className="btn btn-outline-danger btn-sm"
+                                style={{
+                                  padding: '4px 8px',
+                                  fontSize: 11,
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                }}
+                                title="Reject payment submission"
+                              >
+                                <X size={12} />
+                                <span>Reject</span>
+                              </button>
+                            </>
+                          )}
+                          <button
+                            onClick={() => setSelectedRecord(r)}
+                            className="btn btn-secondary btn-sm"
+                            style={{ padding: '4px 8px', fontSize: 11 }}
+                            title="View Details Drawer"
+                          >
+                            <Eye size={12} />
+                            <span>Details</span>
+                          </button>
+                          <button
+                            onClick={() => handleOpenReceipt(r.id)}
+                            className="btn btn-secondary btn-sm"
+                            style={{ padding: '4px 8px', fontSize: 11 }}
+                            title="View Receipt"
+                          >
+                            <Receipt size={12} />
+                            <span>Receipt</span>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -917,6 +1205,82 @@ export const AgentCollectionsView: React.FC<AgentCollectionsViewProps> = ({
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
               <button type="button" onClick={() => setSelectedReceipt(null)} className="btn btn-primary" style={{ width: '100%' }}>
                 Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 7. Rejection Reason Modal */}
+      {rejectModalPayment && (
+        <div className="modal-overlay" onClick={() => setRejectModalPayment(null)}>
+          <div
+            className="modal-content"
+            style={{ width: '100%', maxWidth: 460, padding: 22 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: '50%',
+                    background: 'var(--danger-subtle)',
+                    color: 'var(--danger)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <X size={18} />
+                </span>
+                <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>Reject Collection Submission</h3>
+              </div>
+              <button type="button" onClick={() => setRejectModalPayment(null)} className="btn-icon">
+                <X size={16} />
+              </button>
+            </div>
+
+            <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
+              Are you sure you want to reject collection submission{' '}
+              <strong className="mono">{rejectModalPayment.receiptNumber}</strong> of{' '}
+              <strong>{formatINR(rejectModalPayment.amount)}</strong> submitted by{' '}
+              <strong>{rejectModalPayment.agentName}</strong> for Loan{' '}
+              <strong>{rejectModalPayment.loanAccountNo}</strong>?
+            </p>
+
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+                Rejection Reason *
+              </label>
+              <textarea
+                className="form-input"
+                rows={3}
+                required
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                placeholder="Specify the reason (e.g. incorrect amount, check bounced, deposit mismatch)..."
+                style={{ width: '100%', resize: 'vertical' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => setRejectModalPayment(null)}
+                className="btn btn-secondary"
+                disabled={Boolean(processingActionId)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReject}
+                className="btn btn-danger"
+                disabled={Boolean(processingActionId) || !rejectionReason.trim()}
+              >
+                {processingActionId === rejectModalPayment.id ? 'Rejecting...' : 'Confirm Rejection'}
               </button>
             </div>
           </div>

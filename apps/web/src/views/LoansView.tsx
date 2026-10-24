@@ -2067,7 +2067,15 @@ export const LoansView: React.FC<LoansViewProps> = ({
                                 </button>
                               )}
 
-                              {isOverdue && inst.status !== 'PAID' && remainingAmount > 0 && canAddPenaltyRole && (
+                              {selectedLoanDetail.loan.status === 'ACTIVE' &&
+                                inst.status !== 'PAID' &&
+                                remainingAmount > 0 &&
+                                (canAddPenaltyRole && (
+                                  currentUser?.role === UserRole.SUPER_ADMIN ||
+                                  currentUser?.role === UserRole.ADMIN ||
+                                  currentUser?.role === UserRole.BRANCH_MANAGER ||
+                                  isOverdue
+                                )) && (
                                 <button
                                   type="button"
                                   onClick={() => handleOpenAddPenalty(inst)}
@@ -2364,39 +2372,99 @@ export const LoansView: React.FC<LoansViewProps> = ({
               </button>
             </div>
 
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 10,
-                fontSize: 13,
-                background: 'var(--bg-app)',
-                padding: 14,
-                borderRadius: 'var(--radius-md)',
-                marginBottom: 16,
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--text-secondary)' }}>EMI:</span>
-                <span style={{ fontWeight: 700 }}>#{penaltyModalEmi.installmentNumber ?? penaltyModalEmi.installment_number}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--text-secondary)' }}>Original EMI:</span>
-                <span style={{ fontWeight: 600 }}>{formatINR(penaltyModalEmi.expectedAmount ?? penaltyModalEmi.expected_amount ?? 0)}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--text-secondary)' }}>Outstanding:</span>
-                <span style={{ fontWeight: 700, color: 'var(--danger-text)' }}>
-                  {formatINR(penaltyModalEmi.remainingAmount ?? penaltyModalEmi.remaining_amount ?? 0)}
-                </span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--text-secondary)' }}>Days Overdue:</span>
-                <span style={{ fontWeight: 700, color: 'var(--danger)' }}>
-                  {(penaltyModalEmi.daysOverdue ?? penaltyModalEmi.days_overdue) || Math.max(1, Math.round((new Date().getTime() - new Date(penaltyModalEmi.dueDate || penaltyModalEmi.due_date).getTime()) / (1000 * 3600 * 24)))} days
-                </span>
-              </div>
-            </div>
+            {(() => {
+              const origEmi = Number(penaltyModalEmi.expectedAmount ?? penaltyModalEmi.expected_amount ?? 0);
+              const remEmi = Number(penaltyModalEmi.remainingAmount ?? penaltyModalEmi.remaining_amount ?? 0);
+              const existingPenalty = Number(penaltyModalEmi.penaltyAmount ?? penaltyModalEmi.penalty_amount ?? 0);
+              const newPenaltyNum = Math.max(0, Number(penaltyAmount) || 0);
+              const calculatedTotalDue = remEmi + existingPenalty + newPenaltyNum;
+              const customerName = (selectedLoanDetail?.loan as any)?.customerName || (selectedLoanDetail?.loan as any)?.customer_name || penaltyModalEmi.customer_name || 'Customer';
+              const customerCode = (selectedLoanDetail?.loan as any)?.customerCode || (selectedLoanDetail?.loan as any)?.customer_code;
+              const loanAccNo = selectedLoanDetail?.loan?.loanAccountNo || (selectedLoanDetail?.loan as any)?.loan_account_no || '—';
+              const dueDateVal = penaltyModalEmi.dueDate || penaltyModalEmi.due_date;
+
+              return (
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 8,
+                    fontSize: 13,
+                    background: 'var(--bg-app)',
+                    padding: 14,
+                    borderRadius: 'var(--radius-md)',
+                    marginBottom: 16,
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Customer:</span>
+                    <span style={{ fontWeight: 700 }}>
+                      {customerName} {customerCode ? `(${customerCode})` : ''}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Loan Account:</span>
+                    <span className="mono font-bold" style={{ color: 'var(--primary)' }}>
+                      {loanAccNo}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>EMI Installment:</span>
+                    <span style={{ fontWeight: 700 }}>
+                      #{penaltyModalEmi.installmentNumber ?? penaltyModalEmi.installment_number}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Due Date:</span>
+                    <span className="mono">{dueDateVal ? formatDateDDMMYYYY(dueDateVal) : '—'}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Scheduled EMI:</span>
+                    <span style={{ fontWeight: 600 }}>{formatINR(origEmi)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Unpaid Installment Balance:</span>
+                    <span style={{ fontWeight: 600, color: 'var(--danger-text)' }}>
+                      {formatINR(remEmi)}
+                    </span>
+                  </div>
+                  {existingPenalty > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>Existing Penalty:</span>
+                      <span style={{ fontWeight: 600, color: 'var(--danger-text)' }}>
+                        {formatINR(existingPenalty)}
+                      </span>
+                    </div>
+                  )}
+                  {newPenaltyNum > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-secondary)' }}>New Penalty to Add:</span>
+                      <span className="mono font-bold" style={{ color: 'var(--danger-text)' }}>
+                        +{formatINR(newPenaltyNum)}
+                      </span>
+                    </div>
+                  )}
+
+                  <div
+                    style={{
+                      borderTop: '1px dashed var(--border-subtle)',
+                      paddingTop: 8,
+                      marginTop: 4,
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                      Calculated Total Due:
+                    </span>
+                    <strong className="mono" style={{ fontSize: 16, color: 'var(--danger-text)' }}>
+                      {formatINR(calculatedTotalDue)}
+                    </strong>
+                  </div>
+                </div>
+              );
+            })()}
 
             {penaltyError && (
               <div
@@ -2431,7 +2499,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
             <form onSubmit={handleSubmitPenalty} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-                  Penalty Amount (₹) *
+                  New Penalty Amount to Add (₹) *
                 </label>
                 <input
                   type="number"
@@ -2448,7 +2516,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
 
               <div>
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-                  Reason *
+                  Reason for Penalty *
                 </label>
                 <input
                   type="text"

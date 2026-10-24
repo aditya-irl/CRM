@@ -1775,6 +1775,7 @@ export class ApiClient {
   // Recovery Agent Collections Ledger
   public static async getAgentCollections(paramsQuery: {
     agentId?: string;
+    status?: string;
     startDate?: string;
     endDate?: string;
     search?: string;
@@ -1783,6 +1784,7 @@ export class ApiClient {
   }) {
     const params = new URLSearchParams();
     if (paramsQuery.agentId) params.append('agentId', paramsQuery.agentId);
+    if (paramsQuery.status) params.append('status', paramsQuery.status);
     if (paramsQuery.startDate) params.append('startDate', paramsQuery.startDate);
     if (paramsQuery.endDate) params.append('endDate', paramsQuery.endDate);
     if (paramsQuery.search) params.append('search', paramsQuery.search);
@@ -1793,11 +1795,13 @@ export class ApiClient {
 
   public static async getAgentCollectionsSummary(paramsQuery: {
     agentId?: string;
+    status?: string;
     startDate?: string;
     endDate?: string;
   }) {
     const params = new URLSearchParams();
     if (paramsQuery.agentId) params.append('agentId', paramsQuery.agentId);
+    if (paramsQuery.status) params.append('status', paramsQuery.status);
     if (paramsQuery.startDate) params.append('startDate', paramsQuery.startDate);
     if (paramsQuery.endDate) params.append('endDate', paramsQuery.endDate);
     return this.request<IAgentCollectionSummary>(`/agent-collections/summary?${params.toString()}`);

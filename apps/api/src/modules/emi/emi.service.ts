@@ -55,7 +55,9 @@ export class EMIService {
         (SELECT cl.outcome FROM call_logs cl WHERE cl.customer_id = c.id ORDER BY cl.call_timestamp DESC LIMIT 1) as last_call_outcome,
         (SELECT TO_CHAR(cl.promised_payment_date, 'YYYY-MM-DD') FROM call_logs cl WHERE cl.customer_id = c.id ORDER BY cl.call_timestamp DESC LIMIT 1) as promised_payment_date,
         (SELECT TO_CHAR(p.payment_timestamp, 'YYYY-MM-DD') FROM payments p WHERE p.loan_id = l.id AND p.status = 'SUCCESS' AND p.is_reversal = FALSE ORDER BY p.payment_timestamp DESC LIMIT 1) as last_payment_date,
-        (SELECT p.amount FROM payments p WHERE p.loan_id = l.id AND p.status = 'SUCCESS' AND p.is_reversal = FALSE ORDER BY p.payment_timestamp DESC LIMIT 1) as last_payment_amount
+        (SELECT p.amount FROM payments p WHERE p.loan_id = l.id AND p.status = 'SUCCESS' AND p.is_reversal = FALSE ORDER BY p.payment_timestamp DESC LIMIT 1) as last_payment_amount,
+        (SELECT p.amount FROM payments p WHERE p.emi_id = e.id AND p.status IN ('PENDING_APPROVAL', 'PENDING_VERIFICATION') LIMIT 1) as pending_collection_amount,
+        (SELECT p.id FROM payments p WHERE p.emi_id = e.id AND p.status IN ('PENDING_APPROVAL', 'PENDING_VERIFICATION') LIMIT 1) as pending_payment_id
       FROM emi_installments e
       JOIN loans l ON e.loan_id = l.id
       JOIN customers c ON e.customer_id = c.id
@@ -188,6 +190,9 @@ export class EMIService {
         assignedAt: r.assigned_at || null,
         assignedByName: r.assigned_by_name || null,
         overdueEmisCount: Number(r.overdue_emis_count || 0),
+        hasPendingCollection: Number(r.pending_collection_amount || 0) > 0,
+        pendingCollectionAmount: Number(r.pending_collection_amount || 0),
+        pendingPaymentId: r.pending_payment_id || null,
       };
     });
 
@@ -301,7 +306,7 @@ export class EMIService {
       [targetAgentId]
     );
 
-    // 3. Today's collections by this agent
+    // 3. Today's collections by this agent (Approved vs Pending)
     const todayCollRes = await queryPostgres(
       `SELECT COALESCE(SUM(amount), 0) as today_collected, COUNT(id)::int as today_count
        FROM payments
@@ -311,12 +316,21 @@ export class EMIService {
       [targetAgentId, businessToday]
     );
 
+    const todayPendingRes = await queryPostgres(
+      `SELECT COALESCE(SUM(amount), 0) as today_pending, COUNT(id)::int as today_pending_count
+       FROM payments
+       WHERE (collected_by_agent_id = $1 OR agent_id = $1)
+         AND DATE(payment_timestamp AT TIME ZONE 'Asia/Kolkata') = $2::date
+         AND status IN ('PENDING_APPROVAL', 'PENDING_VERIFICATION') AND is_reversal = FALSE`,
+      [targetAgentId, businessToday]
+    );
+
     // 4. Overdue and due today / upcoming metrics
     const duesRes = await queryPostgres(
       `SELECT
-         COALESCE(SUM(CASE WHEN e.due_date = $2 THEN e.remaining_amount ELSE 0 END), 0) as today_due,
+         COALESCE(SUM(CASE WHEN e.due_date = $2 THEN e.remaining_amount + COALESCE(e.penalty_amount, 0) ELSE 0 END), 0) as today_due,
          COUNT(CASE WHEN e.due_date = $2 THEN 1 END)::int as today_due_count,
-         COALESCE(SUM(CASE WHEN e.due_date > $2 AND e.due_date <= ($2::date + INTERVAL '7 days') THEN e.remaining_amount ELSE 0 END), 0) as upcoming_dues,
+         COALESCE(SUM(CASE WHEN e.due_date > $2 AND e.due_date <= ($2::date + INTERVAL '7 days') THEN e.remaining_amount + COALESCE(e.penalty_amount, 0) ELSE 0 END), 0) as upcoming_dues,
          COUNT(CASE WHEN e.due_date > $2 AND e.due_date <= ($2::date + INTERVAL '7 days') THEN 1 END)::int as upcoming_due_count,
          COALESCE(SUM(CASE WHEN e.due_date < $2 THEN e.remaining_amount + COALESCE(e.penalty_amount, 0) ELSE 0 END), 0) as overdue_amount,
          COUNT(DISTINCT CASE WHEN e.due_date < $2 THEN c.id END)::int as overdue_customers,
@@ -350,6 +364,8 @@ export class EMIService {
 
     const duesRow = duesRes.rows[0];
     const todayCollected = Number(todayCollRes.rows[0]?.today_collected || 0);
+    const todayPending = Number(todayPendingRes.rows[0]?.today_pending || 0);
+    const todayPendingCount = Number(todayPendingRes.rows[0]?.today_pending_count || 0);
     const todayDue = Number(duesRow?.today_due || 0);
     const overdueAmount = Number(duesRow?.overdue_amount || 0);
     const upcomingDues = Number(duesRow?.upcoming_dues || 0);
@@ -359,15 +375,15 @@ export class EMIService {
 
     const recentCollRes = await queryPostgres(
       `SELECT p.id, p.amount, p.payment_mode, p.payment_timestamp as payment_date, p.receipt_number,
+              p.status, p.reversal_reason, p.created_at, p.approved_at,
               c.full_name as customer_name, l.loan_account_no
        FROM payments p
        JOIN customers c ON p.customer_id = c.id
        JOIN loans l ON p.loan_id = l.id
        WHERE (p.collected_by_agent_id = $1 OR p.agent_id = $1)
-         AND p.collection_source = 'RECOVERY_AGENT'
-         AND (p.status = 'SUCCESS' OR p.status IS NULL)
+         AND (p.collection_source = 'RECOVERY_AGENT' OR p.collection_source IS NULL)
        ORDER BY p.payment_timestamp DESC
-       LIMIT 10`,
+       LIMIT 20`,
       [targetAgentId]
     );
 
@@ -385,6 +401,8 @@ export class EMIService {
       todayDueCount: Number(duesRow?.today_due_count || 0),
       todayCollected,
       todayCollectionCount: Number(todayCollRes.rows[0]?.today_count || 0),
+      todayPending,
+      todayPendingCount,
       upcomingDues,
       upcomingDueCount: Number(duesRow?.upcoming_due_count || 0),
       overdueCustomers: Number(duesRow?.overdue_customers || 0),
@@ -480,15 +498,32 @@ export class EMIService {
         throw new AppError('Cannot add penalty to a fully paid installment', 400);
       }
 
+      // Concurrency check: prevent penalty changes if an active collection is pending approval on this EMI
+      const pendingPayRes = await client.query(
+        `SELECT id, status, amount FROM payments
+         WHERE emi_id = $1 AND status IN ('PENDING_APPROVAL', 'PENDING_VERIFICATION')
+         LIMIT 1`,
+        [emi.id]
+      );
+      if (pendingPayRes.rows.length > 0) {
+        throw new AppError(
+          'Cannot modify or add penalties while a collection submission is pending approval on this installment. Please review or reject the pending collection first.',
+          409
+        );
+      }
+
       const dueDate = getBusinessDate(emi.due_date, 'Asia/Kolkata');
       const daysDiff = getDaysDifference(dueDate, businessToday);
 
-      if (daysDiff <= 0) {
+      // Dealers are restricted to overdue installments only; Admins can add penalties to upcoming or overdue EMIs
+      if (user.role === UserRole.DEALER && daysDiff <= 0) {
         throw new AppError(
           `Penalty can only be applied to overdue installments (due date: ${dueDate}, business today: ${businessToday})`,
           400
         );
       }
+
+      const calculatedDaysOverdue = Math.max(0, Math.max(Number(emi.days_overdue || 0), daysDiff));
 
       // 6. Insert immutable penalty record into emi_penalties
       await client.query(
@@ -543,7 +578,7 @@ export class EMIService {
           amount: penaltyDec.toNumber(),
           reason: trimmedReason,
           dueDate,
-          daysOverdue: Math.max(Number(emi.days_overdue), daysDiff),
+          daysOverdue: calculatedDaysOverdue,
           newPenaltyAmount: newPenaltyAmount.toNumber(),
           newLoanOutstanding: newLoanBalance.toNumber(),
           actorRole: user.role,
@@ -567,7 +602,7 @@ export class EMIService {
           id: emi.id,
           installmentNumber: Number(emi.installment_number),
           dueDate,
-          daysOverdue: Math.max(Number(emi.days_overdue), daysDiff),
+          daysOverdue: calculatedDaysOverdue,
           expectedAmount: Number(emi.expected_amount),
           paidAmount: Number(emi.paid_amount),
           remainingAmount: Number(emi.remaining_amount),

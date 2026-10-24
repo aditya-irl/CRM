@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { PaymentService } from './payments.service';
 import { authenticate, requireRole } from '../../middlewares/auth.middleware';
 import { validateBody, validateQuery } from '../../middlewares/validate.middleware';
+import { AppError } from '../../middlewares/error.middleware';
 import { recordPaymentSchema, reversePaymentSchema, paymentsFilterSchema, paymentPreviewQuerySchema, UserRole } from '@crm/shared';
 
 const router = Router();
@@ -85,8 +86,11 @@ router.post(
   requireRole(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.BRANCH_MANAGER),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const reason = req.body?.reason || 'Payment rejected by administrator';
-      const result = await PaymentService.rejectPayment(req.params.id, reason, req.user!);
+      const reason = req.body?.reason;
+      if (!reason || typeof reason !== 'string' || !reason.trim()) {
+        throw new AppError('Rejection reason is required', 422);
+      }
+      const result = await PaymentService.rejectPayment(req.params.id, reason.trim(), req.user!);
       return res.json({
         success: true,
         data: result,

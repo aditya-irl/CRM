@@ -280,6 +280,19 @@ describe('TASK 5: Recovery Agent Collection Ledger Integration Tests', () => {
       });
     paymentReversedId = pRev.body.data.paymentId;
 
+    // Approve Agent 1 & Agent 2 collections so they post to official ledger
+    await request(app)
+      .post(`/api/v1/payments/${paymentAgent1_1Id}/approve`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    await request(app)
+      .post(`/api/v1/payments/${paymentAgent2_1Id}/approve`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    await request(app)
+      .post(`/api/v1/payments/${paymentReversedId}/approve`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
     // Authorize reversal of payment 6
     await request(app)
       .post(`/api/v1/payments/${paymentReversedId}/reverse`)

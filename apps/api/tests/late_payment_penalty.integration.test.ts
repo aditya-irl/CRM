@@ -321,10 +321,10 @@ describe('Manual Late-Payment Penalty System Integration Tests', () => {
   });
 
   describe('Part 3: Overdue and Input Validations', () => {
-    test('Non-overdue upcoming EMI is rejected (400)', async () => {
+    test('Non-overdue upcoming EMI is rejected for dealers (400)', async () => {
       const res = await request(app)
         .post(`/api/v1/emi/${upcomingEmi1Id}/penalties`)
-        .set('Authorization', `Bearer ${superAdminToken}`)
+        .set('Authorization', `Bearer ${dealer1Token}`)
         .send({ amount: 100, reason: 'Invalid upcoming attempt' });
 
       expect(res.status).toBe(400);
@@ -401,6 +401,11 @@ describe('Manual Late-Payment Penalty System Integration Tests', () => {
       expect(payRes.status).toBe(201);
       expect(payRes.body.success).toBe(true);
 
+      // Approve agent collection so it posts to ledger
+      await request(app)
+        .post(`/api/v1/payments/${payRes.body.data.paymentId}/approve`)
+        .set('Authorization', `Bearer ${superAdminToken}`);
+
       // Verify installment state
       const emiRes = await queryPostgres(
         'SELECT paid_amount, remaining_amount, penalty_amount, status FROM emi_installments WHERE id = $1',
@@ -437,6 +442,11 @@ describe('Manual Late-Payment Penalty System Integration Tests', () => {
         });
 
       expect(payRes.status).toBe(201);
+
+      // Approve agent collection so it posts to ledger
+      await request(app)
+        .post(`/api/v1/payments/${payRes.body.data.paymentId}/approve`)
+        .set('Authorization', `Bearer ${superAdminToken}`);
 
       const emiRes = await queryPostgres(
         'SELECT paid_amount, remaining_amount, status FROM emi_installments WHERE id = $1',

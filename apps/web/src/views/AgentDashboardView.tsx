@@ -37,6 +37,7 @@ interface AgentDashboardStats {
   todayCollected: number;
   todayCollectionCount?: number;
   todayPending?: number;
+  todayPendingCount?: number;
   upcomingDues?: number;
   upcomingDueCount?: number;
   overdueCustomers?: number;
@@ -62,6 +63,9 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
 
   // Filter for obligations: 'ALL' | 'TODAY' | 'OVERDUE' | 'UPCOMING'
   const [dueFilter, setDueFilter] = useState<'ALL' | 'TODAY' | 'OVERDUE' | 'UPCOMING'>('ALL');
+
+  // Filter for collections tab: 'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'
+  const [collectionStatusFilter, setCollectionStatusFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL');
 
   // Search input
   const [search, setSearch] = useState('');
@@ -203,7 +207,7 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div>
               <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
-                Today's Collection / Collections
+                Today's Approved Collections
               </div>
               <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: 'var(--success-text)', marginTop: 4 }}>
                 {stats ? formatINR(stats.todayCollected) : '—'}
@@ -224,8 +228,13 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
               <DollarSign size={18} />
             </div>
           </div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
-            Collected Today: <span className="mono" style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{stats?.todayCollectionCount ?? 0}</span> receipts
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
+            <span>Approved: <strong className="mono" style={{ color: 'var(--text-primary)' }}>{stats?.todayCollectionCount ?? 0}</strong> receipts</span>
+            {Boolean(stats?.todayPending && stats.todayPending > 0) && (
+              <span className="badge badge-warning" style={{ fontSize: 10, padding: '2px 6px', fontWeight: 700 }} title="Collections submitted and awaiting administrator approval">
+                Pending: {formatINR(stats?.todayPending ?? 0)} ({stats?.todayPendingCount ?? 0})
+              </span>
+            )}
           </div>
         </div>
 
@@ -542,16 +551,33 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
                           {/* Actions: View EMI Details & Collect Payment */}
                           <td style={{ textAlign: 'right' }}>
                             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                              {/* Collect EMI */}
-                              <button
-                                onClick={() => setSelectedItemForPayment(item)}
-                                className="btn btn-success btn-sm"
-                                title="Collect payment against this EMI obligation"
-                                style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11 }}
-                              >
-                                <DollarSign size={12} />
-                                <span>Collect EMI</span>
-                              </button>
+                              {/* Collect EMI or Pending Indicator */}
+                              {item.hasPendingCollection ? (
+                                <span
+                                  className="badge badge-warning"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    fontSize: 11,
+                                    padding: '5px 8px',
+                                  }}
+                                  title="A payment collection submission for this EMI is currently pending administrator approval"
+                                >
+                                  <Clock size={11} />
+                                  <span>Pending Approval</span>
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={() => setSelectedItemForPayment(item)}
+                                  className="btn btn-success btn-sm"
+                                  title="Collect payment against this EMI obligation"
+                                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11 }}
+                                >
+                                  <DollarSign size={12} />
+                                  <span>Collect EMI</span>
+                                </button>
+                              )}
 
                               {/* View EMI Details */}
                               <button
@@ -599,6 +625,63 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
       {/* Today's Collections Tab */}
       {activeTab === 'COLLECTIONS' && (
         <div className="crm-card" style={{ padding: 0, overflow: 'hidden' }}>
+          {/* Status Filter Header */}
+          <div
+            style={{
+              padding: '12px 16px',
+              borderBottom: '1px solid var(--border-subtle)',
+              display: 'flex',
+              gap: 8,
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              background: 'var(--bg-surface-secondary)',
+            }}
+          >
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginRight: 6 }}>
+              Status Filter:
+            </span>
+            {[
+              { id: 'ALL', label: 'All Collections', count: stats?.recentCollections?.length ?? 0 },
+              {
+                id: 'PENDING',
+                label: 'Pending Approval',
+                count: (stats?.recentCollections || []).filter(
+                  (c: any) => c.status === 'PENDING_APPROVAL' || c.status === 'PENDING_VERIFICATION'
+                ).length,
+              },
+              {
+                id: 'APPROVED',
+                label: 'Approved',
+                count: (stats?.recentCollections || []).filter((c: any) => c.status === 'SUCCESS').length,
+              },
+              {
+                id: 'REJECTED',
+                label: 'Rejected',
+                count: (stats?.recentCollections || []).filter((c: any) => c.status === 'REJECTED').length,
+              },
+            ].map((f) => (
+              <button
+                key={f.id}
+                onClick={() => setCollectionStatusFilter(f.id as any)}
+                className={`btn btn-sm ${collectionStatusFilter === f.id ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ fontSize: 11, padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
+                <span>{f.label}</span>
+                <span
+                  style={{
+                    background: collectionStatusFilter === f.id ? 'rgba(255,255,255,0.2)' : 'var(--bg-surface)',
+                    padding: '1px 6px',
+                    borderRadius: 10,
+                    fontSize: 10,
+                    fontWeight: 700,
+                  }}
+                >
+                  {f.count}
+                </span>
+              </button>
+            ))}
+          </div>
+
           <div style={{ overflowX: 'auto' }}>
             <table className="crm-table">
               <thead>
@@ -606,44 +689,115 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
                   <th>Receipt #</th>
                   <th>Customer</th>
                   <th>Loan Account</th>
-                  <th>Amount Collected</th>
+                  <th>Amount Submitted</th>
                   <th>Payment Mode</th>
-                  <th>Collection Date</th>
+                  <th>Status</th>
+                  <th>Submission Date</th>
                 </tr>
               </thead>
               <tbody>
-                {stats?.recentCollections && stats.recentCollections.length > 0 ? (
-                  stats.recentCollections.map((col: any) => (
-                    <tr key={col.id}>
-                      <td>
-                        <span className="mono" style={{ fontWeight: 700, color: 'var(--primary)' }}>
-                          {col.receipt_number || 'RECEIPT'}
-                        </span>
-                      </td>
-                      <td style={{ fontWeight: 600 }}>{col.customer_name}</td>
-                      <td>
-                        <span className="mono">{col.loan_account_no}</span>
-                      </td>
-                      <td className="mono" style={{ fontWeight: 700, color: 'var(--success-text)' }}>
-                        {formatINR(Number(col.amount))}
-                      </td>
-                      <td>
-                        <span className="badge badge-neutral" style={{ fontSize: 11 }}>
-                          {col.payment_mode}
-                        </span>
-                      </td>
-                      <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                        {new Date(col.payment_date).toLocaleString()}
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={6} style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
-                      No collections recorded yet today.
-                    </td>
-                  </tr>
-                )}
+                {(() => {
+                  const filtered = (stats?.recentCollections || []).filter((col: any) => {
+                    if (collectionStatusFilter === 'ALL') return true;
+                    if (collectionStatusFilter === 'PENDING')
+                      return col.status === 'PENDING_APPROVAL' || col.status === 'PENDING_VERIFICATION';
+                    if (collectionStatusFilter === 'APPROVED') return col.status === 'SUCCESS';
+                    if (collectionStatusFilter === 'REJECTED') return col.status === 'REJECTED';
+                    return true;
+                  });
+
+                  if (filtered.length === 0) {
+                    return (
+                      <tr>
+                        <td colSpan={7} style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
+                          No collections found matching filter "{collectionStatusFilter}".
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  return filtered.map((col: any) => {
+                    const isPending =
+                      col.status === 'PENDING_APPROVAL' || col.status === 'PENDING_VERIFICATION';
+                    const isApproved = col.status === 'SUCCESS';
+                    const isRejected = col.status === 'REJECTED';
+
+                    return (
+                      <tr key={col.id}>
+                        <td>
+                          <span className="mono" style={{ fontWeight: 700, color: 'var(--primary)' }}>
+                            {col.receipt_number || 'RECEIPT'}
+                          </span>
+                        </td>
+                        <td style={{ fontWeight: 600 }}>{col.customer_name}</td>
+                        <td>
+                          <span className="mono">{col.loan_account_no}</span>
+                        </td>
+                        <td
+                          className="mono"
+                          style={{
+                            fontWeight: 700,
+                            color: isApproved
+                              ? 'var(--success-text)'
+                              : isPending
+                              ? 'var(--warning-text)'
+                              : 'var(--text-muted)',
+                          }}
+                        >
+                          {formatINR(Number(col.amount))}
+                        </td>
+                        <td>
+                          <span className="badge badge-neutral" style={{ fontSize: 11 }}>
+                            {col.payment_mode}
+                          </span>
+                        </td>
+                        <td>
+                          {isPending && (
+                            <span className="badge badge-warning" style={{ fontSize: 11, fontWeight: 700 }}>
+                              Pending Approval
+                            </span>
+                          )}
+                          {isApproved && (
+                            <span className="badge badge-success" style={{ fontSize: 11, fontWeight: 700 }}>
+                              Approved
+                            </span>
+                          )}
+                          {isRejected && (
+                            <div>
+                              <span
+                                className="badge badge-danger"
+                                style={{ fontSize: 11, fontWeight: 700 }}
+                                title={col.reversal_reason || 'Rejected by Admin'}
+                              >
+                                Rejected
+                              </span>
+                              {col.reversal_reason && (
+                                <div
+                                  style={{
+                                    fontSize: 10,
+                                    color: 'var(--danger-text)',
+                                    marginTop: 2,
+                                    maxWidth: 180,
+                                  }}
+                                >
+                                  {col.reversal_reason}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {!isPending && !isApproved && !isRejected && (
+                            <span className="badge badge-neutral" style={{ fontSize: 11 }}>
+                              {col.status}
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                          {new Date(col.payment_date).toLocaleString()}
+                        </td>
+                      </tr>
+                    );
+                  });
+                })()}
               </tbody>
             </table>
           </div>
