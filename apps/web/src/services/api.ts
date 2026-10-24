@@ -655,7 +655,8 @@ export class ApiClient {
       ...(options.headers as Record<string, string>),
     };
 
-    if (token) {
+    // Public /auth/login endpoint should never transmit stale/invalid Bearer tokens
+    if (token && !endpoint.includes('/auth/login')) {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
@@ -793,9 +794,12 @@ export class ApiClient {
 
   // Auth
   public static async login(email: string, pass: string) {
+    const cleanIdentifier = (email || '').trim();
+    // Clear any stale local auth state before initiating a new login request
+    this.logout();
     const res = await this.request<{ user: IUser; tokens: { accessToken: string; refreshToken?: string } }>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password: pass }),
+      body: JSON.stringify({ email: cleanIdentifier, identifier: cleanIdentifier, password: pass }),
     });
     this.setAuth(res.user, res.tokens.accessToken, res.tokens.refreshToken);
     return res.user;

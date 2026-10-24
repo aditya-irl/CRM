@@ -42,6 +42,21 @@ export class AuthService {
       dlrPad6 = `dlr-${numStr.padStart(6, '0')}`;
     }
 
+    // Check if identifier matches phone format (10-digit Indian standard, 11-digit leading 0, or 12-digit with 91 prefix)
+    const digitsOnly = identifier.replace(/[^0-9]/g, '');
+    let phoneE164: string | null = null;
+    let phoneRaw10: string | null = null;
+    if (digitsOnly.length === 10) {
+      phoneRaw10 = digitsOnly;
+      phoneE164 = `+91${digitsOnly}`;
+    } else if (digitsOnly.length === 12 && digitsOnly.startsWith('91')) {
+      phoneRaw10 = digitsOnly.slice(2);
+      phoneE164 = `+${digitsOnly}`;
+    } else if (digitsOnly.length === 11 && digitsOnly.startsWith('0')) {
+      phoneRaw10 = digitsOnly.slice(1);
+      phoneE164 = `+91${digitsOnly.slice(1)}`;
+    }
+
     const result = await queryPostgres<{
       id: string;
       email: string;
@@ -63,16 +78,19 @@ export class AuthService {
          LOWER(u.email) = $1
          OR LOWER(SPLIT_PART(u.email, '@', 1)) = $1
          OR u.phone = $2
+         OR ($5::text IS NOT NULL AND u.phone = $5)
+         OR ($6::text IS NOT NULL AND u.phone = $6)
          OR LOWER(d.dealer_code) = $1
          OR ($3::text IS NOT NULL AND LOWER(d.dealer_code) = $3)
          OR ($4::text IS NOT NULL AND LOWER(d.dealer_code) = $4)
        ) AND u.deleted_at IS NULL`,
-      [cleanIdentifier, identifier.trim(), dlrPad4, dlrPad6]
+      [cleanIdentifier, identifier.trim(), dlrPad4, dlrPad6, phoneE164, phoneRaw10]
     );
 
     const user = result.rows[0];
 
     if (!user) {
+      console.warn('[Auth] Login rejected: user not found in database');
       await AuditService.log({
         action: 'USER_LOGIN_FAILED',
         entity: 'User',
@@ -84,6 +102,7 @@ export class AuthService {
     }
 
     if (user.status !== UserStatus.ACTIVE) {
+      console.warn(`[Auth] Login rejected: account is ${user.status} for user id ${user.id} (${user.role})`);
       await AuditService.log({
         userId: user.id,
         action: 'USER_LOGIN_INACTIVE_BLOCKED',
@@ -97,6 +116,7 @@ export class AuthService {
 
     const isMatch = bcrypt.compareSync(pass, user.password_hash);
     if (!isMatch) {
+      console.warn(`[Auth] Login rejected: password verification failed for user id ${user.id} (${user.role})`);
       await AuditService.log({
         userId: user.id,
         action: 'USER_LOGIN_FAILED',
@@ -107,6 +127,8 @@ export class AuthService {
       });
       throw new UnauthorizedError('Invalid credentials');
     }
+
+    console.log(`[Auth] Login successful for user id ${user.id} (${user.role})`);
 
     // Update last_login_at
     await queryPostgres(

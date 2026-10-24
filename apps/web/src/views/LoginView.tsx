@@ -14,10 +14,15 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSuccess }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const cleanIdentifier = email.trim();
+    if (!cleanIdentifier) {
+      setError('Please enter your Work Email, Phone, or Dealer Login ID');
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      await ApiClient.login(email, password);
+      await ApiClient.login(cleanIdentifier, password);
       onSuccess();
     } catch (err: any) {
       setError(err.message || 'Login failed');
@@ -91,14 +96,20 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSuccess }) => {
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
-              Work Email or Dealer Login ID
+              Work Email, Phone, or Dealer Login ID
             </label>
             <input
+              id="login-identifier"
+              name="email"
               type="text"
               className="form-input"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="name@company.com or DLR-0001"
+              autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               required
             />
           </div>
@@ -108,11 +119,14 @@ export const LoginView: React.FC<LoginViewProps> = ({ onSuccess }) => {
               Password
             </label>
             <input
+              id="login-password"
+              name="password"
               type="password"
               className="form-input"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
+              autoComplete="current-password"
               required
             />
           </div>

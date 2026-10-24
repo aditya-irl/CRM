@@ -306,9 +306,67 @@ describe('Login Flow & Authentication Regression Tests', () => {
         'Account is temporarily locked.'
       );
     });
+
+    test('trims leading/trailing whitespace from identifier and supplies both email and identifier in payload', async () => {
+      let capturedBody: any = null;
+      let capturedHeaders: any = null;
+
+      global.fetch = jest.fn().mockImplementation((url: string, options: any) => {
+        capturedBody = JSON.parse(options.body);
+        capturedHeaders = options.headers;
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-type': 'application/json' }),
+          json: async () => ({
+            success: true,
+            data: {
+              user: { id: 'u1', email: 'admin@financecrm.com', role: 'SUPER_ADMIN' },
+              tokens: { accessToken: 'mock-jwt-token' },
+            },
+          }),
+        });
+      });
+
+      await ApiClient.login('  admin@financecrm.com  ', 'Admin@123456');
+
+      expect(capturedBody).toEqual({
+        email: 'admin@financecrm.com',
+        identifier: 'admin@financecrm.com',
+        password: 'Admin@123456',
+      });
+      // Verifies no Authorization header was transmitted even if a previous token existed
+      expect(capturedHeaders['Authorization']).toBeUndefined();
+    });
+
+    test('never attaches stale Bearer token from localStorage to /auth/login request', async () => {
+      mockLocalStorage.setItem('crm_access_token', 'stale-corrupt-token');
+      let capturedHeaders: any = null;
+
+      global.fetch = jest.fn().mockImplementation((url: string, options: any) => {
+        capturedHeaders = options.headers;
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-type': 'application/json' }),
+          json: async () => ({
+            success: true,
+            data: {
+              user: { id: 'u1', email: 'admin@financecrm.com', role: 'SUPER_ADMIN' },
+              tokens: { accessToken: 'fresh-jwt-token' },
+            },
+          }),
+        });
+      });
+
+      await ApiClient.login('admin@financecrm.com', 'Admin@123456');
+
+      expect(capturedHeaders['Authorization']).toBeUndefined();
+      expect(mockLocalStorage.getItem('crm_access_token')).toBe('fresh-jwt-token');
+    });
   });
 
-  describe('LoginView Component — Demo Credentials & Preset Buttons Removal Verification', () => {
+  describe('LoginView Component — Demo Credentials & Form Attributes Verification', () => {
     test('renders completely clean login UI with no demo credentials or preset quick login buttons', () => {
       const html = renderToString(React.createElement(LoginView, { onSuccess: () => {} }));
 
@@ -329,6 +387,10 @@ describe('Login Flow & Authentication Regression Tests', () => {
 
       // Verify default input values are empty
       expect(html).toContain('value=""');
+
+      // Verify input attributes for password manager and mobile keyboard accessibility
+      expect(html).toContain('autoComplete="username"');
+      expect(html).toContain('autoComplete="current-password"');
 
       // Verify official branding remains intact
       expect(html).toContain('Enterprise EMI Platform');

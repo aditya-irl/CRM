@@ -252,4 +252,43 @@ describe('Comprehensive Authentication & Security Audit Integration Tests', () =
     expect(meUser.password_hash).toBeUndefined();
     expect(meUser.passwordHash).toBeUndefined();
   });
+
+  // 13. Flexible Phone Number Login
+  test('13. Supports login with 10-digit phone number when database stores +91 prefix', async () => {
+    // admin@financecrm.com has phone +919876500001 in seed
+    const phone10Res = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ identifier: '9876500001', password: 'Admin@123456' });
+
+    expect(phone10Res.status).toBe(200);
+    expect(phone10Res.body.success).toBe(true);
+    expect(phone10Res.body.data.user.email).toBe('admin@financecrm.com');
+
+    // Also supports +91 format with spaces
+    const phoneFormattedRes = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ identifier: '+91 9876500001', password: 'Admin@123456' });
+
+    expect(phoneFormattedRes.status).toBe(200);
+    expect(phoneFormattedRes.body.success).toBe(true);
+  });
+
+  // 14. Consistent Generic 401 for Unknown Identifier vs Password Mismatch (Anti-Enumeration)
+  test('14. Unknown user and incorrect password both return identical 401 "Invalid credentials"', async () => {
+    const unknownRes = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ identifier: 'nonexistent-user@financecrm.com', password: 'AnyPassword@123' });
+
+    expect(unknownRes.status).toBe(401);
+    expect(unknownRes.body.success).toBe(false);
+    expect(unknownRes.body.error.message).toBe('Invalid credentials');
+
+    const wrongPassRes = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ identifier: 'admin@financecrm.com', password: 'WrongPassword@999' });
+
+    expect(wrongPassRes.status).toBe(401);
+    expect(wrongPassRes.body.success).toBe(false);
+    expect(wrongPassRes.body.error.message).toBe('Invalid credentials');
+  });
 });
