@@ -56,12 +56,25 @@
   --shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.06), 0 1px 2px 0 rgba(0, 0, 0, 0.03);
   --shadow-elevated: 0 4px 12px -2px rgba(0, 0, 0, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
   --shadow-modal: 0 12px 32px -4px rgba(0, 0, 0, 0.16), 0 4px 12px -2px rgba(0, 0, 0, 0.08);
+
+  /* iOS Safe-Area Insets (iPhone 17 Dynamic Island, Notch & Home Indicator) */
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
 }
 
-* {
+*, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  overflow-x: hidden;
+  max-width: 100%;
 }
 
 body {
@@ -69,9 +82,13 @@ body {
   background-color: var(--bg-app);
   color: var(--text-primary);
   min-height: 100vh;
+  min-height: 100dvh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   line-height: 1.5;
+  overflow-x: hidden;
+  max-width: 100%;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* Typography */
@@ -495,10 +512,16 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 /* -------------------------------------------------------------
-   RESPONSIVE DESIGN SYSTEM (320px, 360px, 375px, 390px, 430px, 768px)
+   RESPONSIVE DESIGN SYSTEM & IPHONE 17 OPTIMIZATIONS
+   Breakpoints:
+     - Desktop / Laptop: > 768px
+     - Tablet / Small Laptop: <= 768px
+     - Large Phones (iPhone 17 Pro Max, 16 Plus): <= 440px
+     - Primary Target (iPhone 17, 16, 15, 14 Pro): ~393px (<= 414px)
+     - Compact Phones (iPhone SE, small Android): <= 375px & <= 320px
    ------------------------------------------------------------- */
 
-/* Desktop defaults for drawer and toggle */
+/* Desktop defaults for drawer, mobile views, and toggle */
 .mobile-menu-toggle {
   display: none !important;
 }
@@ -507,10 +530,74 @@ h1, h2, h3, h4, h5, h6 {
   display: none;
 }
 
+.mobile-only-card-view {
+  display: none !important;
+}
+
+.desktop-only-table-view {
+  display: block;
+}
+
+.mobile-scroll-cue {
+  display: none !important;
+}
+
 /* Tablet & Mobile Breakpoint (<= 768px) */
 @media screen and (max-width: 768px) {
+  /* Prevent iOS Safari auto-zoom on input focus by guaranteeing 16px font-size */
+  input,
+  select,
+  textarea,
+  .form-input,
+  .form-select {
+    font-size: 16px !important;
+    min-height: 44px;
+  }
+
+  /* Ergonomic touch targets for interactive controls */
+  .btn {
+    min-height: 42px;
+    touch-action: manipulation;
+  }
+
+  .btn-sm {
+    min-height: 38px;
+    padding: 8px 12px !important;
+  }
+
+  .btn-xs {
+    min-height: 32px;
+    padding: 6px 10px !important;
+  }
+
+  /* Show mobile card views and hide rigid wide tables where optimized */
+  .mobile-only-card-view {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+  }
+
+  .desktop-only-table-view {
+    display: none !important;
+  }
+
+  .mobile-scroll-cue {
+    display: flex !important;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    font-weight: 500;
+  }
+
+  /* Mobile Drawer Navigation */
   .mobile-menu-toggle {
     display: inline-flex !important;
+    min-width: 44px;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
   }
 
   .crm-sidebar {
@@ -519,26 +606,30 @@ h1, h2, h3, h4, h5, h6 {
     left: 0 !important;
     bottom: 0 !important;
     height: 100vh !important;
-    width: 260px !important;
-    max-width: 82vw !important;
+    height: 100dvh !important;
+    width: 280px !important;
+    max-width: 84vw !important;
     z-index: 1050 !important;
-    transform: translateX(-100%) !important;
+    transform: translate3d(-100%, 0, 0) !important;
     transition: transform 0.26s cubic-bezier(0.16, 1, 0.3, 1) !important;
     box-shadow: none !important;
+    padding-top: calc(16px + var(--sat)) !important;
+    padding-bottom: calc(16px + var(--sab)) !important;
+    box-sizing: border-box !important;
   }
 
   .crm-sidebar.open {
-    transform: translateX(0) !important;
-    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.22) !important;
+    transform: translate3d(0, 0, 0) !important;
+    box-shadow: 6px 0 28px rgba(0, 0, 0, 0.25) !important;
   }
 
   .crm-sidebar-overlay {
     display: block !important;
     position: fixed !important;
     inset: 0 !important;
-    background: rgba(28, 30, 33, 0.45) !important;
-    backdrop-filter: blur(2px) !important;
-    -webkit-backdrop-filter: blur(2px) !important;
+    background: rgba(28, 30, 33, 0.5) !important;
+    backdrop-filter: blur(3px) !important;
+    -webkit-backdrop-filter: blur(3px) !important;
     z-index: 1040 !important;
     animation: fadeInOverlay 0.2s ease;
   }
@@ -548,12 +639,20 @@ h1, h2, h3, h4, h5, h6 {
     to { opacity: 1; }
   }
 
-  .main-content-container {
-    padding: 14px 12px !important;
+  /* Safe Area Navigation Header */
+  .navbar-header {
+    padding-top: calc(10px + var(--sat)) !important;
+    padding-bottom: 10px !important;
+    padding-left: calc(12px + var(--sal)) !important;
+    padding-right: calc(12px + var(--sar)) !important;
+    border-bottom: 1px solid var(--border-subtle);
   }
 
-  .navbar-header {
-    padding: 10px 14px !important;
+  .main-content-container {
+    padding: 12px 10px !important;
+    padding-bottom: calc(16px + var(--sab)) !important;
+    overflow-x: hidden !important;
+    max-width: 100vw !important;
   }
 
   .navbar-business-date,
@@ -565,55 +664,102 @@ h1, h2, h3, h4, h5, h6 {
     display: none !important;
   }
 
+  /* Tables: smooth momentum touch scrolling */
   .table-container {
     border-radius: var(--radius-md) !important;
     -webkit-overflow-scrolling: touch !important;
+    overflow-x: auto !important;
+    max-width: 100% !important;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   }
 
   .crm-table th,
   .crm-table td {
-    padding: 8px 10px !important;
+    padding: 10px 10px !important;
     font-size: 12px !important;
     white-space: nowrap !important;
   }
 
   .modal-form-grid-2 {
     grid-template-columns: 1fr !important;
+    gap: 12px !important;
   }
 
+  /* Mobile Sheet / Dialog Container */
   .modal-overlay {
-    padding: 8px !important;
+    padding: 0 !important;
+    display: flex !important;
+    align-items: flex-end !important;
+    padding-top: var(--sat) !important;
   }
 
   .modal-content {
     width: 100% !important;
+    max-width: 100% !important;
     max-height: 94vh !important;
+    max-height: calc(100dvh - 16px - var(--sat)) !important;
     padding: 16px !important;
-    border-radius: var(--radius-lg) !important;
+    padding-bottom: calc(16px + var(--sab)) !important;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0 !important;
+    box-shadow: var(--shadow-modal) !important;
+    margin: 0 !important;
   }
 
   .modal-content.wizard-modal-container,
   .modal-content.customer-detail-modal-container {
     padding: 0 !important;
     max-height: 94vh !important;
+    max-height: calc(100dvh - 12px - var(--sat)) !important;
+    padding-bottom: calc(12px + var(--sab)) !important;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0 !important;
+  }
+
+  /* Full-width drawer on small screens */
+  .crm-drawer {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100dvh !important;
+    padding-top: var(--sat) !important;
+    padding-bottom: var(--sab) !important;
   }
 }
 
-/* Small Smartphone Breakpoint (<= 480px: 320px, 360px, 375px, 390px, 430px) */
+/* -------------------------------------------------------------
+   PRIMARY TARGET: iPhone 17 (393px width) & Mobile Viewports (<= 480px)
+   ------------------------------------------------------------- */
 @media screen and (max-width: 480px) {
   .navbar-actions {
-    gap: 6px !important;
+    gap: 4px !important;
   }
 
+  /* Collapse user details on compact header; keep avatar indicator */
+  .navbar-user-info {
+    display: none !important;
+  }
+
+  .brand-logo-legal {
+    display: none !important;
+  }
+
+  .brand-logo-text {
+    font-size: 13px !important;
+  }
+
+  .crm-card {
+    padding: 14px 12px !important;
+    border-radius: var(--radius-md) !important;
+  }
+
+  /* Modal footer buttons: stack vertically with full width for thumb taps */
   .modal-actions-footer {
     flex-direction: column-reverse !important;
     width: 100% !important;
-    gap: 8px !important;
+    gap: 10px !important;
   }
 
   .modal-actions-footer .btn {
     width: 100% !important;
+    min-height: 44px !important;
     justify-content: center !important;
   }
 
@@ -628,6 +774,58 @@ h1, h2, h3, h4, h5, h6 {
 
   .collection-source-button-group .btn {
     width: 100% !important;
+    min-height: 42px !important;
+  }
+
+  /* Horizontally scrollable chip containers */
+  .chip-group-scrollable {
+    display: flex !important;
+    gap: 6px !important;
+    overflow-x: auto !important;
+    flex-wrap: nowrap !important;
+    -webkit-overflow-scrolling: touch !important;
+    scrollbar-width: none !important;
+    padding-bottom: 4px !important;
+  }
+  .chip-group-scrollable::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  /* Customer portal tabs bar horizontal scroll */
+  .portal-tabs-scroll {
+    display: flex !important;
+    gap: 8px !important;
+    overflow-x: auto !important;
+    flex-wrap: nowrap !important;
+    -webkit-overflow-scrolling: touch !important;
+    scrollbar-width: none !important;
+    padding-bottom: 4px !important;
+  }
+  .portal-tabs-scroll::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  /* Responsive 2-column KPI grids on iPhone 17 viewport */
+  .kpi-grid-mobile-2col {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
   }
 }
+
+/* Extra Small Phones (<= 360px: iPhone SE, older compact devices) */
+@media screen and (max-width: 360px) {
+  .main-content-container {
+    padding: 8px 6px !important;
+  }
+
+  .navbar-header {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+
+  .kpi-grid-mobile-2col {
+    grid-template-columns: 1fr !important;
+  }
+}
+
 

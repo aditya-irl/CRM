@@ -147,11 +147,13 @@ const NavbarComponent: React.FC<NavbarProps> = ({
         <NotificationBell user={user} onNavigate={onNavigate} />
 
         <div
+          className="navbar-user-badge"
+          title={`${user.fullName} (${user.role}${user.assignedBranch ? ' • ' + user.assignedBranch : ''})`}
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 10,
-            padding: '4px 10px',
+            gap: 8,
+            padding: '4px 8px',
             background: 'var(--bg-surface-secondary)',
             borderRadius: 'var(--radius-md)',
             border: '1px solid var(--border-subtle)',
@@ -159,8 +161,8 @@ const NavbarComponent: React.FC<NavbarProps> = ({
         >
           <div
             style={{
-              width: 26,
-              height: 26,
+              width: 28,
+              height: 28,
               borderRadius: '50%',
               background: 'var(--primary-subtle)',
               color: 'var(--primary)',
@@ -168,14 +170,15 @@ const NavbarComponent: React.FC<NavbarProps> = ({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: 11,
-              fontWeight: 700,
+              fontSize: 12,
+              fontWeight: 800,
+              flexShrink: 0,
             }}
           >
             {user.fullName.charAt(0)}
           </div>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 700 }}>{user.fullName}</div>
+          <div className="navbar-user-info">
+            <div style={{ fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>{user.fullName}</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               {getRoleBadge(user.role)}
               {user.assignedBranch && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>• {user.assignedBranch}</span>}
@@ -183,9 +186,9 @@ const NavbarComponent: React.FC<NavbarProps> = ({
           </div>
         </div>
 
-        <button onClick={onLogout} className="btn btn-secondary btn-sm" title="Sign out of system">
+        <button onClick={onLogout} className="btn btn-secondary btn-sm" title="Sign out of system" aria-label="Sign out">
           <LogOut size={13} />
-          <span>Exit</span>
+          <span className="btn-responsive-label">Exit</span>
         </button>
       </div>
     </header>

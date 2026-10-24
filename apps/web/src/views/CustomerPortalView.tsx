@@ -891,9 +891,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
 
               {/* ─── Metrics Grid ────────────────────────────────────────── */}
               <div
+                className="kpi-grid-mobile-2col"
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
                   gap: 12,
                 }}
               >
@@ -1306,6 +1307,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
             {/* ─── Breakdown Tabs ────────────────────────────────────────── */}
             <div className="crm-card" style={{ padding: 20 }}>
               <div
+                className="portal-tabs-scroll"
                 style={{
                   display: 'flex',
                   gap: 8,
@@ -1414,140 +1416,296 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
 
               {/* Tab 1: EMI Schedule */}
               {activeTab === 'schedule' && (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, textAlign: 'left' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-secondary)' }}>
-                        <th style={{ padding: '10px 12px' }}>#</th>
-                        <th style={{ padding: '10px 12px' }}>Due Date</th>
-                        <th style={{ padding: '10px 12px', textAlign: 'right' }}>Original EMI</th>
-                        <th style={{ padding: '10px 12px', textAlign: 'right' }}>Penalty</th>
-                        <th style={{ padding: '10px 12px', textAlign: 'right' }}>Paid</th>
-                        <th style={{ padding: '10px 12px', textAlign: 'right' }}>Total Remaining</th>
-                        <th style={{ padding: '10px 12px', textAlign: 'center' }}>Status</th>
-                        <th style={{ padding: '10px 12px', textAlign: 'center' }}>Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.installments && data.installments.length > 0 ? (
-                        data.installments.map((inst) => {
-                          const totalRemaining = inst.totalDue !== undefined ? inst.totalDue : (inst.remainingAmount + (inst.penaltyAmount || 0));
-                          const isFullyPaid = inst.status === 'PAID' || totalRemaining <= 0;
-                          return (
-                            <tr
-                              key={inst.installmentNumber}
-                              style={{
-                                borderBottom: '1px solid var(--border-subtle)',
-                                background: isFullyPaid ? 'transparent' : 'var(--bg-surface-secondary)',
-                              }}
-                            >
-                              <td style={{ padding: '12px', fontWeight: 700 }}>{inst.installmentNumber}</td>
-                              <td style={{ padding: '12px' }}>{formatDateDDMMYYYY(inst.dueDate)}</td>
-                              <td style={{ padding: '12px', textAlign: 'right', fontWeight: 600 }}>{formatINR(inst.expectedAmount)}</td>
-                              <td style={{ padding: '12px', textAlign: 'right', color: (inst.penaltyAmount || 0) > 0 ? 'var(--danger)' : 'var(--text-muted)', fontWeight: (inst.penaltyAmount || 0) > 0 ? 700 : 400 }}>
-                                {formatINR(inst.penaltyAmount || 0)}
-                              </td>
-                              <td style={{ padding: '12px', textAlign: 'right', color: inst.paidAmount > 0 ? 'var(--success-text)' : 'inherit' }}>
-                                {formatINR(inst.paidAmount)}
-                              </td>
-                              <td style={{ padding: '12px', textAlign: 'right', fontWeight: 600, color: totalRemaining > 0 ? 'var(--danger-text)' : 'inherit' }}>
-                                {formatINR(totalRemaining)}
-                              </td>
-                              <td style={{ padding: '12px', textAlign: 'center' }}>{getStatusBadge(inst.status)}</td>
-                              <td style={{ padding: '12px', textAlign: 'center' }}>
-                                {isFullyPaid ? (
-                                  <span style={{ fontSize: 12, color: 'var(--success-text)', display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 600 }}>
-                                    <CheckCircle2 size={14} /> Paid
-                                  </span>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    disabled={paymentPhase !== 'idle'}
-                                    onClick={() => handleCashfreePay(inst.installmentNumber, inst.installmentNumber)}
-                                    className="btn btn-sm btn-primary"
-                                    style={{
-                                      padding: '5px 12px',
-                                      fontSize: 12,
-                                      fontWeight: 700,
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: 5,
-                                      borderRadius: 'var(--radius-sm)',
-                                      cursor: paymentPhase !== 'idle' ? 'not-allowed' : 'pointer',
-                                    }}
-                                  >
-                                    {payingInstallmentNumber === inst.installmentNumber ? (
-                                      <>
-                                        <RefreshCw size={12} className="animate-spin" />
-                                        <span>{paymentPhase === 'redirecting' ? 'Redirecting...' : 'Initiating...'}</span>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <CreditCard size={12} />
-                                        <span>Pay Now</span>
-                                      </>
-                                    )}
-                                  </button>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })
-                      ) : (
-                        <tr>
-                          <td colSpan={8} style={{ padding: 24, textAlign: 'center', color: 'var(--text-secondary)' }}>
-                            No installments recorded.
-                          </td>
+                <div>
+                  {/* Mobile Installment Cards (Displayed on <= 768px, including iPhone 17) */}
+                  <div className="mobile-only-card-view">
+                    {data.installments && data.installments.length > 0 ? (
+                      data.installments.map((inst) => {
+                        const totalRemaining = inst.totalDue !== undefined ? inst.totalDue : (inst.remainingAmount + (inst.penaltyAmount || 0));
+                        const isFullyPaid = inst.status === 'PAID' || totalRemaining <= 0;
+                        return (
+                          <div
+                            key={`mob-inst-${inst.installmentNumber}`}
+                            className="crm-card"
+                            style={{
+                              padding: '14px 16px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 10,
+                              background: isFullyPaid ? '#ffffff' : 'var(--bg-surface-secondary)',
+                              borderLeft: isFullyPaid ? '4px solid var(--success)' : (inst.penaltyAmount || 0) > 0 ? '4px solid var(--danger)' : '4px solid var(--primary)',
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ fontWeight: 800, fontSize: 15, color: 'var(--text-primary)' }}>
+                                  EMI #{inst.installmentNumber}
+                                </span>
+                                {getStatusBadge(inst.status)}
+                              </div>
+                              {inst.daysOverdue !== undefined && inst.daysOverdue > 0 && (
+                                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--danger)', background: 'var(--danger-bg)', padding: '2px 8px', borderRadius: 4 }}>
+                                  {inst.daysOverdue}d overdue
+                                </span>
+                              )}
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, fontSize: 12 }}>
+                              <div>
+                                <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>Due Date</span>
+                                <div style={{ fontWeight: 700, marginTop: 1 }}>{formatDateDDMMYYYY(inst.dueDate)}</div>
+                              </div>
+                              <div style={{ textAlign: 'right' }}>
+                                <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>Original EMI</span>
+                                <div style={{ fontWeight: 700, marginTop: 1 }}>{formatINR(inst.expectedAmount)}</div>
+                              </div>
+                              {(inst.penaltyAmount || 0) > 0 && (
+                                <div>
+                                  <span style={{ color: 'var(--danger)', fontSize: 11 }}>Late Penalty</span>
+                                  <div style={{ fontWeight: 800, color: 'var(--danger)', marginTop: 1 }}>{formatINR(inst.penaltyAmount || 0)}</div>
+                                </div>
+                              )}
+                              <div style={{ textAlign: (inst.penaltyAmount || 0) > 0 ? 'right' : 'left' }}>
+                                <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>Total Remaining</span>
+                                <div style={{ fontWeight: 800, fontSize: 14, color: totalRemaining > 0 ? 'var(--danger-text)' : 'var(--success-text)', marginTop: 1 }}>
+                                  {formatINR(totalRemaining)}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Mobile Installment Action Button */}
+                            <div style={{ marginTop: 4 }}>
+                              {isFullyPaid ? (
+                                <div style={{ fontSize: 12, color: 'var(--success-text)', display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, padding: '6px 0' }}>
+                                  <CheckCircle2 size={16} />
+                                  <span>Paid in Full</span>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={paymentPhase !== 'idle'}
+                                  onClick={() => handleCashfreePay(inst.installmentNumber, inst.installmentNumber)}
+                                  className="btn btn-primary"
+                                  style={{
+                                    width: '100%',
+                                    minHeight: 44,
+                                    fontSize: 14,
+                                    fontWeight: 700,
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: 8,
+                                    cursor: paymentPhase !== 'idle' ? 'not-allowed' : 'pointer',
+                                  }}
+                                >
+                                  {payingInstallmentNumber === inst.installmentNumber ? (
+                                    <>
+                                      <RefreshCw size={14} className="animate-spin" />
+                                      <span>{paymentPhase === 'redirecting' ? 'Redirecting to Checkout...' : 'Connecting to Gateway...'}</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <CreditCard size={15} />
+                                      <span>Pay EMI Online ({formatINR(totalRemaining)})</span>
+                                    </>
+                                  )}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-secondary)' }}>
+                        No installments recorded.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Desktop Installments Table (Displayed on > 768px) */}
+                  <div className="desktop-only-table-view" style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, textAlign: 'left' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-secondary)' }}>
+                          <th style={{ padding: '10px 12px' }}>#</th>
+                          <th style={{ padding: '10px 12px' }}>Due Date</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'right' }}>Original EMI</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'right' }}>Penalty</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'right' }}>Paid</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'right' }}>Total Remaining</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'center' }}>Status</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'center' }}>Action</th>
                         </tr>
-                      )}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {data.installments && data.installments.length > 0 ? (
+                          data.installments.map((inst) => {
+                            const totalRemaining = inst.totalDue !== undefined ? inst.totalDue : (inst.remainingAmount + (inst.penaltyAmount || 0));
+                            const isFullyPaid = inst.status === 'PAID' || totalRemaining <= 0;
+                            return (
+                              <tr
+                                key={inst.installmentNumber}
+                                style={{
+                                  borderBottom: '1px solid var(--border-subtle)',
+                                  background: isFullyPaid ? 'transparent' : 'var(--bg-surface-secondary)',
+                                }}
+                              >
+                                <td style={{ padding: '12px', fontWeight: 700 }}>{inst.installmentNumber}</td>
+                                <td style={{ padding: '12px' }}>{formatDateDDMMYYYY(inst.dueDate)}</td>
+                                <td style={{ padding: '12px', textAlign: 'right', fontWeight: 600 }}>{formatINR(inst.expectedAmount)}</td>
+                                <td style={{ padding: '12px', textAlign: 'right', color: (inst.penaltyAmount || 0) > 0 ? 'var(--danger)' : 'var(--text-muted)', fontWeight: (inst.penaltyAmount || 0) > 0 ? 700 : 400 }}>
+                                  {formatINR(inst.penaltyAmount || 0)}
+                                </td>
+                                <td style={{ padding: '12px', textAlign: 'right', color: inst.paidAmount > 0 ? 'var(--success-text)' : 'inherit' }}>
+                                  {formatINR(inst.paidAmount)}
+                                </td>
+                                <td style={{ padding: '12px', textAlign: 'right', fontWeight: 600, color: totalRemaining > 0 ? 'var(--danger-text)' : 'inherit' }}>
+                                  {formatINR(totalRemaining)}
+                                </td>
+                                <td style={{ padding: '12px', textAlign: 'center' }}>{getStatusBadge(inst.status)}</td>
+                                <td style={{ padding: '12px', textAlign: 'center' }}>
+                                  {isFullyPaid ? (
+                                    <span style={{ fontSize: 12, color: 'var(--success-text)', display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 600 }}>
+                                      <CheckCircle2 size={14} /> Paid
+                                    </span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      disabled={paymentPhase !== 'idle'}
+                                      onClick={() => handleCashfreePay(inst.installmentNumber, inst.installmentNumber)}
+                                      className="btn btn-sm btn-primary"
+                                      style={{
+                                        padding: '5px 12px',
+                                        fontSize: 12,
+                                        fontWeight: 700,
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 5,
+                                        borderRadius: 'var(--radius-sm)',
+                                        cursor: paymentPhase !== 'idle' ? 'not-allowed' : 'pointer',
+                                      }}
+                                    >
+                                      {payingInstallmentNumber === inst.installmentNumber ? (
+                                        <>
+                                          <RefreshCw size={12} className="animate-spin" />
+                                          <span>{paymentPhase === 'redirecting' ? 'Redirecting...' : 'Initiating...'}</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <CreditCard size={12} />
+                                          <span>Pay Now</span>
+                                        </>
+                                      )}
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        ) : (
+                          <tr>
+                            <td colSpan={8} style={{ padding: 24, textAlign: 'center', color: 'var(--text-secondary)' }}>
+                              No installments recorded.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
 
               {/* Tab 2: Payment History */}
               {activeTab === 'history' && (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, textAlign: 'left' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-secondary)' }}>
-                        <th style={{ padding: '10px 12px' }}>Receipt #</th>
-                        <th style={{ padding: '10px 12px' }}>Payment Date</th>
-                        <th style={{ padding: '10px 12px', textAlign: 'right' }}>Amount</th>
-                        <th style={{ padding: '10px 12px' }}>Mode</th>
-                        <th style={{ padding: '10px 12px', textAlign: 'center' }}>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.paymentHistory && data.paymentHistory.length > 0 ? (
-                        data.paymentHistory.map((pmt) => (
-                          <tr key={pmt.receiptNumber} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                            <td style={{ padding: '12px' }}>
-                              <span className="mono" style={{ fontWeight: 700, color: 'var(--primary)' }}>
+                <div>
+                  {/* Mobile Payment History Cards (Displayed on <= 768px, including iPhone 17) */}
+                  <div className="mobile-only-card-view">
+                    {data.paymentHistory && data.paymentHistory.length > 0 ? (
+                      data.paymentHistory.map((pmt) => (
+                        <div
+                          key={`mob-pmt-${pmt.receiptNumber}`}
+                          className="crm-card"
+                          style={{
+                            padding: '12px 14px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 8,
+                            borderLeft: '4px solid var(--success)',
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <Receipt size={14} color="var(--primary)" />
+                              <span className="mono" style={{ fontWeight: 800, color: 'var(--primary)', fontSize: 13 }}>
                                 {pmt.receiptNumber}
                               </span>
-                            </td>
-                            <td style={{ padding: '12px', color: 'var(--text-secondary)' }}>
-                              {formatDateDDMMYYYY(pmt.paymentDate)}
-                            </td>
-                            <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: 'var(--success-text)' }}>
+                            </div>
+                            <div>{getStatusBadge(pmt.status)}</div>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                              <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Payment Date: </span>
+                              <span style={{ fontSize: 12, fontWeight: 600 }}>{formatDateDDMMYYYY(pmt.paymentDate)}</span>
+                            </div>
+                            <div className="mono" style={{ fontSize: 15, fontWeight: 800, color: 'var(--success-text)' }}>
                               {formatINR(pmt.amount)}
-                            </td>
-                            <td style={{ padding: '12px' }}>
-                              <span className="badge badge-upcoming">{pmt.paymentMode}</span>
-                            </td>
-                            <td style={{ padding: '12px', textAlign: 'center' }}>{getStatusBadge(pmt.status)}</td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan={5} style={{ padding: 24, textAlign: 'center', color: 'var(--text-secondary)' }}>
-                            No verified payments yet. Click &ldquo;Pay Now via WhatsApp&rdquo; above to make a payment.
-                          </td>
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'flex-start', borderTop: '1px solid var(--border-subtle)', paddingTop: 6 }}>
+                            <span className="badge badge-upcoming">{pmt.paymentMode}</span>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-secondary)' }}>
+                        No verified payments yet. Click &ldquo;Pay EMI&rdquo; above to make a payment.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Desktop Payment History Table (Displayed on > 768px) */}
+                  <div className="desktop-only-table-view" style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, textAlign: 'left' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-secondary)' }}>
+                          <th style={{ padding: '10px 12px' }}>Receipt #</th>
+                          <th style={{ padding: '10px 12px' }}>Payment Date</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'right' }}>Amount</th>
+                          <th style={{ padding: '10px 12px' }}>Mode</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'center' }}>Status</th>
                         </tr>
-                      )}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {data.paymentHistory && data.paymentHistory.length > 0 ? (
+                          data.paymentHistory.map((pmt) => (
+                            <tr key={pmt.receiptNumber} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                              <td style={{ padding: '12px' }}>
+                                <span className="mono" style={{ fontWeight: 700, color: 'var(--primary)' }}>
+                                  {pmt.receiptNumber}
+                                </span>
+                              </td>
+                              <td style={{ padding: '12px', color: 'var(--text-secondary)' }}>
+                                {formatDateDDMMYYYY(pmt.paymentDate)}
+                              </td>
+                              <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: 'var(--success-text)' }}>
+                                {formatINR(pmt.amount)}
+                              </td>
+                              <td style={{ padding: '12px' }}>
+                                <span className="badge badge-upcoming">{pmt.paymentMode}</span>
+                              </td>
+                              <td style={{ padding: '12px', textAlign: 'center' }}>{getStatusBadge(pmt.status)}</td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={5} style={{ padding: 24, textAlign: 'center', color: 'var(--text-secondary)' }}>
+                              No verified payments yet. Click &ldquo;Pay Now via WhatsApp&rdquo; above to make a payment.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
 

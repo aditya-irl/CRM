@@ -120,6 +120,7 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
 
       <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', lineHeight: 1.15 }}>
         <div
+          className="brand-logo-text"
           style={{
             fontSize: brandFontSize,
             fontWeight: 800,
@@ -134,6 +135,7 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
 
         {(showLegal || subtitle) && (
           <div
+            className="brand-logo-legal"
             style={{
               display: 'flex',
               alignItems: 'center',

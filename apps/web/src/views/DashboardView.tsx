@@ -378,8 +378,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           gap: 12,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginRight: 6 }}>
+        <div className="chip-group-scrollable" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginRight: 6, whiteSpace: 'nowrap' }}>
             PERIOD:
           </span>
           {[
@@ -397,7 +397,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               key={item.id}
               onClick={() => handlePresetChange(item.id)}
               className={`btn btn-xs ${preset === item.id ? 'btn-primary' : 'btn-secondary'}`}
-              style={{ fontSize: 11, padding: '4px 10px' }}
+              style={{ fontSize: 11, padding: '4px 10px', whiteSpace: 'nowrap' }}
             >
               {item.label}
             </button>
@@ -437,9 +437,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       {/* 3. Top 6 KPI Cards */}
       <div
+        className="kpi-grid-mobile-2col"
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
           gap: 14,
         }}
       >

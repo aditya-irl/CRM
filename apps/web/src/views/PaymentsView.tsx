@@ -404,7 +404,7 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({ user }) => {
       <div className="crm-card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
           {/* Date Presets */}
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <div className="chip-group-scrollable" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {(['ALL', 'TODAY', 'YESTERDAY', 'THIS_WEEK', 'THIS_MONTH', 'CUSTOM'] as DatePreset[]).map((preset) => (
               <button
                 key={preset}
@@ -531,7 +531,172 @@ export const PaymentsView: React.FC<PaymentsViewProps> = ({ user }) => {
       </div>
 
       {/* Main Payment History Ledger */}
-      <div className="table-container">
+      {/* 1. Mobile Cards View (Optimized for iPhone 17 and touch viewports <= 768px) */}
+      <div className="mobile-only-card-view">
+        {loading ? (
+          <div className="crm-card" style={{ padding: 32, textAlign: 'center', color: 'var(--text-secondary)' }}>
+            Loading payment history ledger...
+          </div>
+        ) : payments.length === 0 ? (
+          <div className="crm-card" style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>
+            No payment records found matching the applied filters.
+          </div>
+        ) : (
+          payments.map((p) => {
+            const isReversed = p.status === 'REVERSED' || Boolean(p.isReversal);
+            const source = p.collectionSource || 'DIRECT_CUSTOMER';
+            const storeName = p.dealerStoreName || (p as any).dealer_store_name;
+            const dealerCode = p.dealerCode || (p as any).dealer_code;
+            const agentName = p.agentName || (p as any).source_agent_name || (p as any).collected_by_name;
+
+            return (
+              <div
+                key={`mob-card-${p.id}`}
+                className="crm-card"
+                style={{
+                  padding: '14px 16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10,
+                  borderLeft: isReversed
+                    ? '4px solid var(--danger)'
+                    : p.status === 'PENDING_APPROVAL' || p.status === 'PENDING_VERIFICATION'
+                    ? '4px solid var(--warning)'
+                    : '4px solid var(--success)',
+                }}
+              >
+                {/* Header: Receipt # and Status Badge */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Receipt size={14} color="var(--primary)" />
+                    <span className="mono" style={{ fontWeight: 800, color: 'var(--primary)', fontSize: 13 }}>
+                      {p.receiptNumber}
+                    </span>
+                  </div>
+                  <div>
+                    {p.status === 'PENDING_APPROVAL' || p.status === 'PENDING_VERIFICATION' ? (
+                      <span className="badge badge-warning" style={{ fontWeight: 700 }}>
+                        PENDING APPROVAL
+                      </span>
+                    ) : p.status === 'REJECTED' ? (
+                      <span className="badge badge-overdue" style={{ fontWeight: 700 }}>
+                        REJECTED
+                      </span>
+                    ) : (
+                      <span className={`badge ${isReversed ? 'badge-overdue' : 'badge-paid'}`}>
+                        {isReversed ? 'REVERSED' : 'COMPLETED'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Borrower & Loan Info */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>
+                      {p.customerName || (p as any).customer_name}
+                    </div>
+                    <div className="mono" style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                      {p.customerCode || (p as any).customer_code} • {p.loanAccountNo || (p as any).loan_account_no}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div
+                      className="mono"
+                      style={{
+                        fontSize: 16,
+                        fontWeight: 800,
+                        color: isReversed
+                          ? 'var(--text-muted)'
+                          : p.status === 'PENDING_APPROVAL' || p.status === 'PENDING_VERIFICATION'
+                          ? 'var(--warning-text)'
+                          : 'var(--success-text)',
+                        textDecoration: isReversed ? 'line-through' : 'none',
+                      }}
+                    >
+                      {formatINR(p.amount)}
+                    </div>
+                    <div className="mono" style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
+                      {formatDateDDMMYYYY(p.paymentTimestamp)}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Source & Payment Mode Tags */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6, paddingTop: 6, borderTop: '1px solid var(--border-subtle)', fontSize: 11 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {source === 'DIRECT_CUSTOMER' ? (
+                      <span className="badge badge-paid" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <Building2 size={11} />
+                        <span>DIRECT</span>
+                      </span>
+                    ) : source === 'DEALER' ? (
+                      <span className="badge badge-terracotta" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <Store size={11} />
+                        <span>{storeName || 'DEALER'} {dealerCode ? `(${dealerCode})` : ''}</span>
+                      </span>
+                    ) : (
+                      <span className="badge badge-due-today" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <UserCheck size={11} />
+                        <span>{agentName || 'RECOVERY AGENT'}</span>
+                      </span>
+                    )}
+                    <span className="badge badge-upcoming">{p.paymentMode}</span>
+                  </div>
+                </div>
+
+                {/* Mobile Action Buttons with Thumb-Friendly Touch Targets */}
+                <div style={{ display: 'grid', gridTemplateColumns: isAdmin && (p.status === 'PENDING_VERIFICATION' || p.status === 'PENDING_APPROVAL') ? 'repeat(2, 1fr)' : 'repeat(2, 1fr)', gap: 8, marginTop: 4 }}>
+                  {isAdmin && (p.status === 'PENDING_VERIFICATION' || p.status === 'PENDING_APPROVAL') && (
+                    <>
+                      <button
+                        onClick={() => handleApprovePayment(p.id)}
+                        disabled={actionLoading === p.id}
+                        className="btn btn-primary btn-sm"
+                        style={{ width: '100%', minHeight: 40, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
+                      >
+                        <CheckCircle2 size={14} />
+                        <span>Approve</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedPaymentForRejection(p);
+                          setRejectionReason('');
+                        }}
+                        disabled={actionLoading === p.id}
+                        className="btn btn-danger btn-sm"
+                        style={{ width: '100%', minHeight: 40, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
+                      >
+                        <X size={14} />
+                        <span>Reject</span>
+                      </button>
+                    </>
+                  )}
+                  <button
+                    onClick={() => handleOpenReceipt(p.id)}
+                    className="btn btn-secondary btn-sm"
+                    style={{ width: '100%', minHeight: 40, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
+                  >
+                    <Receipt size={14} />
+                    <span>Receipt</span>
+                  </button>
+                  <button
+                    onClick={() => handleOpenDetail(p.id)}
+                    className="btn btn-secondary btn-sm"
+                    style={{ width: '100%', minHeight: 40, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
+                  >
+                    <Eye size={14} />
+                    <span>Details</span>
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* 2. Desktop Tabular View (Displayed on desktop/tablet > 768px) */}
+      <div className="desktop-only-table-view table-container">
         <table className="crm-table">
           <thead>
             <tr>

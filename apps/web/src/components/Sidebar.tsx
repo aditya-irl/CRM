@@ -17,6 +17,7 @@ import {
   Smartphone,
   MessageCircle,
   PhoneCall,
+  X,
 } from 'lucide-react';
 
 export type NavTab =
@@ -168,15 +169,43 @@ const SidebarComponent: React.FC<SidebarProps> = ({
       <div
         style={{
           padding: '0 10px 14px',
-          fontSize: 11,
-          fontWeight: 700,
-          color: 'var(--text-muted)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.04em',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
           flexShrink: 0,
         }}
       >
-        {isDealer ? 'Partner Terminal' : 'Operations Menu'}
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            color: 'var(--text-muted)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.04em',
+          }}
+        >
+          {isDealer ? 'Partner Terminal' : 'Operations Menu'}
+        </span>
+        {onCloseMobile && (
+          <button
+            onClick={onCloseMobile}
+            className="mobile-sidebar-close-btn"
+            aria-label="Close Navigation"
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-muted)',
+              cursor: 'pointer',
+              padding: 6,
+              borderRadius: 'var(--radius-sm)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <X size={18} />
+          </button>
+        )}
       </div>
 
       <nav
@@ -205,7 +234,8 @@ const SidebarComponent: React.FC<SidebarProps> = ({
                 display: 'flex',
                 alignItems: 'center',
                 gap: 10,
-                padding: '9px 12px',
+                padding: '10px 12px',
+                minHeight: 44,
                 borderRadius: 'var(--radius-md)',
                 background: isActive ? 'var(--primary-subtle)' : 'transparent',
                 color: isActive ? 'var(--primary)' : 'var(--text-secondary)',
@@ -216,6 +246,7 @@ const SidebarComponent: React.FC<SidebarProps> = ({
                 fontSize: 13,
                 transition: 'all 0.12s ease',
                 flexShrink: 0,
+                touchAction: 'manipulation',
               }}
               onMouseEnter={(e) => {
                 if (!isActive) {

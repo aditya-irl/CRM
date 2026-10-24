@@ -306,7 +306,7 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+    <div className="crm-app-viewport" style={{ display: 'flex', flexDirection: 'column', height: '100dvh', minHeight: '100vh', overflow: 'hidden' }}>
       <Navbar
         user={user}
         onLogout={handleLogout}

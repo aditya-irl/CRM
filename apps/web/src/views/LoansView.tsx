@@ -773,7 +773,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
       </div>
 
       {/* Portfolio Status Filter Tabs */}
-      <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid var(--border-subtle)', paddingBottom: 10, flexWrap: 'wrap' }}>
+      <div className="chip-group-scrollable" style={{ display: 'flex', gap: 8, borderBottom: '1px solid var(--border-subtle)', paddingBottom: 10, flexWrap: 'wrap' }}>
         <button
           onClick={() => setActiveStatusTab('ALL')}
           className={`btn btn-sm ${activeStatusTab === 'ALL' ? 'btn-primary' : 'btn-secondary'}`}
@@ -1105,7 +1105,11 @@ export const LoansView: React.FC<LoansViewProps> = ({
         </div>
       ) : (
         /* Loans Table */
-        <div className="table-container">
+        <div>
+          <div className="mobile-scroll-cue">
+            <span>← Swipe horizontally to view complete portfolio details & actions →</span>
+          </div>
+          <div className="table-container">
           {activeStatusTab === 'PENDING_APPROVAL' && currentUser?.role !== UserRole.DEALER ? (
           <table className="crm-table">
             <thead>
@@ -1377,6 +1381,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
             </tbody>
           </table>
         )}
+        </div>
       </div>
       )}
 
