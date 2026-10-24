@@ -16,6 +16,7 @@ import {
   Building2,
   Smartphone,
   MessageCircle,
+  PhoneCall,
 } from 'lucide-react';
 
 export type NavTab =
@@ -26,6 +27,7 @@ export type NavTab =
   | 'dealer-settlements'
   | 'dealer-payables'
   | 'agent-collections'
+  | 'contact-activity'
   | 'direct-collections'
   | 'customers'
   | 'devices'
@@ -103,6 +105,11 @@ const SidebarComponent: React.FC<SidebarProps> = ({
       id: 'agent-collections',
       label: isAgent ? 'My Collections' : 'Agent Collections',
       icon: <UserCheck size={17} />,
+    },
+    {
+      id: 'contact-activity',
+      label: isAgent ? 'Contact Activity' : 'Agent Contact Activity',
+      icon: <PhoneCall size={17} />,
     },
     { id: 'direct-collections', label: 'Direct Collections', icon: <Building2 size={17} />, hiddenForAgent: true },
     {

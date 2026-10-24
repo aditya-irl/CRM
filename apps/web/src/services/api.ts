@@ -37,6 +37,10 @@ import {
   ICustomerVerification,
   CustomerVerificationStatus,
   VerificationSection,
+  IContactActivity,
+  IContactActivitySummary,
+  IAgentPerformanceMetrics,
+  IAdminContactActivitySummary,
 } from '@crm/shared';
 
 export function isValidTrustedApiBase(rawUrl: string): boolean {
@@ -2078,6 +2082,94 @@ export class ApiClient {
 
   public static async getNotificationUnreadCount(): Promise<{ unreadCount: number }> {
     return this.request<{ unreadCount: number }>('/notifications/unread-count');
+  }
+
+  // --- Contact Activities & Follow-ups ---
+  public static async createContactActivity(data: any): Promise<IContactActivity> {
+    const res = await this.request<{ success: boolean; data: IContactActivity }>('/contact-activities', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return (res as any).data || res;
+  }
+
+  public static async getContactActivities(queryParams: Record<string, any> = {}): Promise<{
+    data: IContactActivity[];
+    meta: { total: number; page: number; limit: number; totalPages: number };
+  }> {
+    const params = new URLSearchParams();
+    Object.entries(queryParams).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') {
+        params.set(k, String(v));
+      }
+    });
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await this.request<{
+      success: boolean;
+      data: IContactActivity[];
+      meta: { total: number; page: number; limit: number; totalPages: number };
+    }>(`/contact-activities${qs}`);
+    return {
+      data: (res as any).data || [],
+      meta: (res as any).meta || { total: 0, page: 1, limit: 50, totalPages: 1 },
+    };
+  }
+
+  public static async getContactActivitySummary(params?: { date?: string; agentId?: string }): Promise<IContactActivitySummary> {
+    const qs = new URLSearchParams();
+    if (params?.date) qs.set('date', params.date);
+    if (params?.agentId) qs.set('agentId', params.agentId);
+    const query = qs.toString() ? `?${qs.toString()}` : '';
+    const res = await this.request<{ success: boolean; data: IContactActivitySummary }>(`/contact-activities/summary${query}`);
+    return (res as any).data || res;
+  }
+
+  public static async getAdminContactActivitySummary(queryParams: Record<string, any> = {}): Promise<IAdminContactActivitySummary> {
+    const params = new URLSearchParams();
+    Object.entries(queryParams).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') {
+        params.set(k, String(v));
+      }
+    });
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await this.request<{ success: boolean; data: IAdminContactActivitySummary }>(`/contact-activities/admin-summary${qs}`);
+    return (res as any).data || res;
+  }
+
+  public static async getCustomerContactActivities(customerId: string): Promise<IContactActivity[]> {
+    const res = await this.request<{ success: boolean; data: IContactActivity[] }>(`/contact-activities/customer/${customerId}`);
+    return (res as any).data || res;
+  }
+
+  public static async updateContactActivityFollowUp(id: string, data: any): Promise<IContactActivity> {
+    const res = await this.request<{ success: boolean; data: IContactActivity }>(`/contact-activities/${id}/follow-up`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+    return (res as any).data || res;
+  }
+
+  public static async downloadContactActivitiesExport(queryParams: Record<string, string> = {}) {
+    const token = this.getToken();
+    const params = new URLSearchParams(queryParams);
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(`${API_BASE}/contact-activities/export?${params.toString()}`, { headers });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: { message: 'Export failed' } }));
+      throw new Error(err.error?.message || 'Failed to export Contact Activities CSV');
+    }
+
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `contact_activities_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
   }
 }
 

@@ -21,6 +21,13 @@ import {
   DealerPayableStatus,
   CustomerVerificationStatus,
   VerificationSection,
+  ContactMethod,
+  ContactOutcome,
+  CustomerResponseCategory,
+  NonPaymentReason,
+  PaymentCommitmentStatus,
+  FollowUpPriority,
+  FollowUpStatus,
 } from './enums';
 
 export interface IDealer {
@@ -1333,3 +1340,87 @@ export interface ICustomerPortalProfile {
   confirmedAt?: string | null;
   correctionRequests: ICustomerCorrectionRequest[];
 }
+
+export interface IContactActivity {
+  id: string;
+  customerId: string;
+  customerName?: string;
+  customerCode?: string;
+  primaryPhone?: string;
+  areaRoute?: string;
+  loanId?: string | null;
+  loanAccountNo?: string | null;
+  emiId?: string | null;
+  installmentNumber?: number | null;
+  agentId: string;
+  agentName?: string;
+  agentEmail?: string;
+  agentPhone?: string;
+  dealerId?: string | null;
+  storeName?: string | null;
+  contactMethod: ContactMethod;
+  contactMethodOther?: string | null;
+  contactPhoneUsed?: string | null;
+  contactOutcome: ContactOutcome;
+  contactOutcomeOther?: string | null;
+  customerResponseCategory?: CustomerResponseCategory | null;
+  customerResponseNotes?: string | null;
+  nonPaymentReason?: NonPaymentReason | null;
+  nonPaymentReasonNotes?: string | null;
+  promisedPaymentAmount?: number | null;
+  promisedPaymentDate?: string | null;
+  paymentModePromised?: string | null;
+  commitmentStatus: PaymentCommitmentStatus;
+  commitmentFulfilledAt?: string | null;
+  commitmentStatusNotes?: string | null;
+  followUpDate?: string | null;
+  followUpTime?: string | null;
+  followUpPriority: FollowUpPriority;
+  followUpStatus: FollowUpStatus;
+  followUpCompletedAt?: string | null;
+  followUpNotes?: string | null;
+  agentNotes?: string | null;
+  createdBy: string;
+  createdByName?: string;
+  updatedBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IContactActivitySummary {
+  totalCustomersContacted: number;
+  totalCallAttempts: number;
+  callsAnswered: number;
+  callsUnanswered: number;
+  whatsAppCount: number;
+  smsCount: number;
+  inPersonVisits: number;
+  successfulConversations: number;
+  promisedToPayCount: number;
+  followUpsDueToday: number;
+  followUpsOverdue: number;
+  collectionsResultingCount: number;
+  collectionsResultingAmount: number;
+}
+
+export interface IAgentPerformanceMetrics {
+  agentId: string;
+  agentName: string;
+  agentEmail: string;
+  agentPhone: string;
+  customersContacted: number;
+  callAttempts: number;
+  conversationsCompleted: number;
+  followUpsCompleted: number;
+  followUpsOverdue: number;
+  promisesMade: number;
+  promisesFulfilled: number;
+  collectionsCount: number;
+  collectionsAmount: number;
+}
+
+export interface IAdminContactActivitySummary {
+  overview: IContactActivitySummary;
+  agents: IAgentPerformanceMetrics[];
+}
+

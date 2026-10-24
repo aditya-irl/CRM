@@ -418,4 +418,49 @@ CREATE TABLE IF NOT EXISTS cashfree_webhook_events (
 );
 CREATE INDEX IF NOT EXISTS idx_cf_webhook_events_order_id ON cashfree_webhook_events(order_id);
 
+CREATE TABLE IF NOT EXISTS customer_contact_activities (
+    id TEXT PRIMARY KEY,
+    customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    loan_id TEXT REFERENCES loans(id) ON DELETE SET NULL,
+    emi_id TEXT REFERENCES emi_installments(id) ON DELETE SET NULL,
+    agent_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    dealer_id TEXT REFERENCES dealers(id) ON DELETE SET NULL,
+    contact_method TEXT NOT NULL,
+    contact_method_other TEXT,
+    contact_phone_used TEXT,
+    contact_outcome TEXT NOT NULL,
+    contact_outcome_other TEXT,
+    customer_response_category TEXT,
+    customer_response_notes TEXT,
+    non_payment_reason TEXT,
+    non_payment_reason_notes TEXT,
+    promised_payment_amount NUMERIC(12, 2),
+    promised_payment_date TEXT,
+    payment_mode_promised TEXT,
+    commitment_status TEXT NOT NULL DEFAULT 'NONE',
+    commitment_fulfilled_at TEXT,
+    commitment_status_notes TEXT,
+    follow_up_date TEXT,
+    follow_up_time TEXT,
+    follow_up_priority TEXT NOT NULL DEFAULT 'MEDIUM',
+    follow_up_status TEXT NOT NULL DEFAULT 'NONE',
+    follow_up_completed_at TEXT,
+    follow_up_notes TEXT,
+    agent_notes TEXT,
+    created_by TEXT NOT NULL REFERENCES users(id),
+    updated_by TEXT REFERENCES users(id),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_cca_customer_id ON customer_contact_activities(customer_id);
+CREATE INDEX IF NOT EXISTS idx_cca_loan_id ON customer_contact_activities(loan_id);
+CREATE INDEX IF NOT EXISTS idx_cca_agent_created ON customer_contact_activities(agent_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_cca_dealer_id ON customer_contact_activities(dealer_id);
+CREATE INDEX IF NOT EXISTS idx_cca_created_at ON customer_contact_activities(created_at);
+CREATE INDEX IF NOT EXISTS idx_cca_follow_up ON customer_contact_activities(follow_up_date, follow_up_status);
+CREATE INDEX IF NOT EXISTS idx_cca_commitment ON customer_contact_activities(commitment_status, promised_payment_date);
+CREATE INDEX IF NOT EXISTS idx_cca_method_outcome ON customer_contact_activities(contact_method, contact_outcome);
+
+
 

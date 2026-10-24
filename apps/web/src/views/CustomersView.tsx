@@ -14,12 +14,14 @@ import {
   ICustomerVerification,
   CustomerVerificationStatus,
   VerificationSection,
+  IContactActivity,
 } from '@crm/shared';
 import { AddCustomerWizard } from '../components/AddCustomerWizard';
 import { EditCustomerModal } from '../components/EditCustomerModal';
 import { DynamicAttachmentManager, AttachmentItem } from '../components/DynamicAttachmentManager';
 import { PortalLinkManager } from '../components/PortalLinkManager';
 import { DocumentViewerModal } from '../components/DocumentViewerModal';
+import { LogContactModal } from '../components/LogContactModal';
 import {
   Plus,
   Search,
@@ -72,8 +74,10 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
     callLogs: any[];
   } | null>(null);
   const [customerPayments, setCustomerPayments] = useState<IPayment[]>([]);
+  const [customerContactActivities, setCustomerContactActivities] = useState<IContactActivity[]>([]);
+  const [showLogContactModal, setShowLogContactModal] = useState<boolean>(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const [activeProfileTab, setActiveProfileTab] = useState<'contact' | 'photos' | 'documents' | 'product' | 'finance' | 'payments' | 'calls' | 'verification'>('contact');
+  const [activeProfileTab, setActiveProfileTab] = useState<'contact' | 'photos' | 'documents' | 'product' | 'finance' | 'payments' | 'calls' | 'verification' | 'contact-history'>('contact');
 
   // Verification & Correction Requests State
   const [verifData, setVerifData] = useState<{
@@ -159,14 +163,16 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
     setNewCustomerPhotos([]);
     setNewProductPhotos([]);
     try {
-      const [data, pays, verifs] = await Promise.all([
+      const [data, pays, verifs, contacts] = await Promise.all([
         ApiClient.getCustomerDetail(id),
         ApiClient.listPayments(undefined, 1, 50, id).catch(() => []),
         ApiClient.getCustomerVerifications(id).catch(() => null),
+        ApiClient.getCustomerContactActivities(id).catch(() => []),
       ]);
       setCustomerDetail(data);
       setCustomerPayments(pays);
       setVerifData(verifs);
+      setCustomerContactActivities(contacts);
     } catch (err: any) {
       alert(err.message || 'Failed to load customer profile');
     } finally {
@@ -470,6 +476,16 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
                 </button>
 
                 <button
+                  onClick={() => setShowLogContactModal(true)}
+                  className="btn btn-primary btn-sm"
+                  style={{ display: 'flex', alignItems: 'center', gap: 5 }}
+                  title="Log contact attempt, response & follow-up"
+                >
+                  <PhoneCall size={13} />
+                  <span>Log Contact</span>
+                </button>
+
+                <button
                   onClick={() => sendWhatsApp(customerDetail.customer)}
                   className="btn btn-secondary btn-sm"
                   style={{ color: '#16a34a' }}
@@ -551,6 +567,12 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
                 className={`crm-tab ${activeProfileTab === 'calls' ? 'active' : ''}`}
               >
                 Recovery Calls ({customerDetail.callLogs.length})
+              </button>
+              <button
+                onClick={() => setActiveProfileTab('contact-history')}
+                className={`crm-tab ${activeProfileTab === 'contact-history' ? 'active' : ''}`}
+              >
+                Contact & Follow-up History ({customerContactActivities.length})
               </button>
               <button
                 onClick={() => setActiveProfileTab('verification')}
@@ -1108,6 +1130,142 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
                           )}
                           <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 4 }}>
                             Agent: {log.agent_name || 'Field Agent'}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB: CONTACT & FOLLOW-UP HISTORY */}
+              {activeProfileTab === 'contact-history' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <h4 style={{ fontSize: 13, fontWeight: 700, margin: 0 }}>Customer Contact & Recovery Timeline</h4>
+                      <p style={{ fontSize: 11, color: 'var(--text-secondary)', margin: '2px 0 0' }}>
+                        Immutable history of contact attempts, recorded non-payment reasons, commitments, and follow-ups.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setShowLogContactModal(true)}
+                      className="btn btn-primary btn-sm"
+                      style={{ display: 'flex', alignItems: 'center', gap: 5 }}
+                    >
+                      <PhoneCall size={12} />
+                      <span>Log Contact</span>
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {customerContactActivities.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)', fontSize: 12 }}>
+                        No customer contact activities logged yet.
+                      </div>
+                    ) : (
+                      customerContactActivities.map((act) => (
+                        <div
+                          key={act.id}
+                          style={{
+                            padding: 14,
+                            background: 'var(--bg-surface-secondary)',
+                            borderRadius: 'var(--radius-md)',
+                            border: '1px solid var(--border-subtle)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 8,
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                              <span className="badge badge-info" style={{ textTransform: 'none', fontSize: 11 }}>
+                                {act.contactMethod.replace(/_/g, ' ')}
+                              </span>
+                              <span
+                                className="badge"
+                                style={{
+                                  fontSize: 11,
+                                  backgroundColor:
+                                    act.contactOutcome === 'ANSWERED_CONVERSATION_COMPLETED' || act.contactOutcome === 'VISIT_COMPLETED'
+                                      ? '#dcfce7'
+                                      : '#fee2e2',
+                                  color:
+                                    act.contactOutcome === 'ANSWERED_CONVERSATION_COMPLETED' || act.contactOutcome === 'VISIT_COMPLETED'
+                                      ? '#15803d'
+                                      : '#b91c1c',
+                                }}
+                              >
+                                {act.contactOutcome.replace(/_/g, ' ')}
+                              </span>
+                            </div>
+                            <span className="mono" style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                              {new Date(act.createdAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: true })}
+                            </span>
+                          </div>
+
+                          {act.customerResponseCategory && (
+                            <div style={{ fontSize: 12, fontWeight: 600, color: '#1e3a8a' }}>
+                              Response: {act.customerResponseCategory.replace(/_/g, ' ')}
+                            </div>
+                          )}
+
+                          {act.customerResponseNotes && (
+                            <div style={{ fontSize: 12, color: 'var(--text-primary)', whiteSpace: 'pre-wrap' }}>
+                              "{act.customerResponseNotes}"
+                            </div>
+                          )}
+
+                          {act.nonPaymentReason && (
+                            <div style={{ fontSize: 11, color: '#b91c1c' }}>
+                              <strong>Non-Payment Reason:</strong> {act.nonPaymentReason.replace(/_/g, ' ')}
+                              {act.nonPaymentReasonNotes && ` — ${act.nonPaymentReasonNotes}`}
+                            </div>
+                          )}
+
+                          {act.promisedPaymentAmount && (
+                            <div
+                              style={{
+                                padding: '6px 10px',
+                                background: '#f0fdf4',
+                                border: '1px solid #bbf7d0',
+                                borderRadius: 6,
+                                fontSize: 11,
+                                color: '#166534',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                              }}
+                            >
+                              <span>
+                                Promised Payment: <strong>{formatINR(Number(act.promisedPaymentAmount))}</strong> on{' '}
+                                {act.promisedPaymentDate || 'N/A'}
+                              </span>
+                              <span style={{ fontWeight: 700 }}>Status: {act.commitmentStatus}</span>
+                            </div>
+                          )}
+
+                          {act.followUpDate && (
+                            <div
+                              style={{
+                                padding: '6px 10px',
+                                background: '#fff7ed',
+                                border: '1px solid #fed7aa',
+                                borderRadius: 6,
+                                fontSize: 11,
+                                color: '#9a3412',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                              }}
+                            >
+                              <span>
+                                Next Follow-up: <strong>{act.followUpDate} at {act.followUpTime || '11:00'}</strong> ({act.followUpPriority} priority)
+                              </span>
+                              <span style={{ fontWeight: 700 }}>Status: {act.followUpStatus}</span>
+                            </div>
+                          )}
+
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', borderTop: '1px solid var(--border-subtle)', paddingTop: 6 }}>
+                            Recorded by Agent: <strong>{act.agentName || 'Agent'}</strong> ({act.agentEmail || 'Authorized Staff'})
                           </div>
                         </div>
                       ))
@@ -1724,6 +1882,27 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
           docType={previewDoc.docType}
           fileMimeType={previewDoc.fileMimeType}
           onClose={() => setPreviewDoc(null)}
+        />
+      )}
+
+      {/* Log Contact Activity Modal */}
+      {selectedCustomerId && customerDetail && (
+        <LogContactModal
+          isOpen={showLogContactModal}
+          onClose={() => setShowLogContactModal(false)}
+          onSuccess={() => {
+            if (selectedCustomerId) {
+              ApiClient.getCustomerContactActivities(selectedCustomerId)
+                .then(setCustomerContactActivities)
+                .catch(() => {});
+            }
+          }}
+          preselectedCustomer={customerDetail.customer}
+          preselectedLoan={
+            customerDetail.loans && customerDetail.loans.length > 0
+              ? customerDetail.loans[0]
+              : null
+          }
         />
       )}
     </div>

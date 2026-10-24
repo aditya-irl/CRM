@@ -23,8 +23,10 @@ import {
   FileText,
   X,
   Share2,
+  PhoneCall,
 } from 'lucide-react';
 import { RecordPaymentModal } from '../components/RecordPaymentModal';
+import { LogContactModal } from '../components/LogContactModal';
 
 export const QueueView: React.FC = () => {
   const [queue, setQueue] = useState<IAgentQueueItem[]>([]);
@@ -38,6 +40,8 @@ export const QueueView: React.FC = () => {
   // Modals state
   const [selectedItemForCall, setSelectedItemForCall] = useState<IAgentQueueItem | null>(null);
   const [selectedItemForPayment, setSelectedItemForPayment] = useState<IAgentQueueItem | null>(null);
+  const [showLogContactModal, setShowLogContactModal] = useState<boolean>(false);
+  const [selectedItemForContact, setSelectedItemForContact] = useState<IAgentQueueItem | null>(null);
 
   // Call form state
   const [callOutcome, setCallOutcome] = useState<CallOutcome>(CallOutcome.PROMISED_TO_PAY);
@@ -287,9 +291,20 @@ export const QueueView: React.FC = () => {
                           <MessageCircle size={12} />
                         </button>
                         <button
+                          onClick={() => {
+                            setSelectedItemForContact(item);
+                            setShowLogContactModal(true);
+                          }}
+                          className="btn btn-secondary btn-sm"
+                          style={{ color: 'var(--primary)' }}
+                          title="Log Contact Attempt & Follow-up"
+                        >
+                          <PhoneCall size={12} />
+                        </button>
+                        <button
                           onClick={() => handleOpenCallModal(item)}
                           className="btn btn-secondary btn-sm"
-                          title="Log call outcome"
+                          title="Log quick call note"
                         >
                           <FileText size={12} />
                         </button>
@@ -416,6 +431,31 @@ export const QueueView: React.FC = () => {
             remainingAmount: selectedItemForPayment.remainingAmount,
             penaltyAmount: selectedItemForPayment.penaltyAmount,
             status: selectedItemForPayment.status,
+          }}
+        />
+      )}
+
+      {/* Log Contact Activity & Recovery Follow-up Modal */}
+      {selectedItemForContact && (
+        <LogContactModal
+          isOpen={showLogContactModal}
+          onClose={() => {
+            setShowLogContactModal(false);
+            setSelectedItemForContact(null);
+          }}
+          onSuccess={() => {
+            loadData();
+          }}
+          preselectedCustomer={{
+            id: selectedItemForContact.customerId,
+            fullName: selectedItemForContact.customerName,
+            customerCode: selectedItemForContact.customerCode,
+            primaryPhone: selectedItemForContact.primaryPhone,
+            areaRoute: selectedItemForContact.areaRoute,
+          }}
+          preselectedLoan={{
+            id: selectedItemForContact.loanId,
+            loanAccountNo: selectedItemForContact.loanAccountNo,
           }}
         />
       )}

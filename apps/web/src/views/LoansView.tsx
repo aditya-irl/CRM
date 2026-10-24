@@ -15,6 +15,7 @@ import {
   parseDisplayDateToISO,
   getBusinessDateStr,
   generateAmortizationSchedule,
+  IContactActivity,
 } from '@crm/shared';
 import {
   Plus,
@@ -36,8 +37,10 @@ import {
   History,
   CreditCard,
   FileText,
+  PhoneCall,
 } from 'lucide-react';
 import { PortalLinkManager } from '../components/PortalLinkManager';
+import { LogContactModal } from '../components/LogContactModal';
 import { RecordPaymentModal } from '../components/RecordPaymentModal';
 import { DocumentViewerModal } from '../components/DocumentViewerModal';
 
@@ -140,7 +143,9 @@ export const LoansView: React.FC<LoansViewProps> = ({
     payments: any[];
     kycDocs?: any[];
   } | null>(null);
-  const [loanModalTab, setLoanModalTab] = useState<'schedule' | 'payments' | 'portal' | 'kyc'>('schedule');
+  const [loanModalTab, setLoanModalTab] = useState<'schedule' | 'payments' | 'portal' | 'kyc' | 'contacts'>('schedule');
+  const [loanContactActivities, setLoanContactActivities] = useState<IContactActivity[]>([]);
+  const [showLogContactModal, setShowLogContactModal] = useState<boolean>(false);
   const [selectedReceipt, setSelectedReceipt] = useState<any | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [viewingDoc, setViewingDoc] = useState<{
@@ -670,7 +675,10 @@ export const LoansView: React.FC<LoansViewProps> = ({
     }
   };
 
-  const handleViewLoan = async (loanId: string, initialTab: 'schedule' | 'payments' | 'portal' | 'kyc' = 'schedule') => {
+  const handleViewLoan = async (
+    loanId: string,
+    initialTab: 'schedule' | 'payments' | 'portal' | 'kyc' | 'contacts' = 'schedule'
+  ) => {
     setLoadingDetail(true);
     try {
       const [loanData, paymentsData] = await Promise.all([
@@ -680,7 +688,11 @@ export const LoansView: React.FC<LoansViewProps> = ({
       const loanObj = (loanData as any).loan || loanData;
       const installmentsList = (loanData as any).installments || [];
       const customerId = loanObj.customerId || loanObj.customer_id;
-      const kycDocs = customerId ? await ApiClient.getKYCDocuments(customerId).catch(() => []) : [];
+      const [kycDocs, contacts] = await Promise.all([
+        customerId ? ApiClient.getKYCDocuments(customerId).catch(() => []) : [],
+        customerId ? ApiClient.getCustomerContactActivities(customerId).catch(() => []) : [],
+      ]);
+      setLoanContactActivities(contacts);
       setSelectedLoanDetail({
         loan: loanObj,
         installments: installmentsList,
@@ -1770,9 +1782,21 @@ export const LoansView: React.FC<LoansViewProps> = ({
                 <h3 style={{ fontSize: 17, fontWeight: 800 }}>Loan Account: {selectedLoanDetail.loan.loanAccountNo || (selectedLoanDetail.loan as any).loan_account_no}</h3>
                 <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Borrower: {selectedLoanDetail.loan.customerName || (selectedLoanDetail.loan as any).customer_name} • {selectedLoanDetail.loan.areaRoute || (selectedLoanDetail.loan as any).area_route}</p>
               </div>
-              <button onClick={() => setSelectedLoanDetail(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
-                <X size={20} />
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowLogContactModal(true)}
+                  className="btn btn-primary btn-sm"
+                  style={{ display: 'flex', alignItems: 'center', gap: 5 }}
+                  title="Log contact attempt, response & follow-up"
+                >
+                  <PhoneCall size={13} />
+                  <span>Log Contact</span>
+                </button>
+                <button onClick={() => setSelectedLoanDetail(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                  <X size={20} />
+                </button>
+              </div>
             </div>
 
             {/* Financed Device Overview */}
@@ -1942,6 +1966,15 @@ export const LoansView: React.FC<LoansViewProps> = ({
                 >
                   <FileText size={13} />
                   <span>Borrower KYC Documents ({selectedLoanDetail.kycDocs?.length || 0})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLoanModalTab('contacts')}
+                  className={`btn btn-sm ${loanModalTab === 'contacts' ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                >
+                  <PhoneCall size={13} />
+                  <span>Contact History ({loanContactActivities.length})</span>
                 </button>
               </div>
 
@@ -2245,6 +2278,69 @@ export const LoansView: React.FC<LoansViewProps> = ({
                 primaryPhone={selectedLoanDetail.loan.primaryPhone || (selectedLoanDetail.loan as any).primary_phone || (selectedLoanDetail.loan as any).phone}
                 userRole={currentUser?.role}
               />
+            ) : loanModalTab === 'contacts' ? (
+              /* Contact & Recovery Timeline Tab */
+              <div style={{ maxHeight: 360, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {loanContactActivities.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: 36, color: 'var(--text-muted)', fontSize: 13 }}>
+                    No contact interactions logged for this customer or loan account yet.
+                  </div>
+                ) : (
+                  loanContactActivities.map((act) => (
+                    <div
+                      key={act.id}
+                      style={{
+                        padding: 12,
+                        borderRadius: 6,
+                        border: '1px solid var(--border-subtle)',
+                        background: 'var(--bg-surface-secondary)',
+                        fontSize: 12,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 6,
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <span className="badge badge-info" style={{ fontSize: 10 }}>
+                            {act.contactMethod.replace(/_/g, ' ')}
+                          </span>
+                          <span className="badge" style={{ fontSize: 10, backgroundColor: act.contactOutcome === 'ANSWERED_CONVERSATION_COMPLETED' ? '#dcfce7' : '#fee2e2', color: act.contactOutcome === 'ANSWERED_CONVERSATION_COMPLETED' ? '#15803d' : '#b91c1c' }}>
+                            {act.contactOutcome.replace(/_/g, ' ')}
+                          </span>
+                        </div>
+                        <span className="mono" style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                          {new Date(act.createdAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: true })}
+                        </span>
+                      </div>
+                      {act.customerResponseCategory && (
+                        <div style={{ fontWeight: 600, color: '#1e3a8a' }}>
+                          Response: {act.customerResponseCategory.replace(/_/g, ' ')}
+                        </div>
+                      )}
+                      {act.customerResponseNotes && <div>"{act.customerResponseNotes}"</div>}
+                      {act.nonPaymentReason && (
+                        <div style={{ color: '#b91c1c', fontSize: 11 }}>
+                          Reason: {act.nonPaymentReason.replace(/_/g, ' ')}
+                        </div>
+                      )}
+                      {act.promisedPaymentAmount && (
+                        <div style={{ color: '#15803d', fontWeight: 600 }}>
+                          Promise: {formatINR(Number(act.promisedPaymentAmount))} on {act.promisedPaymentDate || 'N/A'} ({act.commitmentStatus})
+                        </div>
+                      )}
+                      {act.followUpDate && (
+                        <div style={{ color: '#9a3412', fontSize: 11 }}>
+                          Follow-up: {act.followUpDate} at {act.followUpTime || '11:00'} ({act.followUpStatus})
+                        </div>
+                      )}
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', borderTop: '1px solid var(--border-subtle)', paddingTop: 4 }}>
+                        Agent: {act.agentName || 'Agent'} ({act.agentEmail || 'Authorized Staff'})
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             ) : (
               /* Borrower KYC Documents Tab */
               <div className="table-container" style={{ maxHeight: 340, overflowY: 'auto' }}>
@@ -3119,6 +3215,33 @@ export const LoansView: React.FC<LoansViewProps> = ({
           docType={viewingDoc.docType}
           fileMimeType={viewingDoc.fileMimeType}
           onClose={() => setViewingDoc(null)}
+        />
+      )}
+
+      {/* Log Contact Activity Modal */}
+      {selectedLoanDetail && (
+        <LogContactModal
+          isOpen={showLogContactModal}
+          onClose={() => setShowLogContactModal(false)}
+          onSuccess={() => {
+            const customerId = selectedLoanDetail.loan.customerId || selectedLoanDetail.loan.customer_id;
+            if (customerId) {
+              ApiClient.getCustomerContactActivities(customerId)
+                .then(setLoanContactActivities)
+                .catch(() => {});
+            }
+          }}
+          preselectedCustomer={{
+            id: selectedLoanDetail.loan.customerId || selectedLoanDetail.loan.customer_id,
+            fullName: selectedLoanDetail.loan.customerName || (selectedLoanDetail.loan as any).customer_name,
+            customerCode: selectedLoanDetail.loan.customerCode || (selectedLoanDetail.loan as any).customer_code,
+            primaryPhone: selectedLoanDetail.loan.primaryPhone || (selectedLoanDetail.loan as any).primary_phone || (selectedLoanDetail.loan as any).phone,
+            areaRoute: selectedLoanDetail.loan.areaRoute || (selectedLoanDetail.loan as any).area_route,
+          }}
+          preselectedLoan={{
+            id: selectedLoanDetail.loan.id,
+            loanAccountNo: selectedLoanDetail.loan.loanAccountNo || (selectedLoanDetail.loan as any).loan_account_no,
+          }}
         />
       )}
     </div>

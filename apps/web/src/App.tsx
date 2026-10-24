@@ -28,13 +28,14 @@ const CustomerPortalView = lazyWithRetry(() => import('./views/CustomerPortalVie
 const AgentDashboardView = lazyWithRetry(() => import('./views/AgentDashboardView').then((m) => ({ default: m.AgentDashboardView })));
 const AgentsView = lazyWithRetry(() => import('./views/AgentsView').then((m) => ({ default: m.AgentsView })));
 const DealerPayablesView = lazyWithRetry(() => import('./views/DealerPayablesView').then((m) => ({ default: m.DealerPayablesView })));
+const ContactActivityView = lazyWithRetry(() => import('./views/ContactActivityView').then((m) => ({ default: m.ContactActivityView })));
 
 const getTabFromHash = (): NavTab | null => {
   if (typeof window === 'undefined') return null;
   const hash = window.location.hash.replace(/^#/, '').trim();
   const validTabs: NavTab[] = [
     'dashboard', 'dealers', 'agents', 'dealer-collections', 'dealer-settlements',
-    'dealer-payables', 'agent-collections', 'direct-collections', 'customers',
+    'dealer-payables', 'agent-collections', 'contact-activity', 'direct-collections', 'customers',
     'devices', 'queue', 'loans', 'payments', 'reports', 'audit',
   ];
   return validTabs.includes(hash as NavTab) ? (hash as NavTab) : null;
@@ -275,6 +276,8 @@ export const App: React.FC = () => {
             initialAgentId={selectedAgentIdForCollections}
           />
         );
+      case 'contact-activity':
+        return <ContactActivityView />;
       case 'direct-collections':
         return <DirectCollectionsView />;
       case 'customers':

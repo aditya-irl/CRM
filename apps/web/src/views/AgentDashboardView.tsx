@@ -7,8 +7,10 @@ import {
   PaymentMode,
   CollectionSource,
   IUser,
+  IContactActivitySummary,
 } from '@crm/shared';
 import { RecordPaymentModal } from '../components/RecordPaymentModal';
+import { LogContactModal } from '../components/LogContactModal';
 import {
   LayoutDashboard,
   Users,
@@ -18,6 +20,7 @@ import {
   Clock,
   DollarSign,
   Phone,
+  PhoneCall,
   MessageCircle,
   Receipt,
   Search,
@@ -78,15 +81,32 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
   const [loanDetails, setLoanDetails] = useState<any | null>(null);
   const [loadingLoanDetails, setLoadingLoanDetails] = useState(false);
 
+  // Contact Activity State
+  const [contactSummary, setContactSummary] = useState<IContactActivitySummary | null>(null);
+  const [showLogContactModal, setShowLogContactModal] = useState<boolean>(false);
+  const [selectedCustomerForLog, setSelectedCustomerForLog] = useState<{
+    id: string;
+    fullName: string;
+    customerCode?: string;
+    primaryPhone?: string;
+    areaRoute?: string;
+  } | null>(null);
+  const [selectedLoanForLog, setSelectedLoanForLog] = useState<{
+    id: string;
+    loanAccountNo: string;
+  } | null>(null);
+
   const loadDashboardData = async () => {
     try {
       const queueStatus = dueFilter === 'ALL' ? undefined : dueFilter;
-      const [dashStats, qList] = await Promise.all([
+      const [dashStats, qList, cSummary] = await Promise.all([
         ApiClient.getAgentDashboard(),
         ApiClient.getAgentQueue(queueStatus, undefined, search || undefined),
+        ApiClient.getContactActivitySummary().catch(() => null),
       ]);
       setStats(dashStats);
       setQueueItems(qList);
+      if (cSummary) setContactSummary(cSummary);
     } catch (err: any) {
       console.error('Failed to load agent dashboard', err);
     } finally {
@@ -328,6 +348,121 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
           </div>
           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
             Assigned Loans: <span className="mono" style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{stats?.activeLoans ?? 0}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Contact Activity & Follow-up Summary (Section 4) */}
+      <div
+        className="crm-card"
+        style={{
+          padding: 16,
+          marginBottom: 20,
+          background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
+          border: '1px solid #cbd5e1',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <PhoneCall size={18} color="var(--primary)" />
+            <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0, color: '#1e293b' }}>
+              Today's Contact Activity & Follow-up Status
+            </h3>
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <button
+              onClick={() => {
+                setSelectedCustomerForLog(null);
+                setSelectedLoanForLog(null);
+                setShowLogContactModal(true);
+              }}
+              className="btn btn-primary btn-sm"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11 }}
+            >
+              <PhoneCall size={12} />
+              <span>Log Contact</span>
+            </button>
+            <button
+              onClick={() => {
+                if (onNavigateToTab) onNavigateToTab('contact-activity');
+                else window.location.hash = '#contact-activity';
+              }}
+              className="btn btn-outline btn-sm"
+              style={{ fontSize: 11 }}
+            >
+              View Today's Activity
+            </button>
+            <button
+              onClick={() => {
+                if (onNavigateToTab) onNavigateToTab('contact-activity');
+                else window.location.hash = '#contact-activity';
+              }}
+              className="btn btn-outline btn-sm"
+              style={{ fontSize: 11 }}
+            >
+              View Follow-ups Due ({contactSummary?.followUpsDueToday ?? 0})
+            </button>
+            <button
+              onClick={() => {
+                if (onNavigateToTab) onNavigateToTab('contact-activity');
+                else window.location.hash = '#contact-activity';
+              }}
+              className="btn btn-outline btn-sm"
+              style={{ fontSize: 11, color: '#b91c1c', borderColor: '#fca5a5' }}
+            >
+              View Overdue Follow-ups ({contactSummary?.followUpsOverdue ?? 0})
+            </button>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10 }}>
+          <div style={{ background: '#ffffff', padding: 10, borderRadius: 6, border: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b' }}>Contacted Today</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: '#1e293b', marginTop: 2 }}>
+              {contactSummary?.totalCustomersContacted ?? 0}
+            </div>
+          </div>
+          <div style={{ background: '#ffffff', padding: 10, borderRadius: 6, border: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b' }}>Calls Attempted</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: '#2563eb', marginTop: 2 }}>
+              {contactSummary?.totalCallAttempts ?? 0}
+            </div>
+          </div>
+          <div style={{ background: '#ffffff', padding: 10, borderRadius: 6, border: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b' }}>Conversations</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: '#16a34a', marginTop: 2 }}>
+              {contactSummary?.successfulConversations ?? 0}
+            </div>
+          </div>
+          <div style={{ background: '#ffffff', padding: 10, borderRadius: 6, border: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b' }}>No Answer / Busy</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: '#dc2626', marginTop: 2 }}>
+              {contactSummary?.callsUnanswered ?? 0}
+            </div>
+          </div>
+          <div style={{ background: '#ffffff', padding: 10, borderRadius: 6, border: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b' }}>Promises Today</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: '#059669', marginTop: 2 }}>
+              {contactSummary?.promisedToPayCount ?? 0}
+            </div>
+          </div>
+          <div style={{ background: '#ffffff', padding: 10, borderRadius: 6, border: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b' }}>Follow-ups Due</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: '#ea580c', marginTop: 2 }}>
+              {contactSummary?.followUpsDueToday ?? 0}
+            </div>
+          </div>
+          <div style={{ background: '#ffffff', padding: 10, borderRadius: 6, border: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b' }}>Overdue Follow-ups</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: '#b91c1c', marginTop: 2 }}>
+              {contactSummary?.followUpsOverdue ?? 0}
+            </div>
+          </div>
+          <div style={{ background: '#ffffff', padding: 10, borderRadius: 6, border: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b' }}>Today's Collections</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: '#15803d', marginTop: 2 }}>
+              {stats ? formatINR(stats.todayCollected) : '—'}
+            </div>
           </div>
         </div>
       </div>
@@ -608,6 +743,29 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
                                 style={{ padding: '6px 8px', color: '#25D366' }}
                               >
                                 <MessageCircle size={12} />
+                              </button>
+
+                              {/* Log Contact Activity */}
+                              <button
+                                onClick={() => {
+                                  setSelectedCustomerForLog({
+                                    id: item.customerId,
+                                    fullName: item.customerName,
+                                    customerCode: item.customerCode,
+                                    primaryPhone: item.primaryPhone || item.customerPhone,
+                                    areaRoute: item.areaRoute,
+                                  });
+                                  setSelectedLoanForLog({
+                                    id: item.loanId,
+                                    loanAccountNo: item.loanAccountNo,
+                                  });
+                                  setShowLogContactModal(true);
+                                }}
+                                className="btn btn-secondary btn-sm"
+                                title="Log contact attempt & recovery follow-up"
+                                style={{ padding: '6px 8px', color: 'var(--primary)' }}
+                              >
+                                <PhoneCall size={12} />
                               </button>
                             </div>
                           </td>
@@ -1025,6 +1183,17 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
           }}
         />
       )}
+
+      {/* Log Contact Activity Modal */}
+      <LogContactModal
+        isOpen={showLogContactModal}
+        onClose={() => setShowLogContactModal(false)}
+        onSuccess={() => {
+          loadDashboardData();
+        }}
+        preselectedCustomer={selectedCustomerForLog}
+        preselectedLoan={selectedLoanForLog}
+      />
     </div>
   );
 };

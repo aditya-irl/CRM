@@ -13,6 +13,13 @@ import {
   SettlementStatus,
   SettlementPaymentMethod,
   UserStatus,
+  ContactMethod,
+  ContactOutcome,
+  CustomerResponseCategory,
+  NonPaymentReason,
+  PaymentCommitmentStatus,
+  FollowUpPriority,
+  FollowUpStatus,
 } from './enums';
 
 export const loginSchema = z.object({
@@ -495,5 +502,84 @@ export const financeReportFilterSchema = z.object({
   page: z.preprocess((val) => (val ? Number(val) : 1), z.number().int().min(1)).optional(),
   limit: z.preprocess((val) => (val ? Number(val) : 25), z.number().int().min(1).max(200)).optional(),
 });
+
+export const createContactActivitySchema = z.object({
+  customerId: z.string().uuid('Invalid customer ID'),
+  loanId: z.string().uuid('Invalid loan ID').optional().nullable(),
+  emiId: z.string().uuid('Invalid EMI ID').optional().nullable(),
+  contactMethod: z.nativeEnum(ContactMethod),
+  contactMethodOther: z.string().optional().nullable(),
+  contactPhoneUsed: z.string().optional().nullable(),
+  contactOutcome: z.nativeEnum(ContactOutcome),
+  contactOutcomeOther: z.string().optional().nullable(),
+  customerResponseCategory: z.nativeEnum(CustomerResponseCategory).optional().nullable(),
+  customerResponseNotes: z.string().optional().nullable(),
+  nonPaymentReason: z.nativeEnum(NonPaymentReason).optional().nullable(),
+  nonPaymentReasonNotes: z.string().optional().nullable(),
+  promisedPaymentAmount: z.preprocess((val) => {
+    if (val === undefined || val === null || val === '') return undefined;
+    const num = Number(val);
+    return isNaN(num) ? val : num;
+  }, z.number().positive('Promised payment amount must be greater than zero')).optional().nullable(),
+  promisedPaymentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Promised payment date must be YYYY-MM-DD').optional().nullable(),
+  paymentModePromised: z.string().optional().nullable(),
+  commitmentStatus: z.nativeEnum(PaymentCommitmentStatus).optional().default(PaymentCommitmentStatus.NONE),
+  followUpDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Follow-up date must be YYYY-MM-DD').optional().nullable(),
+  followUpTime: z.string().optional().nullable(),
+  followUpPriority: z.nativeEnum(FollowUpPriority).optional().default(FollowUpPriority.MEDIUM),
+  followUpNotes: z.string().optional().nullable(),
+  agentNotes: z.string().optional().nullable(),
+}).refine((data) => {
+  if (data.contactMethod === ContactMethod.OTHER && (!data.contactMethodOther || !data.contactMethodOther.trim())) {
+    return false;
+  }
+  return true;
+}, {
+  message: 'Description is required when contact method is Other',
+  path: ['contactMethodOther'],
+}).refine((data) => {
+  if (data.contactOutcome === ContactOutcome.OTHER && (!data.contactOutcomeOther || !data.contactOutcomeOther.trim())) {
+    return false;
+  }
+  return true;
+}, {
+  message: 'Description is required when contact outcome is Other',
+  path: ['contactOutcomeOther'],
+}).refine((data) => {
+  if (data.nonPaymentReason === NonPaymentReason.OTHER && (!data.nonPaymentReasonNotes || !data.nonPaymentReasonNotes.trim())) {
+    return false;
+  }
+  return true;
+}, {
+  message: 'Explanation is required when non-payment reason is Other',
+  path: ['nonPaymentReasonNotes'],
+});
+
+export const updateFollowUpSchema = z.object({
+  followUpDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Follow-up date must be YYYY-MM-DD').optional().nullable(),
+  followUpTime: z.string().optional().nullable(),
+  followUpPriority: z.nativeEnum(FollowUpPriority).optional(),
+  followUpStatus: z.nativeEnum(FollowUpStatus).optional(),
+  followUpNotes: z.string().optional().nullable(),
+  commitmentStatus: z.nativeEnum(PaymentCommitmentStatus).optional(),
+  commitmentStatusNotes: z.string().optional().nullable(),
+});
+
+export const contactActivityQuerySchema = z.object({
+  page: z.preprocess((val) => (val ? Number(val) : 1), z.number().int().min(1)).optional().default(1),
+  limit: z.preprocess((val) => (val ? Number(val) : 25), z.number().int().min(1).max(200)).optional().default(25),
+  customerId: z.string().uuid('Invalid customer ID').optional(),
+  loanId: z.string().uuid('Invalid loan ID').optional(),
+  agentId: z.string().uuid('Invalid agent ID').optional(),
+  contactMethod: z.string().optional(),
+  contactOutcome: z.string().optional(),
+  commitmentStatus: z.string().optional(),
+  followUpStatus: z.string().optional(),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  preset: z.enum(['TODAY', 'YESTERDAY', 'LAST_7_DAYS', 'LAST_30_DAYS', 'CUSTOM', 'ALL']).optional(),
+  search: z.string().optional(),
+});
+
 
 
