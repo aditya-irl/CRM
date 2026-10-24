@@ -245,8 +245,15 @@ export class PaymentService {
           hasManualPenalty = true;
         }
 
+        const isDealer = user.role === UserRole.DEALER;
+        const isAgent = user.role === UserRole.COLLECTION_AGENT;
+        const isPending = isDealer || isAgent;
+
         if (hasManualPenalty && penaltyAmount.greaterThan(0)) {
-          if (user.role === UserRole.DEALER) {
+          if (isAgent) {
+            throw new ForbiddenError('Collection agents are not authorized to apply penalties');
+          }
+          if (isDealer) {
             const allow = await SettingsService.isDealerPenaltyAllowed();
             if (!allow) {
               throw new ForbiddenError('Dealer late-payment penalty creation is disabled by Super Admin');
@@ -316,7 +323,9 @@ export class PaymentService {
           }
         }
 
-        if (hasManualPenalty && penaltyAmount.greaterThan(0)) {
+        // Financial ledger integrity: Only immediately confirmed payments (!isPending) insert into emi_penalties.
+        // Pending records requiring approval must NOT create active emi_penalties until approved.
+        if (!isPending && hasManualPenalty && penaltyAmount.greaterThan(0)) {
           if (targetInstForPenalty) {
             // Create emi_penalties record for audit & ledger compliance
             const penaltyId = uuidv4();
@@ -345,7 +354,7 @@ export class PaymentService {
           expectedAmount: Number(r.expected_amount),
           paidAmount: Number(r.paid_amount),
           remainingAmount: Number(r.remaining_amount),
-          penaltyAmount: (targetInstForPenalty && r.id === targetInstForPenalty.id && hasManualPenalty && penaltyAmount.greaterThan(0))
+          penaltyAmount: (!isPending && targetInstForPenalty && r.id === targetInstForPenalty.id && hasManualPenalty && penaltyAmount.greaterThan(0))
             ? penaltyAmount.toNumber()
             : Number(r.penalty_amount || 0),
           status: r.status,
@@ -371,9 +380,6 @@ export class PaymentService {
         const receiptNumber = `RCP-${datePrefix}-${seqNumber}`;
         const paymentId = uuidv4();
 
-        const isDealer = user.role === UserRole.DEALER;
-        const isAgent = user.role === UserRole.COLLECTION_AGENT;
-        const isPending = isDealer || isAgent;
         const initialStatus = isDealer
           ? PaymentStatus.PENDING_VERIFICATION
           : isAgent

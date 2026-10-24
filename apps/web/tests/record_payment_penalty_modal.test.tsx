@@ -204,7 +204,10 @@ describe('RecordPaymentModal - Add Penalty UI & Workflow Tests', () => {
 
       expect(html).toContain('RECOVERY AGENT');
       expect(html).toContain('Field Recovery Collection • Ramesh Field Agent');
-      expect(html).toContain('+ Add Penalty');
+      // Collection Agent must NOT have penalty controls
+      expect(html).not.toContain('+ Add Penalty');
+      expect(html).not.toContain('id="add-penalty-btn"');
+      expect(html).not.toContain('id="penalty-section-expanded"');
       // Must not display "Calculated Penalty" or "Days Overdue" anywhere
       expect(html).not.toContain('Calculated Penalty');
       expect(html).not.toContain('Days Overdue');

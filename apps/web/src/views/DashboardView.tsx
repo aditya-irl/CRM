@@ -1218,13 +1218,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <th>Customer</th>
                   <th>Amount</th>
                   <th>Source</th>
+                  <th>Status</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {stats.recentCollections.length === 0 ? (
                   <tr>
-                    <td colSpan={5} style={{ textAlign: 'center', padding: 14, color: 'var(--text-muted)' }}>
+                    <td colSpan={6} style={{ textAlign: 'center', padding: 14, color: 'var(--text-muted)' }}>
                       No payments recorded yet.
                     </td>
                   </tr>
@@ -1236,7 +1237,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         <div style={{ fontWeight: 600 }}>{p.customerName}</div>
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{p.loanAccountNo}</div>
                       </td>
-                      <td className="mono" style={{ fontWeight: 700, color: p.isReversal ? 'var(--danger)' : 'var(--success-text)' }}>
+                      <td
+                        className="mono"
+                        style={{
+                          fontWeight: 700,
+                          color: p.isReversal
+                            ? 'var(--danger)'
+                            : p.status === 'SUCCESS'
+                            ? 'var(--success-text)'
+                            : p.status === 'REJECTED'
+                            ? 'var(--danger-text)'
+                            : 'var(--warning-text)',
+                        }}
+                      >
                         {formatINR(p.amount)}
                       </td>
                       <td>
@@ -1256,6 +1269,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                             ? 'Dealer'
                             : 'Agent'}
                         </span>
+                      </td>
+                      <td>
+                        {p.status === 'SUCCESS' ? (
+                          <span className="badge badge-success" style={{ fontSize: 10 }}>Approved</span>
+                        ) : p.status === 'PENDING_APPROVAL' || p.status === 'PENDING_VERIFICATION' ? (
+                          <span className="badge badge-warning" style={{ fontSize: 10 }}>Pending Approval</span>
+                        ) : p.status === 'REJECTED' ? (
+                          <span className="badge badge-danger" style={{ fontSize: 10 }}>Rejected</span>
+                        ) : p.isReversal ? (
+                          <span className="badge badge-neutral" style={{ fontSize: 10 }}>Reversed</span>
+                        ) : (
+                          <span className="badge badge-neutral" style={{ fontSize: 10 }}>{p.status}</span>
+                        )}
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: 6 }}>

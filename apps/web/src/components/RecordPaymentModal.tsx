@@ -113,6 +113,8 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const activeRequestIdRef = React.useRef(0);
+  const isSubmittingRef = React.useRef(false);
+  const submissionIdempotencyKeyRef = React.useRef<string>('');
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -130,6 +132,8 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       setIsPenaltyExpanded(false);
       setPenaltyAmountStr('');
       setPenaltyError(null);
+      submissionIdempotencyKeyRef.current = '';
+      isSubmittingRef.current = false;
     }
   }, [isOpen]);
 
@@ -372,7 +376,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     }
 
     let penaltyNum: number | undefined = undefined;
-    if (isPenaltyExpanded && penaltyAmountStr.trim() !== '') {
+    if (!isAgent && isPenaltyExpanded && penaltyAmountStr.trim() !== '') {
       const parsedPen = parseFloat(penaltyAmountStr);
       if (isNaN(parsedPen) || parsedPen < 0) {
         setPenaltyError('Please enter a valid non-negative penalty amount');
@@ -413,10 +417,14 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       return;
     }
 
+    if (!submissionIdempotencyKeyRef.current) {
+      submissionIdempotencyKeyRef.current = `PAY_${isDealer ? 'DLR' : isAgent ? 'AGT' : 'DIR'}_${selectedLoan.id}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    }
     setShowConfirmation(true);
   };
 
   const handleFinalPaymentSubmit = async () => {
+    if (isSubmittingRef.current || submitting) return;
     setError(null);
     const amountNum = parseFloat(paymentAmountStr);
     if (!amountNum || amountNum <= 0 || !selectedLoan) {
@@ -430,9 +438,12 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       selectedLoan.customer_id ||
       preselectedCustomerId;
 
+    isSubmittingRef.current = true;
     setSubmitting(true);
     try {
-      const idempotencyKey = `${isDealer ? 'DEALER' : isAgent ? 'AGT' : 'ADMIN'}_${selectedLoan.id}_${Date.now()}`;
+      const idempotencyKey =
+        submissionIdempotencyKeyRef.current ||
+        `PAY_${isDealer ? 'DLR' : isAgent ? 'AGT' : 'DIR'}_${selectedLoan.id}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
       const finalSource = isDealer
         ? CollectionSource.DEALER
         : isAgent
@@ -452,7 +463,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
         emiId: selectedInstallmentId || undefined,
         customerId,
         amount: amountNum,
-        penaltyAmount: isPenaltyExpanded && penaltyAmountStr.trim() !== ''
+        penaltyAmount: !isAgent && isPenaltyExpanded && penaltyAmountStr.trim() !== ''
           ? (parseFloat(penaltyAmountStr) || 0)
           : undefined,
         paymentMode,
@@ -467,6 +478,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       const res = await ApiClient.recordPayment(payload);
       setReceipt(res);
       setShowConfirmation(false);
+      submissionIdempotencyKeyRef.current = '';
       if (onSuccess) {
         onSuccess(res);
       }
@@ -474,6 +486,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       setError(err.message || 'Failed to record payment');
       setShowConfirmation(false);
     } finally {
+      isSubmittingRef.current = false;
       setSubmitting(false);
     }
   };
@@ -923,7 +936,10 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
             <div className="modal-actions-footer" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               <button
                 type="button"
-                onClick={() => setShowConfirmation(false)}
+                onClick={() => {
+                  setShowConfirmation(false);
+                  submissionIdempotencyKeyRef.current = '';
+                }}
                 className="btn btn-secondary"
                 style={{ flex: 1 }}
                 disabled={submitting}
@@ -1196,139 +1212,141 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                 </div>
               </div>
 
-              {/* + Add Penalty Button / Expanded Penalty Box */}
-              {!isPenaltyExpanded ? (
-                <div style={{ marginTop: -4, marginBottom: 2 }}>
-                  <button
-                    type="button"
-                    id="add-penalty-btn"
-                    onClick={() => {
-                      setIsPenaltyExpanded(true);
-                      setPenaltyAmountStr('');
-                      setPenaltyError(null);
-                    }}
-                    className="btn btn-secondary btn-sm"
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      padding: '6px 14px',
-                      borderRadius: 'var(--radius-sm)',
-                    }}
-                  >
-                    <Plus size={14} />
-                    <span>+ Add Penalty</span>
-                  </button>
-                </div>
-              ) : (
-                <div
-                  id="penalty-section-expanded"
-                  style={{
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: 'var(--radius-sm)',
-                    padding: 14,
-                    background: 'var(--bg-surface-secondary)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 10,
-                    marginTop: -4,
-                    marginBottom: 2,
-                  }}
-                >
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <span
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 700,
-                        color: 'var(--text-primary)',
-                      }}
-                    >
-                      Late Payment Penalty
-                    </span>
+              {/* + Add Penalty Button / Expanded Penalty Box (Restricted: Absent from Agent interface) */}
+              {!isAgent && (
+                !isPenaltyExpanded ? (
+                  <div style={{ marginTop: -4, marginBottom: 2 }}>
                     <button
                       type="button"
-                      id="remove-penalty-btn"
+                      id="add-penalty-btn"
                       onClick={() => {
-                        setIsPenaltyExpanded(false);
-                        setPenaltyAmountStr('0');
+                        setIsPenaltyExpanded(true);
+                        setPenaltyAmountStr('');
                         setPenaltyError(null);
-                        if (selectedLoanId) {
-                          fetchPreview(selectedLoanId, selectedInstallmentId, paymentAmountStr, '0');
-                        }
                       }}
+                      className="btn btn-secondary btn-sm"
                       style={{
-                        background: 'none',
-                        border: 'none',
-                        color: 'var(--danger-text, #ef4444)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
                         fontSize: 12,
                         fontWeight: 600,
-                        cursor: 'pointer',
-                        padding: '2px 6px',
+                        padding: '6px 14px',
+                        borderRadius: 'var(--radius-sm)',
                       }}
                     >
-                      Remove Penalty
+                      <Plus size={14} />
+                      <span>+ Add Penalty</span>
                     </button>
                   </div>
-
-                  <div>
-                    <label
+                ) : (
+                  <div
+                    id="penalty-section-expanded"
+                    style={{
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: 'var(--radius-sm)',
+                      padding: 14,
+                      background: 'var(--bg-surface-secondary)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 10,
+                      marginTop: -4,
+                      marginBottom: 2,
+                    }}
+                  >
+                    <div
                       style={{
-                        display: 'block',
-                        fontSize: 11,
-                        fontWeight: 700,
-                        color: 'var(--text-secondary)',
-                        marginBottom: 4,
-                        textTransform: 'uppercase',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
                       }}
                     >
-                      Penalty Amount
-                    </label>
-                    <div style={{ position: 'relative' }}>
                       <span
                         style={{
-                          position: 'absolute',
-                          left: 12,
-                          top: '50%',
-                          transform: 'translateY(-50%)',
+                          fontSize: 12,
                           fontWeight: 700,
-                          color: 'var(--text-muted)',
+                          color: 'var(--text-primary)',
                         }}
                       >
-                        ₹
+                        Late Payment Penalty
                       </span>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        id="penalty-amount-input"
-                        className="form-input mono"
-                        style={{ paddingLeft: 28, fontSize: 14, fontWeight: 700 }}
-                        value={penaltyAmountStr}
-                        onChange={(e) => handlePenaltyAmountChange(e.target.value)}
-                        onBlur={handlePenaltyAmountBlur}
-                        placeholder="e.g. 150"
-                      />
-                    </div>
-                    {penaltyError && (
-                      <div
+                      <button
+                        type="button"
+                        id="remove-penalty-btn"
+                        onClick={() => {
+                          setIsPenaltyExpanded(false);
+                          setPenaltyAmountStr('0');
+                          setPenaltyError(null);
+                          if (selectedLoanId) {
+                            fetchPreview(selectedLoanId, selectedInstallmentId, paymentAmountStr, '0');
+                          }
+                        }}
                         style={{
-                          fontSize: 11,
-                          color: 'var(--danger)',
-                          marginTop: 4,
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--danger-text, #ef4444)',
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          padding: '2px 6px',
                         }}
                       >
-                        {penaltyError}
+                        Remove Penalty
+                      </button>
+                    </div>
+
+                    <div>
+                      <label
+                        style={{
+                          display: 'block',
+                          fontSize: 11,
+                          fontWeight: 700,
+                          color: 'var(--text-secondary)',
+                          marginBottom: 4,
+                          textTransform: 'uppercase',
+                        }}
+                      >
+                        Penalty Amount
+                      </label>
+                      <div style={{ position: 'relative' }}>
+                        <span
+                          style={{
+                            position: 'absolute',
+                            left: 12,
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            fontWeight: 700,
+                            color: 'var(--text-muted)',
+                          }}
+                        >
+                          ₹
+                        </span>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          id="penalty-amount-input"
+                          className="form-input mono"
+                          style={{ paddingLeft: 28, fontSize: 14, fontWeight: 700 }}
+                          value={penaltyAmountStr}
+                          onChange={(e) => handlePenaltyAmountChange(e.target.value)}
+                          onBlur={handlePenaltyAmountBlur}
+                          placeholder="e.g. 150"
+                        />
                       </div>
-                    )}
+                      {penaltyError && (
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: 'var(--danger)',
+                            marginTop: 4,
+                          }}
+                        >
+                          {penaltyError}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
+                )
               )}
 
               {/* Collection Source Badge & Selection */}

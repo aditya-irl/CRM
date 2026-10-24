@@ -758,11 +758,12 @@ export class DealerService {
     const collectionsRes = await queryPostgres(
       `SELECT p.id, p.receipt_number, p.amount, p.payment_timestamp as payment_date, p.payment_mode, p.status,
               c.full_name as customer_name, l.loan_account_no,
-              CASE WHEN sa.settlement_id IS NOT NULL THEN 'SETTLED' ELSE 'UNSETTLED' END as settlement_status
+              CASE WHEN EXISTS (
+                SELECT 1 FROM dealer_settlement_allocations sa WHERE sa.payment_id = p.id
+              ) THEN 'SETTLED' ELSE 'UNSETTLED' END as settlement_status
        FROM payments p
        JOIN loans l ON p.loan_id = l.id
        JOIN customers c ON l.customer_id = c.id
-       LEFT JOIN dealer_settlement_allocations sa ON sa.payment_id = p.id
        WHERE (p.dealer_id = $1 OR l.dealer_id = $1)
        ORDER BY p.payment_timestamp DESC
        LIMIT 10`,
