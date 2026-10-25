@@ -35,20 +35,70 @@ export function maskPhone(phone: string | null | undefined): string {
   return `${start}***${end}`;
 }
 
+export interface FormatINROptions {
+  compact?: boolean;
+  maximumFractionDigits?: number;
+  minimumFractionDigits?: number;
+}
+
 /**
  * Format Indian Rupee currency (e.g. 150000.5 -> "₹1,50,000.50")
  */
-export function formatINR(amount: number | string | null | undefined): string {
+export function formatINR(
+  amount: number | string | null | undefined,
+  options?: FormatINROptions
+): string {
   if (amount === null || amount === undefined || isNaN(Number(amount))) {
     return '₹0.00';
   }
   const num = Number(amount);
+
+  if (options?.compact) {
+    return formatCompactINR(num);
+  }
+
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: options?.minimumFractionDigits ?? 2,
+    maximumFractionDigits: options?.maximumFractionDigits ?? 2,
   }).format(num);
+}
+
+/**
+ * Format Indian Rupee currency in compact format preserving Indian numbering conventions:
+ * - >= 1 Crore (1,00,00,000): "₹1.50Cr"
+ * - >= 1 Lakh (1,00,000): "₹5.45L", "₹4.20L"
+ * - Under 1 Lakh: full currency formatting e.g. "₹25,000.00"
+ * Preserves negative numbers e.g. "-₹5.45L"
+ */
+export function formatCompactINR(
+  amount: number | string | null | undefined,
+  options?: { compactThousands?: boolean }
+): string {
+  if (amount === null || amount === undefined || isNaN(Number(amount))) {
+    return '₹0.00';
+  }
+  const num = Number(amount);
+  const isNegative = num < 0;
+  const abs = Math.abs(num);
+  const prefix = isNegative ? '-₹' : '₹';
+
+  if (abs >= 10000000) {
+    // 1 Crore = 10,000,000
+    const val = abs / 10000000;
+    return `${prefix}${val.toFixed(2)}Cr`;
+  }
+  if (abs >= 100000) {
+    // 1 Lakh = 100,000
+    const val = abs / 100000;
+    return `${prefix}${val.toFixed(2)}L`;
+  }
+  if (options?.compactThousands && abs >= 1000) {
+    const val = abs / 1000;
+    return `${prefix}${val.toFixed(1).replace(/\.0$/, '')}K`;
+  }
+  return formatINR(num);
 }
 
 /**

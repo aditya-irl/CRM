@@ -542,6 +542,112 @@ h1, h2, h3, h4, h5, h6 {
   display: none !important;
 }
 
+/* Accessibility Screen Reader Only Utility */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* -------------------------------------------------------------
+   Executive & Operations Dashboard KPI Grid System
+   ------------------------------------------------------------- */
+.dashboard-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.dashboard-kpi-card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 14px 14px;
+  box-sizing: border-box;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.dashboard-kpi-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.dashboard-kpi-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.dashboard-kpi-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+}
+
+.dashboard-kpi-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dashboard-kpi-value {
+  font-family: var(--font-mono);
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+  margin-top: 6px;
+  margin-bottom: 2px;
+  min-width: 0;
+  white-space: nowrap;
+  font-size: clamp(14px, 1.25vw, 19px);
+}
+
+.dashboard-kpi-subtext {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  line-height: 1.3;
+}
+
+/* Medium Desktop & Laptops (< 1200px and >= 769px): 3 columns (2 rows of 3) */
+@media screen and (max-width: 1199px) and (min-width: 769px) {
+  .dashboard-kpi-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 12px !important;
+  }
+  .dashboard-kpi-value {
+    font-size: clamp(16px, 1.8vw, 21px);
+  }
+}
+
 /* Tablet & Mobile Breakpoint (<= 768px) */
 @media screen and (max-width: 768px) {
   /* Prevent iOS Safari auto-zoom on input focus by guaranteeing 16px font-size */
@@ -714,6 +820,20 @@ h1, h2, h3, h4, h5, h6 {
     border-radius: var(--radius-xl) var(--radius-xl) 0 0 !important;
   }
 
+  /* Tablet Breakpoint (<= 768px): 3 columns */
+  .dashboard-kpi-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+  }
+
+  .dashboard-kpi-card {
+    padding: 12px 10px !important;
+  }
+
+  .dashboard-kpi-value {
+    font-size: clamp(15px, 2.2vw, 19px) !important;
+  }
+
   /* Full-width drawer on small screens */
   .crm-drawer {
     width: 100% !important;
@@ -810,6 +930,28 @@ h1, h2, h3, h4, h5, h6 {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     gap: 8px !important;
   }
+
+  .dashboard-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  .dashboard-kpi-card {
+    padding: 12px 10px !important;
+    border-radius: var(--radius-md) !important;
+  }
+
+  .dashboard-kpi-value {
+    font-size: clamp(13px, 3.8vw, 17px) !important;
+  }
+
+  .dashboard-kpi-title {
+    font-size: 10px !important;
+  }
+
+  .dashboard-kpi-subtext {
+    font-size: 10px !important;
+  }
 }
 
 /* Extra Small Phones (<= 360px: iPhone SE, older compact devices) */
@@ -825,6 +967,19 @@ h1, h2, h3, h4, h5, h6 {
 
   .kpi-grid-mobile-2col {
     grid-template-columns: 1fr !important;
+  }
+
+  .dashboard-kpi-grid {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  .dashboard-kpi-card {
+    padding: 12px 12px !important;
+  }
+
+  .dashboard-kpi-value {
+    font-size: 17px !important;
   }
 }
 

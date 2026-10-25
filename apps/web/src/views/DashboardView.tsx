@@ -6,6 +6,7 @@ import {
   IUser,
   UserRole,
   formatINR,
+  formatCompactINR,
   formatDisplayDate,
   CollectionSource,
   WHATSAPP_SUPPORT_CONFIG,
@@ -436,106 +437,152 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       </div>
 
       {/* 3. Top 6 KPI Cards */}
-      <div
-        className="kpi-grid-mobile-2col"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-          gap: 14,
-        }}
-      >
+      <div className="dashboard-kpi-grid kpi-grid-mobile-2col" data-testid="dashboard-kpi-grid">
         {/* KPI 1: Total Disbursed */}
-        <div className="crm-card" style={{ padding: '16px 18px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
-              Total Disbursed
-            </span>
-            <Banknote size={16} color="var(--primary)" />
+        <div
+          className="crm-card dashboard-kpi-card"
+          data-testid="kpi-card-total-disbursed"
+          title={`Total Disbursed: ${formatINR(stats.topKpis.totalDisbursed)}`}
+          aria-label={`Total Disbursed: ${formatINR(stats.topKpis.totalDisbursed)}`}
+        >
+          <div className="dashboard-kpi-header">
+            <span className="dashboard-kpi-title">Total Disbursed</span>
+            <span className="dashboard-kpi-icon"><Banknote size={16} color="var(--primary)" /></span>
           </div>
-          <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-primary)', marginTop: 6 }}>
-            {formatINR(stats.topKpis.totalDisbursed)}
+          <div
+            className="dashboard-kpi-value mono"
+            style={{ color: 'var(--text-primary)' }}
+            data-testid="kpi-value-total-disbursed"
+            data-full-amount={formatINR(stats.topKpis.totalDisbursed)}
+          >
+            <span aria-hidden="true">{formatCompactINR(stats.topKpis.totalDisbursed)}</span>
+            <span className="sr-only">Exact Amount: {formatINR(stats.topKpis.totalDisbursed)}</span>
           </div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+          <div className="dashboard-kpi-subtext" title={`${stats.topKpis.disbursedLoanCount} Loans Financed`}>
             {stats.topKpis.disbursedLoanCount} Loans Financed
           </div>
         </div>
 
         {/* KPI 2: Active Portfolio */}
-        <div className="crm-card" style={{ padding: '16px 18px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
-              Active Portfolio
-            </span>
-            <Layers size={16} color="var(--primary)" />
+        <div
+          className="crm-card dashboard-kpi-card"
+          data-testid="kpi-card-active-portfolio"
+          title={`Active Portfolio: ${formatINR(stats.topKpis.activePortfolio)}`}
+          aria-label={`Active Portfolio: ${formatINR(stats.topKpis.activePortfolio)}`}
+        >
+          <div className="dashboard-kpi-header">
+            <span className="dashboard-kpi-title">Active Portfolio</span>
+            <span className="dashboard-kpi-icon"><Layers size={16} color="var(--primary)" /></span>
           </div>
-          <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-primary)', marginTop: 6 }}>
-            {formatINR(stats.topKpis.activePortfolio)}
+          <div
+            className="dashboard-kpi-value mono"
+            style={{ color: 'var(--text-primary)' }}
+            data-testid="kpi-value-active-portfolio"
+            data-full-amount={formatINR(stats.topKpis.activePortfolio)}
+          >
+            <span aria-hidden="true">{formatCompactINR(stats.topKpis.activePortfolio)}</span>
+            <span className="sr-only">Exact Amount: {formatINR(stats.topKpis.activePortfolio)}</span>
           </div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+          <div className="dashboard-kpi-subtext" title={`Across ${stats.topKpis.activeLoanCount} Active Loans`}>
             Across {stats.topKpis.activeLoanCount} Active Loans
           </div>
         </div>
 
         {/* KPI 3: Total Collections */}
-        <div className="crm-card" style={{ padding: '16px 18px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
-              Total Collections
-            </span>
-            <CheckCircle2 size={16} color="var(--success)" />
+        <div
+          className="crm-card dashboard-kpi-card"
+          data-testid="kpi-card-total-collections"
+          title={`Total Collections: ${formatINR(stats.topKpis.totalCollections)}`}
+          aria-label={`Total Collections: ${formatINR(stats.topKpis.totalCollections)}`}
+        >
+          <div className="dashboard-kpi-header">
+            <span className="dashboard-kpi-title">Total Collections</span>
+            <span className="dashboard-kpi-icon"><CheckCircle2 size={16} color="var(--success)" /></span>
           </div>
-          <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: 'var(--success-text)', marginTop: 6 }}>
-            {formatINR(stats.topKpis.totalCollections)}
+          <div
+            className="dashboard-kpi-value mono"
+            style={{ color: 'var(--success-text)' }}
+            data-testid="kpi-value-total-collections"
+            data-full-amount={formatINR(stats.topKpis.totalCollections)}
+          >
+            <span aria-hidden="true">{formatCompactINR(stats.topKpis.totalCollections)}</span>
+            <span className="sr-only">Exact Amount: {formatINR(stats.topKpis.totalCollections)}</span>
           </div>
-          <div style={{ fontSize: 11, color: 'var(--success)', marginTop: 4, fontWeight: 600 }}>
+          <div className="dashboard-kpi-subtext" style={{ color: 'var(--success)', fontWeight: 600 }} title={`${stats.topKpis.collectionCount} Transactions`}>
             {stats.topKpis.collectionCount} Transactions
           </div>
         </div>
 
         {/* KPI 4: Overdue / Outstanding */}
-        <div className="crm-card" style={{ padding: '16px 18px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
-              Total Overdue
-            </span>
-            <AlertCircle size={16} color="var(--danger)" />
+        <div
+          className="crm-card dashboard-kpi-card"
+          data-testid="kpi-card-total-overdue"
+          title={`Total Overdue: ${formatINR(stats.topKpis.totalOverdueAmount)}`}
+          aria-label={`Total Overdue: ${formatINR(stats.topKpis.totalOverdueAmount)}`}
+        >
+          <div className="dashboard-kpi-header">
+            <span className="dashboard-kpi-title">Total Overdue</span>
+            <span className="dashboard-kpi-icon"><AlertCircle size={16} color="var(--danger)" /></span>
           </div>
-          <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: 'var(--danger)', marginTop: 6 }}>
-            {formatINR(stats.topKpis.totalOverdueAmount)}
+          <div
+            className="dashboard-kpi-value mono"
+            style={{ color: 'var(--danger)' }}
+            data-testid="kpi-value-total-overdue"
+            data-full-amount={formatINR(stats.topKpis.totalOverdueAmount)}
+          >
+            <span aria-hidden="true">{formatCompactINR(stats.topKpis.totalOverdueAmount)}</span>
+            <span className="sr-only">Exact Amount: {formatINR(stats.topKpis.totalOverdueAmount)}</span>
           </div>
-          <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 4 }}>
+          <div className="dashboard-kpi-subtext" style={{ color: 'var(--danger)' }} title={`${stats.topKpis.overdueLoanCount} Overdue Loans (${stats.topKpis.overdueCustomerCount} Cust.)`}>
             {stats.topKpis.overdueLoanCount} Overdue Loans ({stats.topKpis.overdueCustomerCount} Cust.)
           </div>
         </div>
 
         {/* KPI 5: Collection Efficiency */}
-        <div className="crm-card" style={{ padding: '16px 18px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
-              Collection Efficiency
-            </span>
-            <Percent size={16} color="var(--warning)" />
+        <div
+          className="crm-card dashboard-kpi-card"
+          data-testid="kpi-card-collection-efficiency"
+          title={`Collection Efficiency: ${stats.topKpis.collectionEfficiencyPercent}% (Due in Window: ${formatINR(stats.topKpis.totalDueAmount)})`}
+          aria-label={`Collection Efficiency: ${stats.topKpis.collectionEfficiencyPercent}%`}
+        >
+          <div className="dashboard-kpi-header">
+            <span className="dashboard-kpi-title">Collection Efficiency</span>
+            <span className="dashboard-kpi-icon"><Percent size={16} color="var(--warning)" /></span>
           </div>
-          <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: 'var(--warning-text)', marginTop: 6 }}>
+          <div
+            className="dashboard-kpi-value mono"
+            style={{ color: 'var(--warning-text)' }}
+            data-testid="kpi-value-collection-efficiency"
+          >
             {stats.topKpis.collectionEfficiencyPercent}%
           </div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-            Due in Window: {formatINR(stats.topKpis.totalDueAmount)}
+          <div
+            className="dashboard-kpi-subtext"
+            title={`Due in Window: ${formatINR(stats.topKpis.totalDueAmount)}`}
+          >
+            Due in Window: {formatCompactINR(stats.topKpis.totalDueAmount)}
           </div>
         </div>
 
         {/* KPI 6: Active Loans */}
-        <div className="crm-card" style={{ padding: '16px 18px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
-              Active Borrowers
-            </span>
-            <Users size={16} color="var(--primary)" />
+        <div
+          className="crm-card dashboard-kpi-card"
+          data-testid="kpi-card-active-borrowers"
+          title={`Active Borrowers: ${stats.portfolioSummary.totalCustomers} (${stats.topKpis.activeLoanCount} Active Accounts)`}
+          aria-label={`Active Borrowers: ${stats.portfolioSummary.totalCustomers}`}
+        >
+          <div className="dashboard-kpi-header">
+            <span className="dashboard-kpi-title">Active Borrowers</span>
+            <span className="dashboard-kpi-icon"><Users size={16} color="var(--primary)" /></span>
           </div>
-          <div className="mono" style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-primary)', marginTop: 6 }}>
+          <div
+            className="dashboard-kpi-value mono"
+            style={{ color: 'var(--text-primary)' }}
+            data-testid="kpi-value-active-borrowers"
+          >
             {stats.portfolioSummary.totalCustomers}
           </div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+          <div className="dashboard-kpi-subtext" title={`${stats.topKpis.activeLoanCount} Active Accounts`}>
             {stats.topKpis.activeLoanCount} Active Accounts
           </div>
         </div>
