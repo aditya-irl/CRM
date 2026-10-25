@@ -828,6 +828,8 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                 padding: '10px 16px',
                 overflowX: 'auto',
                 flexShrink: 0,
+                WebkitOverflowScrolling: 'touch',
+                scrollbarWidth: 'none',
               }}
             >
               {steps.map((s, idx) => {
@@ -918,7 +920,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
               {/* STEP 1: Customer */}
               {currentStep === 1 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                  <div className="wizard-form-grid-2">
                     <div>
                       <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
                         Borrower Full Name <span style={{ color: 'var(--danger)' }}>*</span>
@@ -947,7 +949,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                  <div className="wizard-form-grid-2">
                     <div>
                       <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
                         Alternate Phone (Optional)
@@ -989,7 +991,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                     />
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+                  <div className="wizard-form-grid-3">
                     <div>
                       <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>City</label>
                       <input type="text" className="form-input" value={city} onChange={(e) => setCity(e.target.value)} />
@@ -1056,7 +1058,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                     </div>
                   )}
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                  <div className="wizard-form-grid-3">
                     <div>
                       <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
                         Financed Product Category
@@ -1101,7 +1103,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                  <div className="wizard-form-grid-2">
                     <div>
                       <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
                         IMEI 1 / Primary Device ID
@@ -1128,7 +1130,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                  <div className="wizard-form-grid-3">
                     <div>
                       <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
                         Retail Cash Price (₹) <span style={{ color: 'var(--danger)' }}>*</span>
@@ -1183,7 +1185,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
               {/* STEP 4: EMI Terms & Server Calculation */}
               {currentStep === 4 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                  <div className="wizard-form-grid-3">
                     <div>
                       <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
                         Retail Price (₹)
@@ -1223,7 +1225,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div className="wizard-form-grid-2">
                     <div>
                       <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
                         Loan Origination Date (DD/MM/YYYY) <span style={{ color: 'var(--danger)' }}>*</span>
@@ -1481,7 +1483,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                         padding: 16,
                       }}
                     >
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, textAlign: 'center', marginBottom: 12 }}>
+                      <div className="wizard-form-grid-4" style={{ textAlign: 'center', marginBottom: 12 }}>
                         <div>
                           <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>MONTHLY EMI</div>
                           <div className="mono" style={{ fontSize: 18, fontWeight: 800, color: 'var(--success)' }}>
@@ -1508,7 +1510,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                         </div>
                       </div>
 
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, textAlign: 'center' }}>
+                      <div className="wizard-form-grid-4" style={{ textAlign: 'center' }}>
                         <div>
                           <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>EMI START DATE</div>
                           <div className="mono" style={{ fontSize: 14, fontWeight: 700, color: 'var(--primary)' }}>

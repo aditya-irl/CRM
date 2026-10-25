@@ -124,7 +124,7 @@ const NavbarComponent: React.FC<NavbarProps> = ({
         {onOpenAddCustomer && (user.role === UserRole.SUPER_ADMIN || user.role === UserRole.ADMIN || user.role === UserRole.BRANCH_MANAGER) && (
           <button
             onClick={onOpenAddCustomer}
-            className="btn btn-primary btn-sm btn-responsive-action"
+            className="btn btn-primary btn-sm btn-responsive-action navbar-add-customer-btn"
           >
             <Plus size={13} />
             <span className="btn-responsive-label">Add Customer</span>
@@ -135,7 +135,7 @@ const NavbarComponent: React.FC<NavbarProps> = ({
           <button
             onClick={handleTriggerJobs}
             disabled={runningJob}
-            className="btn btn-secondary btn-sm btn-responsive-action"
+            className="btn btn-secondary btn-sm btn-responsive-action navbar-cron-btn"
             title="Execute daily midnight EMI state transitions and reminder queues manually"
           >
             <Play size={12} color="var(--warning)" />
@@ -186,7 +186,7 @@ const NavbarComponent: React.FC<NavbarProps> = ({
           </div>
         </div>
 
-        <button onClick={onLogout} className="btn btn-secondary btn-sm" title="Sign out of system" aria-label="Sign out">
+        <button onClick={onLogout} className="btn btn-secondary btn-sm navbar-logout-btn" title="Sign out of system" aria-label="Sign out">
           <LogOut size={13} />
           <span className="btn-responsive-label">Exit</span>
         </button>

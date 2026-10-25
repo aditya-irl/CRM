@@ -42,6 +42,11 @@ import {
   IAgentPerformanceMetrics,
   IAdminContactActivitySummary,
 } from '@crm/shared';
+import { Capacitor } from '@capacitor/core';
+import { Preferences } from '@capacitor/preferences';
+import { NativeTokenStorage } from '../mobile/secureStorage';
+
+export const DEFAULT_PRODUCTION_API_BASE = 'https://crm-api-a3fd.onrender.com/api/v1';
 
 export function isValidTrustedApiBase(rawUrl: string): boolean {
   if (typeof rawUrl !== 'string' || !rawUrl.trim()) return false;
@@ -79,6 +84,11 @@ export function buildApiUrl(endpoint: string = ''): string {
     const runtimeOverride = typeof window !== 'undefined' ? (window as any).__CRM_API_BASE_URL__ : undefined;
     if (runtimeOverride && isValidTrustedApiBase(runtimeOverride)) {
       base = runtimeOverride;
+    } else if (Capacitor.isNativePlatform()) {
+      // In native Android / iOS WebView (capacitor:// or https://localhost),
+      // relative paths (/api/v1) cannot resolve to a local server.
+      // Route directly to the secure HTTPS production backend.
+      base = DEFAULT_PRODUCTION_API_BASE;
     } else {
       base = '/api/v1';
     }
@@ -199,6 +209,8 @@ export interface IUnassignLoanAgentResult {
 
 export class ApiClient {
   private static refreshPromise: Promise<string> | null = null;
+  private static restoreSessionPromise: Promise<boolean> | null = null;
+  private static isSessionRestored = false;
 
   private static getSessionStorage(): Storage | null {
     try {
@@ -214,6 +226,49 @@ export class ApiClient {
       if (typeof window !== 'undefined' && window.localStorage) return window.localStorage;
     } catch {}
     return null;
+  }
+
+  public static async restoreNativeSession(): Promise<boolean> {
+    if (!Capacitor.isNativePlatform()) return false;
+    if (this.restoreSessionPromise) {
+      return this.restoreSessionPromise;
+    }
+
+    this.restoreSessionPromise = (async () => {
+      try {
+        const token = await NativeTokenStorage.getItem('crm_access_token');
+        const refreshToken = await NativeTokenStorage.getItem('crm_refresh_token');
+        const userRaw = await NativeTokenStorage.getItem('crm_user');
+
+        if (token && userRaw) {
+          const session = this.getSessionStorage();
+          if (session) {
+            session.setItem('crm_access_token', token);
+            if (refreshToken) session.setItem('crm_refresh_token', refreshToken);
+            session.setItem('crm_user', userRaw);
+            this.isSessionRestored = true;
+            return true;
+          }
+        }
+      } catch (e: any) {
+        console.warn('[ApiClient] Failed to restore native session from secure storage:', e);
+        if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+          window.dispatchEvent(
+            new CustomEvent('crm_secure_storage_error', {
+              detail: {
+                operation: 'restore',
+                message: 'Hardware secure storage is currently inaccessible. Please log in again.',
+              },
+            })
+          );
+        }
+      } finally {
+        this.isSessionRestored = true;
+      }
+      return false;
+    })();
+
+    return this.restoreSessionPromise;
   }
 
   public static getToken(): string | null {
@@ -245,6 +300,34 @@ export class ApiClient {
       local.removeItem('crm_refresh_token');
       local.removeItem('crm_user');
     }
+
+    // 3. In native mobile (Capacitor), persist credentials to hardware-encrypted secure storage
+    if (Capacitor.isNativePlatform()) {
+      const writes: Promise<any>[] = [
+        NativeTokenStorage.setItem('crm_access_token', token),
+        NativeTokenStorage.setItem('crm_user', JSON.stringify(user)),
+      ];
+      if (refreshToken) {
+        writes.push(NativeTokenStorage.setItem('crm_refresh_token', refreshToken));
+      } else {
+        writes.push(NativeTokenStorage.removeItem('crm_refresh_token'));
+      }
+
+      Promise.all(writes).catch((err) => {
+        console.error('[ApiClient] Hardware secure storage write failed:', err);
+        if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+          window.dispatchEvent(
+            new CustomEvent('crm_secure_storage_error', {
+              detail: {
+                operation: 'save',
+                message:
+                  'Hardware secure storage write failed. Your session is active for this launch, but ensure screen lock / passcode is enabled on this device.',
+              },
+            })
+          );
+        }
+      });
+    }
   }
 
   public static getUser(): IUser | null {
@@ -259,6 +342,8 @@ export class ApiClient {
   }
 
   public static logout() {
+    this.restoreSessionPromise = null;
+    this.isSessionRestored = false;
     const session = this.getSessionStorage();
 
     if (session) {
@@ -273,6 +358,13 @@ export class ApiClient {
       local.removeItem('crm_access_token');
       local.removeItem('crm_refresh_token');
       local.removeItem('crm_user');
+    }
+
+    // In native mobile, clear persisted tokens from secure storage
+    if (Capacitor.isNativePlatform()) {
+      NativeTokenStorage.removeItem('crm_access_token').catch(() => {});
+      NativeTokenStorage.removeItem('crm_refresh_token').catch(() => {});
+      NativeTokenStorage.removeItem('crm_user').catch(() => {});
     }
   }
 
@@ -325,6 +417,13 @@ export class ApiClient {
           session.setItem('crm_access_token', newAccessToken);
           if (newRefreshToken) {
             session.setItem('crm_refresh_token', newRefreshToken);
+          }
+        }
+
+        if (Capacitor.isNativePlatform()) {
+          NativeTokenStorage.setItem('crm_access_token', newAccessToken).catch(() => {});
+          if (newRefreshToken) {
+            NativeTokenStorage.setItem('crm_refresh_token', newRefreshToken).catch(() => {});
           }
         }
         return newAccessToken;
@@ -649,6 +748,11 @@ export class ApiClient {
   }
 
   private static async request<T>(endpoint: string, options: RequestInit = {}, isRetry = false): Promise<T> {
+    // In native mobile, await session restoration if a request fires during early app initialization
+    if (Capacitor.isNativePlatform() && !this.isSessionRestored && this.restoreSessionPromise) {
+      await this.restoreSessionPromise;
+    }
+
     const token = this.getToken();
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -661,10 +765,21 @@ export class ApiClient {
     }
 
     const url = buildApiUrl(endpoint);
-    const res = await fetch(url, {
-      ...options,
-      headers,
-    });
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        ...options,
+        headers,
+      });
+    } catch (networkErr: any) {
+      const msg = (networkErr?.message || '').toLowerCase();
+      if (msg.includes('failed to fetch') || msg.includes('load failed') || msg.includes('networkerror')) {
+        throw new Error(
+          'Unable to reach the CRM server. Please check your internet connection. If the backend is waking from a cold start, please retry in a few moments.'
+        );
+      }
+      throw networkErr;
+    }
 
     let json: ApiResponse<T> | undefined;
     try {

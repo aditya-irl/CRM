@@ -243,8 +243,8 @@ export const DynamicAttachmentManager: React.FC<DynamicAttachmentManagerProps> =
                   gap: 10,
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
+                <div className="dynamic-attachment-header-row">
+                  <div className="dynamic-attachment-controls-group">
                     <span
                       style={{
                         width: 22,
@@ -258,6 +258,7 @@ export const DynamicAttachmentManager: React.FC<DynamicAttachmentManagerProps> =
                         fontSize: 11,
                         fontWeight: 700,
                         color: 'var(--text-secondary)',
+                        flexShrink: 0,
                       }}
                     >
                       {index + 1}
@@ -281,22 +282,34 @@ export const DynamicAttachmentManager: React.FC<DynamicAttachmentManagerProps> =
                     )}
 
                     {!readOnly && (
-                      <input
-                        type="text"
-                        className="form-input"
-                        style={{ flex: 1, fontSize: 12, padding: '4px 8px', height: 32 }}
-                        placeholder="Optional Title / Identifier / Doc Number (e.g. Front View, 9876 5432)..."
-                        value={item.title}
-                        onChange={(e) => handleUpdateItem(item.id, { title: e.target.value })}
-                      />
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveItem(item.id)}
+                        className="btn btn-secondary btn-sm mobile-only-delete-btn"
+                        style={{ color: 'var(--danger-text)', padding: '4px 8px', height: 32 }}
+                        title="Remove attachment"
+                      >
+                        <Trash2 size={13} />
+                      </button>
                     )}
                   </div>
+
+                  {!readOnly && (
+                    <input
+                      type="text"
+                      className="form-input dynamic-attachment-title-input"
+                      style={{ flex: 1, fontSize: 12, padding: '4px 8px', height: 32 }}
+                      placeholder="Optional Title / Identifier / Doc Number (e.g. Front View, 9876 5432)..."
+                      value={item.title}
+                      onChange={(e) => handleUpdateItem(item.id, { title: e.target.value })}
+                    />
+                  )}
 
                   {!readOnly && (
                     <button
                       type="button"
                       onClick={() => handleRemoveItem(item.id)}
-                      className="btn btn-secondary btn-sm"
+                      className="btn btn-secondary btn-sm desktop-only-delete-btn"
                       style={{ color: 'var(--danger-text)', padding: '4px 8px', height: 32 }}
                       title="Remove attachment"
                     >

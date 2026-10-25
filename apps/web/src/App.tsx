@@ -117,15 +117,99 @@ export const App: React.FC = () => {
     }
   }, [activeTab]);
 
+  const [secureStorageError, setSecureStorageError] = useState<string | null>(null);
+
   useEffect(() => {
     const handleAuthExpired = () => {
       setUser(null);
     };
+    const handleSecureStorageError = (e: any) => {
+      const msg = e.detail?.message || 'Hardware secure storage is currently inaccessible.';
+      setSecureStorageError(msg);
+    };
     if (typeof window !== 'undefined') {
       window.addEventListener('crm_auth_expired', handleAuthExpired);
-      return () => window.removeEventListener('crm_auth_expired', handleAuthExpired);
+      window.addEventListener('crm_secure_storage_error', handleSecureStorageError);
+      return () => {
+        window.removeEventListener('crm_auth_expired', handleAuthExpired);
+        window.removeEventListener('crm_secure_storage_error', handleSecureStorageError);
+      };
     }
   }, []);
+
+  // Hardware back button behavior for Android / Native mobile
+  useEffect(() => {
+    const handleNativeBackPressed = (e: Event) => {
+      // 1. Close Add Customer Wizard modal if open
+      if (showAddCustomerWizard) {
+        setShowAddCustomerWizard(false);
+        e.preventDefault();
+        return;
+      }
+      // 2. Close mobile navigation menu/drawer if open
+      if (mobileMenuOpen) {
+        setMobileMenuOpen(false);
+        e.preventDefault();
+        return;
+      }
+      // 3. Close focused loan params if open
+      if (focusedLoanParams) {
+        setFocusedLoanParams(null);
+        e.preventDefault();
+        return;
+      }
+      // 4. Close focused dealer view if open
+      if (focusedDealerId) {
+        setFocusedDealerId(null);
+        e.preventDefault();
+        return;
+      }
+      // 5. Close drilldown selections if open
+      if (selectedDealerIdForCollections) {
+        setSelectedDealerIdForCollections(null);
+        e.preventDefault();
+        return;
+      }
+      if (selectedDealerIdForSettlements) {
+        setSelectedDealerIdForSettlements(null);
+        e.preventDefault();
+        return;
+      }
+      if (selectedDealerIdForPayables) {
+        setSelectedDealerIdForPayables(null);
+        e.preventDefault();
+        return;
+      }
+      if (selectedAgentIdForCollections) {
+        setSelectedAgentIdForCollections(null);
+        e.preventDefault();
+        return;
+      }
+      // 6. Navigate to root dashboard tab if on a deeper tab
+      if (activeTab !== 'dashboard') {
+        selectTab('dashboard');
+        e.preventDefault();
+        return;
+      }
+      // If at root dashboard with nothing open, we do not call preventDefault().
+      // This signals to Capacitor App.addListener('backButton') to exit/minimize the app.
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('crm_native_back_pressed', handleNativeBackPressed);
+      return () => window.removeEventListener('crm_native_back_pressed', handleNativeBackPressed);
+    }
+  }, [
+    showAddCustomerWizard,
+    mobileMenuOpen,
+    focusedLoanParams,
+    focusedDealerId,
+    selectedDealerIdForCollections,
+    selectedDealerIdForSettlements,
+    selectedDealerIdForPayables,
+    selectedAgentIdForCollections,
+    activeTab,
+  ]);
 
   const handleLogout = () => {
     ApiClient.logout();
@@ -314,6 +398,37 @@ export const App: React.FC = () => {
         onNavigate={handleNotificationNavigate}
         onToggleMobileMenu={() => setMobileMenuOpen((prev) => !prev)}
       />
+      {secureStorageError && (
+        <div
+          role="alert"
+          style={{
+            background: 'var(--warning-bg)',
+            color: 'var(--warning-text)',
+            borderBottom: '1px solid var(--warning-border)',
+            padding: '8px 16px',
+            fontSize: '12px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            zIndex: 9999,
+          }}
+        >
+          <span>{secureStorageError}</span>
+          <button
+            onClick={() => setSecureStorageError(null)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--warning-text)',
+              cursor: 'pointer',
+              fontWeight: 600,
+              marginLeft: 8,
+            }}
+          >
+            ✕ Dismiss
+          </button>
+        </div>
+      )}
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
         <Sidebar
           activeTab={activeTab}

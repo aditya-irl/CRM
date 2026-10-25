@@ -379,7 +379,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           gap: 12,
         }}
       >
-        <div className="chip-group-scrollable" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <div className="chip-group-scrollable" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginRight: 6, whiteSpace: 'nowrap' }}>
             PERIOD:
           </span>

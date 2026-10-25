@@ -17,7 +17,10 @@
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run build --workspaces --if-present",
     "db:migrate": "npm run db:migrate --workspace=@crm/api",
-    "db:seed": "npm run seed --workspace=@crm/api"
+    "db:seed": "npm run seed --workspace=@crm/api",
+    "cap:sync": "npm run build --workspace=@crm/web && npm run cap:sync --workspace=@crm/web",
+    "cap:android": "npm run cap:android --workspace=@crm/web",
+    "cap:ios": "npm run cap:ios --workspace=@crm/web"
   },
   "devDependencies": {
     "concurrently": "^9.2.5",
