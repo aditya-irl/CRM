@@ -373,6 +373,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
     <div style={{ minHeight: '100vh', background: 'var(--bg-app)', display: 'flex', flexDirection: 'column' }}>
       {/* ─── Top Trust Header ────────────────────────────────────────────── */}
       <header
+        className="portal-header"
         style={{
           background: 'var(--bg-surface)',
           borderBottom: '1px solid var(--border-subtle)',
@@ -386,9 +387,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
           boxShadow: 'var(--shadow-sm)',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div className="portal-header-brand-group" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <BrandLogo variant="horizontal" size="sm" showLegal={true} subtitle="Official EMI Portal" />
           <span
+            className="portal-verified-badge"
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -403,12 +405,13 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
             }}
           >
             <ShieldCheck size={12} />
-            <span>Verified Portal</span>
+            <span className="portal-verified-text">Verified Portal</span>
           </span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div className="portal-header-actions" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div
+            className="portal-lang-toggle"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -458,7 +461,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
             href={buildWhatsAppSupportUrl()}
             target="_blank"
             rel="noopener noreferrer"
-            className="btn btn-sm"
+            className="btn btn-sm portal-header-whatsapp-btn"
             style={{
               background: '#25D366',
               color: '#ffffff',
@@ -476,26 +479,26 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
             title={`Contact ${WHATSAPP_SUPPORT_CONFIG.displayName} on WhatsApp (${WHATSAPP_SUPPORT_CONFIG.formattedPhone})`}
           >
             <MessageCircle size={14} />
-            <span>{lang === 'hi' ? 'व्हाट्सएप सहायता' : 'WhatsApp Support'}</span>
+            <span className="portal-header-btn-text">{lang === 'hi' ? 'व्हाट्सएप सहायता' : 'WhatsApp Support'}</span>
           </a>
 
           {data && (
             <button
               onClick={() => fetchPortalData(true)}
               disabled={refreshing}
-              className="btn btn-secondary btn-sm"
+              className="btn btn-secondary btn-sm portal-header-refresh-btn"
               title="Refresh latest status"
               style={{ gap: 6 }}
             >
               <RefreshCw size={13} className={refreshing ? 'spin' : ''} />
-              <span>{lang === 'hi' ? 'ताज़ा करें' : 'Refresh'}</span>
+              <span className="portal-header-btn-text">{lang === 'hi' ? 'ताज़ा करें' : 'Refresh'}</span>
             </button>
           )}
         </div>
       </header>
 
       {/* ─── Main Container ──────────────────────────────────────────────── */}
-      <main style={{ flex: 1, maxWidth: 900, width: '100%', margin: '0 auto', padding: '20px 16px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <main className="portal-main-container" style={{ flex: 1, maxWidth: 900, width: '100%', margin: '0 auto', padding: '20px 16px', display: 'flex', flexDirection: 'column', gap: 20 }}>
         {/* Loading State */}
         {loading && (
           <div
@@ -613,6 +616,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
               {/* ─── Bilingual Overdue Payment Warning Banner (Requirement F) ─── */}
               {hasOverdue && (
                 <div
+                  className="portal-overdue-banner"
                   role="alert"
                   aria-live="polite"
                   style={{
@@ -627,9 +631,10 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                     borderLeft: '5px solid #d97706',
                   }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div className="portal-overdue-top-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+                    <div className="portal-overdue-title-group" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                       <div
+                        className="portal-overdue-icon-box"
                         style={{
                           width: 42,
                           height: 42,
@@ -645,16 +650,17 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                         <AlertCircle size={24} />
                       </div>
                       <div>
-                        <h3 style={{ fontSize: 18, fontWeight: 800, color: '#92400e', margin: 0 }}>
+                        <h3 className="portal-overdue-heading" style={{ fontSize: 18, fontWeight: 800, color: '#92400e', margin: 0 }}>
                           {overdueCopy[lang].title}
                         </h3>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: '#b45309' }}>
+                        <span className="portal-overdue-sub" style={{ fontSize: 12, fontWeight: 600, color: '#b45309' }}>
                           {data.loanAccountNo} • Alpha Mobile Gallery (Shubh Pvt Ltd)
                         </span>
                       </div>
                     </div>
 
                     <div
+                      className="portal-overdue-lang-pill"
                       style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -703,6 +709,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                   </div>
 
                   <p
+                    className="portal-overdue-body"
                     style={{
                       fontSize: 14,
                       color: '#78350f',
@@ -715,6 +722,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                   </p>
 
                   <div
+                    className="portal-overdue-summary-card"
                     style={{
                       display: 'flex',
                       flexWrap: 'wrap',
@@ -752,7 +760,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                     <button
                       type="button"
                       onClick={handleContactNow}
-                      className="btn btn-primary"
+                      className="btn btn-primary portal-overdue-contact-btn"
                       style={{
                         background: '#25D366',
                         borderColor: '#16a34a',
@@ -828,203 +836,213 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
 
               {/* ─── Hero Overview Card ────────────────────────────────────── */}
               <div
-                className="crm-card"
-              style={{
-                padding: 24,
-                background: '#ffffff',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 20,
-              }}
-            >
-              {/* Top Row: Customer & Account */}
-              <div
+                className="crm-card portal-hero-card"
                 style={{
+                  padding: 24,
+                  background: '#ffffff',
                   display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'flex-start',
-                  flexWrap: 'wrap',
-                  gap: 12,
+                  flexDirection: 'column',
+                  gap: 20,
                 }}
               >
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                      Customer Account
-                    </span>
-                    {getStatusBadge(data.status)}
-                  </div>
-                  <h2 style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-primary)', marginTop: 4, letterSpacing: '-0.02em' }}>
-                    {data.customerName}
-                  </h2>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 13, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <Phone size={13} />
-                      {data.maskedPhone}
-                    </span>
-                    <span style={{ color: 'var(--border-strong)' }}>•</span>
-                    <span className="mono" style={{ fontSize: 13, fontWeight: 700, color: 'var(--primary)' }}>
-                      {data.loanAccountNo}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Outstanding Due Callout */}
+                {/* Top Row: Customer & Account */}
                 <div
+                  className="portal-customer-header-row"
                   style={{
-                    background: 'var(--bg-surface-secondary)',
-                    padding: '12px 18px',
-                    borderRadius: 'var(--radius-lg)',
-                    border: '1px solid var(--border-subtle)',
-                    textAlign: 'right',
-                    minWidth: 160,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                    flexWrap: 'wrap',
+                    gap: 12,
                   }}
                 >
-                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
-                    Outstanding Balance
+                  <div className="portal-customer-info-col">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span className="portal-account-eyebrow" style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Customer Account
+                      </span>
+                      {getStatusBadge(data.status)}
+                    </div>
+                    <h2 className="portal-customer-name" style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-primary)', marginTop: 4, letterSpacing: '-0.02em' }}>
+                      {data.customerName}
+                    </h2>
+                    <div className="portal-customer-meta-row" style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 13, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <Phone size={13} />
+                        {data.maskedPhone}
+                      </span>
+                      <span style={{ color: 'var(--border-strong)' }}>•</span>
+                      <span className="mono" style={{ fontSize: 13, fontWeight: 700, color: 'var(--primary)' }}>
+                        {data.loanAccountNo}
+                      </span>
+                    </div>
                   </div>
-                  <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-primary)', marginTop: 2 }}>
-                    {formatINR(data.outstandingBalance)}
-                  </div>
-                </div>
-              </div>
 
-              {/* ─── Metrics Grid ────────────────────────────────────────── */}
-              <div
-                className="kpi-grid-mobile-2col"
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-                  gap: 12,
-                }}
-              >
-                <div
-                  style={{
-                    padding: '14px 16px',
-                    borderRadius: 'var(--radius-md)',
-                    background: 'var(--bg-app)',
-                    border: '1px solid var(--border-subtle)',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
-                    <Calendar size={14} color="var(--primary)" />
-                    <span>Next Due Date</span>
-                  </div>
-                  <div style={{ fontSize: 16, fontWeight: 800, marginTop: 4, color: 'var(--text-primary)' }}>
-                    {data.nextDueDate ? formatDateDDMMYYYY(data.nextDueDate) : 'Fully Paid'}
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    padding: '14px 16px',
-                    borderRadius: 'var(--radius-md)',
-                    background: 'var(--bg-app)',
-                    border: '1px solid var(--border-subtle)',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
-                    <CreditCard size={14} color="var(--primary)" />
-                    <span>Monthly EMI</span>
-                  </div>
-                  <div style={{ fontSize: 16, fontWeight: 800, marginTop: 4, color: 'var(--primary)' }}>
-                    {formatINR(data.emiAmount)}
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    padding: '14px 16px',
-                    borderRadius: 'var(--radius-md)',
-                    background: 'var(--bg-app)',
-                    border: '1px solid var(--border-subtle)',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
-                    <FileText size={14} color="var(--primary)" />
-                    <span>Financed Amount</span>
-                  </div>
-                  <div style={{ fontSize: 16, fontWeight: 800, marginTop: 4, color: 'var(--text-primary)' }}>
-                    {formatINR(data.financedAmount || 0)}
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    padding: '14px 16px',
-                    borderRadius: 'var(--radius-md)',
-                    background: 'var(--bg-app)',
-                    border: '1px solid var(--border-subtle)',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
-                    <CheckCircle2 size={14} color="var(--success)" />
-                    <span>Total Paid</span>
-                  </div>
-                  <div style={{ fontSize: 16, fontWeight: 800, marginTop: 4, color: 'var(--success-text)' }}>
-                    {formatINR(data.totalPaid)}
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    padding: '14px 16px',
-                    borderRadius: 'var(--radius-md)',
-                    background: 'var(--bg-app)',
-                    border: '1px solid var(--border-subtle)',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
-                    <Clock size={14} color="var(--warning)" />
-                    <span>Pending EMIs</span>
-                  </div>
-                  <div style={{ fontSize: 16, fontWeight: 800, marginTop: 4, color: 'var(--text-primary)' }}>
-                    {data.pendingInstallments} of {data.totalInstallments}
-                  </div>
-                </div>
-
-                {data.overdueInstallments !== undefined && data.overdueInstallments > 0 && (
+                  {/* Outstanding Due Callout */}
                   <div
+                    className="portal-balance-callout"
+                    style={{
+                      background: 'var(--bg-surface-secondary)',
+                      padding: '12px 18px',
+                      borderRadius: 'var(--radius-lg)',
+                      border: '1px solid var(--border-subtle)',
+                      textAlign: 'right',
+                      minWidth: 160,
+                    }}
+                  >
+                    <div className="portal-balance-label" style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
+                      Outstanding Balance
+                    </div>
+                    <div className="portal-balance-value" style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-primary)', marginTop: 2 }}>
+                      {formatINR(data.outstandingBalance)}
+                    </div>
+                  </div>
+                </div>
+
+                {/* ─── Metrics Grid ────────────────────────────────────────── */}
+                <div
+                  className="kpi-grid-mobile-2col portal-metrics-grid"
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                    gap: 12,
+                  }}
+                >
+                  <div
+                    className="portal-metric-card"
                     style={{
                       padding: '14px 16px',
                       borderRadius: 'var(--radius-md)',
-                      background: 'var(--danger-bg)',
-                      border: '1px solid var(--danger-border)',
+                      background: 'var(--bg-app)',
+                      border: '1px solid var(--border-subtle)',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--danger)' }}>
-                      <AlertCircle size={14} color="var(--danger)" />
-                      <span style={{ fontWeight: 600 }}>Overdue EMIs</span>
+                    <div className="portal-metric-card-header" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
+                      <Calendar size={14} color="var(--primary)" />
+                      <span>Next Due Date</span>
                     </div>
-                    <div style={{ fontSize: 16, fontWeight: 800, marginTop: 4, color: 'var(--danger)' }}>
-                      {data.overdueInstallments} Overdue
+                    <div className="portal-metric-card-value" style={{ fontSize: 16, fontWeight: 800, marginTop: 4, color: 'var(--text-primary)' }}>
+                      {data.nextDueDate ? formatDateDDMMYYYY(data.nextDueDate) : 'Fully Paid'}
                     </div>
                   </div>
-                )}
 
-                {data.totalPenaltyAmount !== undefined && data.totalPenaltyAmount > 0 && (
                   <div
+                    className="portal-metric-card"
                     style={{
                       padding: '14px 16px',
                       borderRadius: 'var(--radius-md)',
-                      background: 'rgba(239, 68, 68, 0.08)',
-                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      background: 'var(--bg-app)',
+                      border: '1px solid var(--border-subtle)',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--danger)' }}>
-                      <AlertCircle size={14} color="var(--danger)" />
-                      <span style={{ fontWeight: 600 }}>Penalty Total</span>
+                    <div className="portal-metric-card-header" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
+                      <CreditCard size={14} color="var(--primary)" />
+                      <span>Monthly EMI</span>
                     </div>
-                    <div style={{ fontSize: 16, fontWeight: 800, marginTop: 4, color: 'var(--danger-text)' }}>
-                      {formatINR(data.totalPenaltyAmount)}
+                    <div className="portal-metric-card-value" style={{ fontSize: 16, fontWeight: 800, marginTop: 4, color: 'var(--primary)' }}>
+                      {formatINR(data.emiAmount)}
                     </div>
                   </div>
-                )}
-              </div>
+
+                  <div
+                    className="portal-metric-card"
+                    style={{
+                      padding: '14px 16px',
+                      borderRadius: 'var(--radius-md)',
+                      background: 'var(--bg-app)',
+                      border: '1px solid var(--border-subtle)',
+                    }}
+                  >
+                    <div className="portal-metric-card-header" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
+                      <FileText size={14} color="var(--primary)" />
+                      <span>Financed Amount</span>
+                    </div>
+                    <div className="portal-metric-card-value" style={{ fontSize: 16, fontWeight: 800, marginTop: 4, color: 'var(--text-primary)' }}>
+                      {formatINR(data.financedAmount || 0)}
+                    </div>
+                  </div>
+
+                  <div
+                    className="portal-metric-card"
+                    style={{
+                      padding: '14px 16px',
+                      borderRadius: 'var(--radius-md)',
+                      background: 'var(--bg-app)',
+                      border: '1px solid var(--border-subtle)',
+                    }}
+                  >
+                    <div className="portal-metric-card-header" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
+                      <CheckCircle2 size={14} color="var(--success)" />
+                      <span>Total Paid</span>
+                    </div>
+                    <div className="portal-metric-card-value" style={{ fontSize: 16, fontWeight: 800, marginTop: 4, color: 'var(--success-text)' }}>
+                      {formatINR(data.totalPaid)}
+                    </div>
+                  </div>
+
+                  <div
+                    className="portal-metric-card"
+                    style={{
+                      padding: '14px 16px',
+                      borderRadius: 'var(--radius-md)',
+                      background: 'var(--bg-app)',
+                      border: '1px solid var(--border-subtle)',
+                    }}
+                  >
+                    <div className="portal-metric-card-header" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
+                      <Clock size={14} color="var(--warning)" />
+                      <span>Pending EMIs</span>
+                    </div>
+                    <div className="portal-metric-card-value" style={{ fontSize: 16, fontWeight: 800, marginTop: 4, color: 'var(--text-primary)' }}>
+                      {data.pendingInstallments} of {data.totalInstallments}
+                    </div>
+                  </div>
+
+                  {data.overdueInstallments !== undefined && data.overdueInstallments > 0 && (
+                    <div
+                      className="portal-metric-card portal-metric-card-overdue"
+                      style={{
+                        padding: '14px 16px',
+                        borderRadius: 'var(--radius-md)',
+                        background: 'var(--danger-bg)',
+                        border: '1px solid var(--danger-border)',
+                      }}
+                    >
+                      <div className="portal-metric-card-header" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--danger)' }}>
+                        <AlertCircle size={14} color="var(--danger)" />
+                        <span style={{ fontWeight: 600 }}>Overdue EMIs</span>
+                      </div>
+                      <div className="portal-metric-card-value" style={{ fontSize: 16, fontWeight: 800, marginTop: 4, color: 'var(--danger)' }}>
+                        {data.overdueInstallments} Overdue
+                      </div>
+                    </div>
+                  )}
+
+                  {data.totalPenaltyAmount !== undefined && data.totalPenaltyAmount > 0 && (
+                    <div
+                      className="portal-metric-card portal-metric-card-penalty"
+                      style={{
+                        padding: '14px 16px',
+                        borderRadius: 'var(--radius-md)',
+                        background: 'rgba(239, 68, 68, 0.08)',
+                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                      }}
+                    >
+                      <div className="portal-metric-card-header" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--danger)' }}>
+                        <AlertCircle size={14} color="var(--danger)" />
+                        <span style={{ fontWeight: 600 }}>Penalty Total</span>
+                      </div>
+                      <div className="portal-metric-card-value" style={{ fontSize: 16, fontWeight: 800, marginTop: 4, color: 'var(--danger-text)' }}>
+                        {formatINR(data.totalPenaltyAmount)}
+                      </div>
+                    </div>
+                  )}
+                </div>
 
               {/* ─── Overdue EMIs & Late Payment Penalty Breakdown ──────────── */}
               {data.installments && data.installments.some((i) => i.status === 'OVERDUE' || (i.penaltyAmount && i.penaltyAmount > 0)) && (
                 <div
+                  className="portal-overdue-notice-card"
                   style={{
                     background: 'var(--bg-surface)',
                     border: '1px solid var(--danger-border, #fca5a5)',
@@ -1035,20 +1053,20 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                     gap: 16,
                   }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+                  <div className="portal-overdue-notice-top-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <AlertCircle size={18} color="var(--danger)" />
-                        <h3 style={{ fontSize: 16, fontWeight: 800, color: 'var(--danger)', margin: 0 }}>
+                        <h3 className="portal-overdue-notice-heading" style={{ fontSize: 16, fontWeight: 800, color: 'var(--danger)', margin: 0 }}>
                           Overdue Installment & Late Penalty Notice
                         </h3>
                       </div>
-                      <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
+                      <p className="portal-overdue-notice-sub" style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
                         Late payment penalties have been assessed according to financing terms. Please clear outstanding amounts promptly.
                       </p>
                     </div>
 
-                    <div style={{ display: 'flex', gap: 16, background: 'var(--bg-app)', padding: '10px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+                    <div className="portal-overdue-notice-totals" style={{ display: 'flex', gap: 16, background: 'var(--bg-app)', padding: '10px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
                       <div>
                         <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600 }}>Total Outstanding</div>
                         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-primary)' }}>{formatINR(data.outstandingBalance)}</div>
@@ -1070,6 +1088,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                         return (
                           <div
                             key={inst.installmentNumber}
+                            className="portal-overdue-notice-inst-card"
                             style={{
                               background: 'var(--bg-app)',
                               border: '1px solid var(--border-subtle)',
@@ -1194,6 +1213,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
 
               {/* ─── Primary CTA: Secure Cashfree Online Payment ────────────────────── */}
               <div
+                className="portal-checkout-card"
                 style={{
                   background: 'var(--bg-surface)',
                   border: '1px solid var(--primary-border)',
@@ -1205,27 +1225,27 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                   boxShadow: 'var(--shadow-sm)',
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-                  <div>
+                <div className="portal-checkout-main-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+                  <div className="portal-checkout-info-block">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                       <span className="badge badge-primary" style={{ fontSize: 11, fontWeight: 700 }}>
                         SECURE CHECKOUT
                       </span>
                       <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Cashfree Payments</span>
                     </div>
-                    <h3 style={{ fontSize: 17, fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
+                    <h3 className="portal-checkout-heading" style={{ fontSize: 17, fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
                       Pay Outstanding EMI Online
                     </h3>
-                    <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
+                    <p className="portal-checkout-description" style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
                       Instant secure payment with UPI, Debit/Credit Card, or Netbanking via Cashfree Redirect Checkout.
                     </p>
                   </div>
-                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <div className="portal-checkout-actions" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                     <button
                       type="button"
                       disabled={paymentPhase !== 'idle' || data.outstandingBalance <= 0}
                       onClick={() => handleCashfreePay(undefined, 'hero')}
-                      className="btn btn-primary"
+                      className="btn btn-primary portal-checkout-pay-btn"
                       style={{
                         fontWeight: 700,
                         fontSize: 15,
@@ -1268,7 +1288,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                     <button
                       type="button"
                       onClick={() => handlePayViaWhatsApp()}
-                      className="btn btn-outline"
+                      className="btn btn-outline portal-checkout-wa-btn"
                       style={{
                         fontSize: 13,
                         fontWeight: 600,
@@ -1286,6 +1306,7 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                 </div>
 
                 <div
+                  className="portal-checkout-security-footer"
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -3262,6 +3283,50 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
           onClose={() => setViewingKycDoc(null)}
         />
       )}
+
+      {/* ─── Mobile Sticky Bottom Payment Bar (Requirement: payment button accessible when scrolling) ─── */}
+      {!loading && !error && data && data.outstandingBalance > 0 && (() => {
+        const nextUnpaidInst = data.installments?.find(
+          (i) => i.status !== 'PAID' && ((i.remainingAmount ?? 0) > 0 || (i.penaltyAmount ?? 0) > 0)
+        );
+        const heroPayableAmount = nextUnpaidInst
+          ? (nextUnpaidInst.totalDue !== undefined ? nextUnpaidInst.totalDue : (nextUnpaidInst.remainingAmount + (nextUnpaidInst.penaltyAmount || 0)))
+          : data.emiAmount;
+
+        return (
+          <div className="portal-mobile-sticky-pay-bar" role="region" aria-label="Quick Pay">
+            <div className="portal-sticky-due-info">
+              <span className="portal-sticky-due-label">
+                {nextUnpaidInst && (nextUnpaidInst.status === 'OVERDUE' || (nextUnpaidInst.daysOverdue ?? 0) > 0)
+                  ? (lang === 'hi' ? 'बकाया देय राशि' : 'Overdue Due')
+                  : (lang === 'hi' ? 'अगली EMI देय' : 'Next EMI Due')}
+              </span>
+              <span className="portal-sticky-due-amount">
+                {formatINR(heroPayableAmount)}
+              </span>
+            </div>
+            <button
+              type="button"
+              disabled={paymentPhase !== 'idle'}
+              onClick={() => handleCashfreePay(undefined, 'hero')}
+              className="btn btn-primary portal-sticky-pay-btn"
+              title="Pay EMI Online via Cashfree"
+            >
+              {payingInstallmentNumber === 'hero' ? (
+                <>
+                  <RefreshCw size={15} className="animate-spin" />
+                  <span>{paymentPhase === 'redirecting' ? 'Redirecting...' : 'Processing...'}</span>
+                </>
+              ) : (
+                <>
+                  <CreditCard size={15} />
+                  <span>{lang === 'hi' ? `EMI भुगतान (${formatINR(heroPayableAmount)})` : `Pay EMI (${formatINR(heroPayableAmount)})`}</span>
+                </>
+              )}
+            </button>
+          </div>
+        );
+      })()}
     </div>
   );
 };

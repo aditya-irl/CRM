@@ -161,7 +161,7 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
               <span style={{ color: 'var(--text-muted)' }}>•</span>
             )}
             {subtitle && (
-              <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>
+              <span className="brand-logo-subtitle" style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>
                 {subtitle}
               </span>
             )}
