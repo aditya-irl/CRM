@@ -88,6 +88,24 @@ export const envSchema = z.object({
   CASHFREE_ENV: z.enum(['sandbox', 'production']).default('sandbox'),
   CASHFREE_API_VERSION: z.string().default('2023-08-01'),
 }).superRefine((data, ctx) => {
+  // Cashfree Production Credentials Validation
+  if (data.CASHFREE_ENV === 'production') {
+    if (!data.CASHFREE_CLIENT_ID || !data.CASHFREE_CLIENT_ID.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['CASHFREE_CLIENT_ID'],
+        message: 'CASHFREE_CLIENT_ID is required when CASHFREE_ENV is set to "production".',
+      });
+    }
+    if (!data.CASHFREE_CLIENT_SECRET || !data.CASHFREE_CLIENT_SECRET.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['CASHFREE_CLIENT_SECRET'],
+        message: 'CASHFREE_CLIENT_SECRET is required when CASHFREE_ENV is set to "production".',
+      });
+    }
+  }
+
   if (data.NODE_ENV === 'production') {
     // Blocker 2: Force PostgreSQL in production
     if (data.DATABASE_DRIVER !== 'postgres') {

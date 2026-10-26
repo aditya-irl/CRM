@@ -682,31 +682,45 @@ export class PaymentService {
       });
 
       // Handle race condition on duplicate idempotency key
-      if (err.code === '23505' && data.idempotencyKey && err.constraint?.includes('idempotency')) {
-        const existingRes = await queryPostgres(
-          'SELECT id, amount, loan_id, customer_id, payment_mode FROM payments WHERE idempotency_key = $1',
-          [data.idempotencyKey]
+      const isUniqueIdempotencyViolation =
+        err.code === '23505' &&
+        data.idempotencyKey &&
+        (
+          err.constraint?.includes('idempotency') ||
+          err.detail?.includes('idempotency_key') ||
+          err.detail?.includes(data.idempotencyKey) ||
+          err.message?.includes('idempotency')
         );
-        if (existingRes.rows.length > 0) {
-          const existing = existingRes.rows[0];
-          const amountMatches = new Decimal(existing.amount).equals(new Decimal(data.amount));
-          const loanMatches = existing.loan_id === data.loanId;
-          const customerMatches = existing.customer_id === data.customerId;
-          const modeMatches = existing.payment_mode === data.paymentMode;
 
-          if (!amountMatches || !loanMatches || !customerMatches || !modeMatches) {
-            throw new AppError(
-              `Idempotency key "${data.idempotencyKey}" was previously used with a different payment payload`,
-              409
-            );
+      if (isUniqueIdempotencyViolation) {
+        // Query the already-committed payment record (with retry in case the racing transaction commits milliseconds later)
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const existingRes = await queryPostgres(
+            'SELECT id, amount, loan_id, customer_id, payment_mode FROM payments WHERE idempotency_key = $1',
+            [data.idempotencyKey]
+          );
+          if (existingRes.rows.length > 0) {
+            const existing = existingRes.rows[0];
+            const amountMatches = new Decimal(existing.amount).equals(new Decimal(data.amount));
+            const loanMatches = existing.loan_id === data.loanId;
+            const customerMatches = existing.customer_id === data.customerId;
+            const modeMatches = existing.payment_mode === data.paymentMode;
+
+            if (!amountMatches || !loanMatches || !customerMatches || !modeMatches) {
+              throw new AppError(
+                `Idempotency key "${data.idempotencyKey}" was previously used with a different payment payload`,
+                409
+              );
+            }
+
+            const receipt = await this.getReceipt(existing.id, user);
+            return {
+              ...receipt,
+              id: existing.id,
+              isIdempotentReplay: true,
+            };
           }
-
-          const receipt = await this.getReceipt(existing.id, user);
-          return {
-            ...receipt,
-            id: existing.id,
-            isIdempotentReplay: true,
-          };
+          await new Promise((resolve) => setTimeout(resolve, 50));
         }
       }
       throw err;

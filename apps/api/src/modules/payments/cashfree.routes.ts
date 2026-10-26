@@ -1,4 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { CashfreeService } from '../../core/cashfree/cashfree.service';
 import { PortalPaymentService } from '../portal/portal-payment.service';
@@ -45,16 +46,37 @@ router.post('/webhook', async (req: Request, res: Response, next: NextFunction) 
       });
     }
 
-    const eventType = req.body?.type;
+    const eventType = req.body?.type || 'EVENT';
     const eventData = req.body?.data || {};
     const orderData = eventData.order || {};
     const paymentData = eventData.payment || {};
     const orderId = orderData.order_id;
     const cfPaymentId = paymentData.cf_payment_id ? String(paymentData.cf_payment_id) : undefined;
-    const eventTime = req.body?.event_time || new Date().toISOString();
 
     // 2. Replay & Duplicate Event Protection
-    const eventId = `${eventType}_${orderId || 'none'}_${cfPaymentId || 'none'}_${eventTime}`;
+    // Use stable, deterministic Cashfree identifiers across retries
+    let eventId: string;
+    if (cfPaymentId) {
+      // Payment attempt events (SUCCESS, FAILED): cf_payment_id is uniquely stable
+      eventId = `${eventType}_${orderId || 'no_order'}_${cfPaymentId}`;
+    } else if (orderId && req.body?.event_time) {
+      // Order/session events with gateway event_time
+      eventId = `${eventType}_${orderId}_${req.body.event_time}`;
+    } else if (orderId && timestamp) {
+      // Fallback using the gateway-signed timestamp header
+      eventId = `${eventType}_${orderId}_ts_${timestamp}`;
+    } else {
+      // Incomplete identifier fallback: deterministic sha256 prefix of raw payload
+      const payloadHash = crypto.createHash('sha256').update(rawBody).digest('hex').slice(0, 16);
+      eventId = `${eventType}_${orderId || 'no_order'}_hash_${payloadHash}`;
+    }
+
+    // Ensure eventId never exceeds the VARCHAR(128) column limit
+    if (eventId.length > 120) {
+      const hashSuffix = crypto.createHash('sha256').update(eventId).digest('hex').slice(0, 16);
+      eventId = `${eventId.slice(0, 100)}_${hashSuffix}`;
+    }
+
     const duplicateRes = await queryPostgres(
       'SELECT id FROM cashfree_webhook_events WHERE event_id = $1',
       [eventId]

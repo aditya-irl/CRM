@@ -7,7 +7,9 @@ import { queryPostgres, closePostgresPool } from '../src/database/postgres';
 import { closeRedisConnection } from '../src/core/redis';
 import { closeAllQueues } from '../src/core/queue';
 import { CashfreeService } from '../src/core/cashfree/cashfree.service';
-import { env } from '../src/config/env';
+import { env, envSchema } from '../src/config/env';
+import { PaymentService } from '../src/modules/payments/payments.service';
+import { PaymentMode, CollectionSource, UserRole } from '@crm/shared';
 
 afterAll(async () => {
   await closeAllQueues();
@@ -437,6 +439,103 @@ describe('Cashfree Payments & Redirect Checkout Integration Tests', () => {
       expect(res.status).toBe(400);
       expect(res.body.error.message).toContain('Amount mismatch');
     });
+
+    it('processes a valid PAYMENT_FAILED_WEBHOOK: updates order status to FAILED and does not create a ledger payment', async () => {
+      const failedOrderId = `CF_CRM_FAIL_${runId}`;
+      await queryPostgres(
+        `INSERT INTO cashfree_orders (id, order_id, loan_id, customer_id, order_amount, order_currency, status, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, 5000.00, 'INR', 'ACTIVE', NOW(), NOW())`,
+        [uuidv4(), failedOrderId, loan2Id, customer2Id]
+      );
+
+      const paymentsCountBefore = await queryPostgres('SELECT COUNT(*) as count FROM payments WHERE loan_id = $1', [loan2Id]);
+
+      const webhookPayload = {
+        type: 'PAYMENT_FAILED_WEBHOOK',
+        event_time: new Date().toISOString(),
+        data: {
+          order: {
+            order_id: failedOrderId,
+            order_amount: 5000.00,
+          },
+          payment: {
+            cf_payment_id: 'cf_pay_failed_' + runId,
+            payment_status: 'FAILED',
+            payment_amount: 5000.00,
+            payment_message: 'Insufficient balance in bank account',
+          },
+        },
+      };
+
+      const rawBody = JSON.stringify(webhookPayload);
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const validSignature = crypto
+        .createHmac('sha256', testClientSecret)
+        .update(timestamp + rawBody)
+        .digest('base64');
+
+      const res = await request(app)
+        .post('/api/v1/payments/cashfree/webhook')
+        .set('x-webhook-timestamp', timestamp)
+        .set('x-webhook-signature', validSignature)
+        .set('Content-Type', 'application/json')
+        .send(rawBody);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+
+      const dbOrder = await queryPostgres('SELECT status, error_message FROM cashfree_orders WHERE order_id = $1', [failedOrderId]);
+      expect(dbOrder.rows[0].status).toBe('FAILED');
+      expect(dbOrder.rows[0].error_message).toContain('Insufficient balance');
+
+      const paymentsCountAfter = await queryPostgres('SELECT COUNT(*) as count FROM payments WHERE loan_id = $1', [loan2Id]);
+      expect(Number(paymentsCountAfter.rows[0].count)).toBe(Number(paymentsCountBefore.rows[0].count));
+    });
+
+    it('processes a valid PAYMENT_USER_DROPPED_WEBHOOK: updates order status to USER_DROPPED and does not create a ledger payment', async () => {
+      const droppedOrderId = `CF_CRM_DROPPED_${runId}`;
+      await queryPostgres(
+        `INSERT INTO cashfree_orders (id, order_id, loan_id, customer_id, order_amount, order_currency, status, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, 5000.00, 'INR', 'ACTIVE', NOW(), NOW())`,
+        [uuidv4(), droppedOrderId, loan2Id, customer2Id]
+      );
+
+      const paymentsCountBefore = await queryPostgres('SELECT COUNT(*) as count FROM payments WHERE loan_id = $1', [loan2Id]);
+
+      const webhookPayload = {
+        type: 'PAYMENT_USER_DROPPED_WEBHOOK',
+        event_time: new Date().toISOString(),
+        data: {
+          order: {
+            order_id: droppedOrderId,
+            order_amount: 5000.00,
+          },
+        },
+      };
+
+      const rawBody = JSON.stringify(webhookPayload);
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const validSignature = crypto
+        .createHmac('sha256', testClientSecret)
+        .update(timestamp + rawBody)
+        .digest('base64');
+
+      const res = await request(app)
+        .post('/api/v1/payments/cashfree/webhook')
+        .set('x-webhook-timestamp', timestamp)
+        .set('x-webhook-signature', validSignature)
+        .set('Content-Type', 'application/json')
+        .send(rawBody);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+
+      const dbOrder = await queryPostgres('SELECT status, error_message FROM cashfree_orders WHERE order_id = $1', [droppedOrderId]);
+      expect(dbOrder.rows[0].status).toBe('USER_DROPPED');
+
+      const paymentsCountAfter = await queryPostgres('SELECT COUNT(*) as count FROM payments WHERE loan_id = $1', [loan2Id]);
+      expect(Number(paymentsCountAfter.rows[0].count)).toBe(Number(paymentsCountBefore.rows[0].count));
+    });
   });
 
   describe('3. Server-to-Server Payment Status Verification', () => {
@@ -507,6 +606,128 @@ describe('Cashfree Payments & Redirect Checkout Integration Tests', () => {
       // Verify order is now PAID in PostgreSQL
       const dbOrder = await queryPostgres('SELECT status FROM cashfree_orders WHERE order_id = $1', [testOrderId]);
       expect(dbOrder.rows[0].status).toBe('PAID');
+    });
+  });
+
+  describe('4. Concurrent Payment Idempotency & Race Handling', () => {
+    it('handles concurrent processing of the same payment idempotency key safely without double-posting', async () => {
+      const concurrentIdempotencyKey = `concurrent_cf_${runId}_${Date.now()}`;
+      const recordingUser = {
+        id: superAdminId,
+        email: `admin_${runId}@cashfreetest.com`,
+        role: UserRole.SUPER_ADMIN,
+        fullName: 'Super Admin Collector',
+      };
+
+      // Launch 2 parallel payment records with the EXACT same payload and idempotency key
+      const [res1, res2] = await Promise.all([
+        PaymentService.recordPayment(
+          {
+            loanId: loan2Id,
+            customerId: customer2Id,
+            amount: 1000.00,
+            paymentMode: PaymentMode.UPI,
+            collectionSource: CollectionSource.DIRECT_CUSTOMER,
+            referenceNumber: `CF-CONC-${runId}-1`,
+            notes: 'Concurrent race test 1',
+            idempotencyKey: concurrentIdempotencyKey,
+          },
+          recordingUser
+        ),
+        PaymentService.recordPayment(
+          {
+            loanId: loan2Id,
+            customerId: customer2Id,
+            amount: 1000.00,
+            paymentMode: PaymentMode.UPI,
+            collectionSource: CollectionSource.DIRECT_CUSTOMER,
+            referenceNumber: `CF-CONC-${runId}-2`,
+            notes: 'Concurrent race test 2',
+            idempotencyKey: concurrentIdempotencyKey,
+          },
+          recordingUser
+        ),
+      ]);
+
+      // Both must succeed and resolve to the exact same payment ID and receipt number
+      expect(res1.id).toBeDefined();
+      expect(res2.id).toBeDefined();
+      expect(res1.id).toBe(res2.id);
+      expect(res1.receiptNumber).toBe(res2.receiptNumber);
+
+      // Confirm only ONE record exists in the database for this idempotency key
+      const pmtRes = await queryPostgres(
+        'SELECT id, amount, receipt_number FROM payments WHERE idempotency_key = $1',
+        [concurrentIdempotencyKey]
+      );
+      expect(pmtRes.rows.length).toBe(1);
+      expect(Number(pmtRes.rows[0].amount)).toBe(1000.00);
+    });
+  });
+
+  describe('5. Environment Configuration Validation', () => {
+    it('rejects startup/validation when CASHFREE_ENV=production but credentials are missing', () => {
+      const sampleEnv = {
+        NODE_ENV: 'production',
+        PORT: '4000',
+        DATABASE_DRIVER: 'postgres',
+        DATABASE_URL: 'postgres://user:pass@localhost:5432/db',
+        JWT_SECRET: 'test_super_secret_jwt_32_characters_long_min',
+        JWT_REFRESH_SECRET: 'test_super_secret_jwt_refresh_32_chars',
+        REDIS_URL: 'redis://localhost:6379',
+        STORAGE_PROVIDER: 's3',
+        AWS_ACCESS_KEY_ID: 'fake_key',
+        AWS_SECRET_ACCESS_KEY: 'fake_secret',
+        PORTAL_BASE_URL: 'https://crm.example.com/portal',
+        CASHFREE_ENV: 'production',
+        CASHFREE_CLIENT_ID: '',
+        CASHFREE_CLIENT_SECRET: '',
+      };
+
+      const result = envSchema.safeParse(sampleEnv);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const paths = result.error.issues.map((i) => i.path.join('.'));
+        expect(paths).toContain('CASHFREE_CLIENT_ID');
+        expect(paths).toContain('CASHFREE_CLIENT_SECRET');
+      }
+    });
+
+    it('allows startup in sandbox when credentials are not configured', () => {
+      const sampleEnv = {
+        NODE_ENV: 'development',
+        CASHFREE_ENV: 'sandbox',
+        CASHFREE_CLIENT_ID: undefined,
+        CASHFREE_CLIENT_SECRET: undefined,
+      };
+
+      const result = envSchema.safeParse(sampleEnv);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.CASHFREE_ENV).toBe('sandbox');
+        expect(result.data.CASHFREE_CLIENT_ID).toBeUndefined();
+      }
+    });
+
+    it('fails order creation clearly with HTTP 503 if credentials are not configured in sandbox', async () => {
+      const savedId = process.env.CASHFREE_CLIENT_ID;
+      const savedSecret = process.env.CASHFREE_CLIENT_SECRET;
+      try {
+        delete process.env.CASHFREE_CLIENT_ID;
+        delete process.env.CASHFREE_CLIENT_SECRET;
+
+        const res = await request(app)
+          .post('/api/v1/portal/payment/orders')
+          .set('x-portal-token', portalToken1)
+          .send({ installmentNumber: 1 });
+
+        expect(res.status).toBe(503);
+        expect(res.body.success).toBe(false);
+        expect(res.body.error.message).toContain('Cashfree payment gateway is not configured');
+      } finally {
+        process.env.CASHFREE_CLIENT_ID = savedId;
+        process.env.CASHFREE_CLIENT_SECRET = savedSecret;
+      }
     });
   });
 });

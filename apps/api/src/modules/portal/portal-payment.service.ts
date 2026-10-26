@@ -41,6 +41,14 @@ export class PortalPaymentService {
     rawToken: string,
     options: { installmentNumber?: number; emiId?: string } = {}
   ): Promise<CreateOrderResult> {
+    // 0. Ensure Cashfree payment gateway credentials are configured
+    if (!CashfreeService.isConfigured()) {
+      throw new AppError(
+        'Online payments are temporarily unavailable. Cashfree payment gateway is not configured.',
+        503
+      );
+    }
+
     // 1. Validate portal token and resolve active borrower context
     const tokenContext = await PortalService.validatePortalTokenContext(rawToken);
 
