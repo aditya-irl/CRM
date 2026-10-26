@@ -207,6 +207,34 @@ export interface IUnassignLoanAgentResult {
   unassignedAt: string;
 }
 
+export class PortalApiError extends Error {
+  public statusCode: number;
+  public code: string;
+  public retryAfter?: number;
+
+  constructor(message: string, statusCode: number, code: string = 'PORTAL_ERROR', retryAfter?: number) {
+    super(message);
+    this.name = 'PortalApiError';
+    this.statusCode = statusCode;
+    this.code = code;
+    this.retryAfter = retryAfter;
+    Object.setPrototypeOf(this, PortalApiError.prototype);
+  }
+}
+
+export function parsePortalResponseError(res: Response, json: any, fallbackMessage: string): PortalApiError {
+  const is429 = res.status === 429;
+  const retryAfterHeader = res.headers.get('Retry-After');
+  const retryAfter = json?.error?.retryAfter || (retryAfterHeader ? parseInt(retryAfterHeader, 10) : undefined);
+  const code = json?.error?.code || (is429 ? 'TOO_MANY_REQUESTS' : 'API_ERROR');
+  const message =
+    json?.error?.message ||
+    (is429
+      ? 'Too many portal access attempts. Please wait a moment before trying again.'
+      : fallbackMessage);
+  return new PortalApiError(message, res.status, code, retryAfter);
+}
+
 export class ApiClient {
   private static refreshPromise: Promise<string> | null = null;
   private static restoreSessionPromise: Promise<boolean> | null = null;
@@ -466,7 +494,7 @@ export class ApiClient {
     }
 
     if (!res.ok || !json.success) {
-      throw new Error(json.error?.message || 'Invalid or expired portal link');
+      throw parsePortalResponseError(res, json, 'Invalid or expired portal link');
     }
 
     return json.data as ICustomerPortalLoanData;
@@ -500,7 +528,7 @@ export class ApiClient {
     }
 
     if (!res.ok || !json.success) {
-      throw new Error(json.error?.message || 'Failed to load KYC documents');
+      throw parsePortalResponseError(res, json, 'Failed to load KYC documents');
     }
 
     return json.data || [];
@@ -578,7 +606,7 @@ export class ApiClient {
     }
 
     if (!res.ok || !json.success) {
-      throw new Error(json.error?.message || 'Failed to load profile details');
+      throw parsePortalResponseError(res, json, 'Failed to load profile details');
     }
 
     return json.data as ICustomerPortalProfile;
@@ -608,7 +636,7 @@ export class ApiClient {
     }
 
     if (!res.ok || !json.success) {
-      throw new Error(json.error?.message || 'Failed to submit verification confirmation');
+      throw parsePortalResponseError(res, json, 'Failed to submit verification confirmation');
     }
 
     return json.data;
@@ -639,7 +667,7 @@ export class ApiClient {
     }
 
     if (!res.ok || !json.success) {
-      throw new Error(json.error?.message || 'Failed to submit issue report');
+      throw parsePortalResponseError(res, json, 'Failed to submit issue report');
     }
 
     return json.data;
@@ -671,7 +699,7 @@ export class ApiClient {
     }
 
     if (!res.ok || !json.success) {
-      throw new Error(json.error?.message || 'Failed to initiate payment checkout order');
+      throw parsePortalResponseError(res, json, 'Failed to initiate payment checkout order');
     }
 
     return json.data as ICashfreeOrderData;
@@ -700,7 +728,7 @@ export class ApiClient {
     }
 
     if (!res.ok || !json.success) {
-      throw new Error(json.error?.message || 'Failed to verify payment order');
+      throw parsePortalResponseError(res, json, 'Failed to verify payment order');
     }
 
     return json.data as ICashfreeVerifyData;

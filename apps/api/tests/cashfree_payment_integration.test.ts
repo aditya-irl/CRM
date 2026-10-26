@@ -712,14 +712,18 @@ describe('Cashfree Payments & Redirect Checkout Integration Tests', () => {
     it('fails order creation clearly with HTTP 503 if credentials are not configured in sandbox', async () => {
       const savedId = process.env.CASHFREE_CLIENT_ID;
       const savedSecret = process.env.CASHFREE_CLIENT_SECRET;
+      const savedEnvId = env.CASHFREE_CLIENT_ID;
+      const savedEnvSecret = env.CASHFREE_CLIENT_SECRET;
       try {
         delete process.env.CASHFREE_CLIENT_ID;
         delete process.env.CASHFREE_CLIENT_SECRET;
+        (env as any).CASHFREE_CLIENT_ID = undefined;
+        (env as any).CASHFREE_CLIENT_SECRET = undefined;
 
         const res = await request(app)
           .post('/api/v1/portal/payment/orders')
           .set('x-portal-token', portalToken1)
-          .send({ installmentNumber: 1 });
+          .send({ installmentNumber: 2 });
 
         expect(res.status).toBe(503);
         expect(res.body.success).toBe(false);
@@ -727,6 +731,8 @@ describe('Cashfree Payments & Redirect Checkout Integration Tests', () => {
       } finally {
         process.env.CASHFREE_CLIENT_ID = savedId;
         process.env.CASHFREE_CLIENT_SECRET = savedSecret;
+        (env as any).CASHFREE_CLIENT_ID = savedEnvId;
+        (env as any).CASHFREE_CLIENT_SECRET = savedEnvSecret;
       }
     });
   });

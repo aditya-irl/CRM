@@ -1,22 +1,19 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { PortalService } from './portal.service';
 import { PortalPaymentService } from './portal-payment.service';
-import { portalRateLimiter } from '../../middlewares/rate-limit.middleware';
+import {
+  portalReadLimiter,
+  portalInvalidTokenLimiter,
+  portalPaymentOrderLimiter,
+  portalPaymentVerifyLimiter,
+  extractPortalToken,
+} from '../../middlewares/rate-limit.middleware';
 import { authenticate, requireRole } from '../../middlewares/auth.middleware';
 import { UserRole } from '@crm/shared';
 
 const router = Router();
 
-function extractPortalToken(req: Request): string | undefined {
-  let token = req.query.token as string | undefined;
-  if (!token && typeof req.headers['x-portal-token'] === 'string') {
-    token = req.headers['x-portal-token'];
-  }
-  if (!token && req.headers.authorization && req.headers.authorization.startsWith('Bearer cpt_')) {
-    token = req.headers.authorization.slice(7).trim();
-  }
-  return token?.trim();
-}
+
 
 /**
  * GET /api/v1/portal/loan
@@ -25,7 +22,7 @@ function extractPortalToken(req: Request): string | undefined {
  * Does NOT require admin JWT.
  * Rate limited via portalRateLimiter.
  */
-router.get('/loan', portalRateLimiter, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/loan', portalInvalidTokenLimiter, portalReadLimiter, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const token = extractPortalToken(req);
 
@@ -61,7 +58,7 @@ router.get('/loan', portalRateLimiter, async (req: Request, res: Response, next:
  * Customer endpoint for listing borrower's own KYC documents.
  * Authenticated via opaque portal token.
  */
-router.get('/kyc', portalRateLimiter, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/kyc', portalInvalidTokenLimiter, portalReadLimiter, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const token = extractPortalToken(req);
 
@@ -92,7 +89,7 @@ router.get('/kyc', portalRateLimiter, async (req: Request, res: Response, next: 
  * GET /api/v1/portal/kyc/:id/presigned-download
  * Customer endpoint for retrieving short-lived presigned download URL for own KYC document.
  */
-router.get('/kyc/:id/presigned-download', portalRateLimiter, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/kyc/:id/presigned-download', portalInvalidTokenLimiter, portalReadLimiter, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const token = extractPortalToken(req);
 
@@ -123,7 +120,7 @@ router.get('/kyc/:id/presigned-download', portalRateLimiter, async (req: Request
  * GET /api/v1/portal/kyc/:id/view
  * Customer endpoint for direct authenticated streaming of borrower's own KYC document.
  */
-router.get('/kyc/:id/view', portalRateLimiter, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/kyc/:id/view', portalInvalidTokenLimiter, portalReadLimiter, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const token = extractPortalToken(req);
 
@@ -161,7 +158,7 @@ router.get('/kyc/:id/view', portalRateLimiter, async (req: Request, res: Respons
  * Customer endpoint for retrieving borrower's registered identity, contact, address, photograph, and KYC documents.
  * Authenticated strictly via opaque portal token.
  */
-router.get('/profile', portalRateLimiter, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/profile', portalInvalidTokenLimiter, portalReadLimiter, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const token = extractPortalToken(req);
 
@@ -192,7 +189,7 @@ router.get('/profile', portalRateLimiter, async (req: Request, res: Response, ne
  * GET /api/v1/portal/photo
  * Customer endpoint for direct authenticated streaming of borrower's own photograph.
  */
-router.get('/photo', portalRateLimiter, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/photo', portalInvalidTokenLimiter, portalReadLimiter, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const token = extractPortalToken(req);
 
@@ -228,7 +225,7 @@ router.get('/photo', portalRateLimiter, async (req: Request, res: Response, next
  * POST /api/v1/portal/verify/confirm
  * Customer endpoint to confirm that displayed details are correct.
  */
-router.post('/verify/confirm', portalRateLimiter, async (req: Request, res: Response, next: NextFunction) => {
+router.post('/verify/confirm', portalInvalidTokenLimiter, portalReadLimiter, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const token = extractPortalToken(req);
 
@@ -260,7 +257,7 @@ router.post('/verify/confirm', portalRateLimiter, async (req: Request, res: Resp
  * POST /api/v1/portal/verify/report-issue
  * Customer endpoint to report an issue or discrepancy in a section.
  */
-router.post('/verify/report-issue', portalRateLimiter, async (req: Request, res: Response, next: NextFunction) => {
+router.post('/verify/report-issue', portalInvalidTokenLimiter, portalReadLimiter, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const token = extractPortalToken(req);
 
@@ -296,7 +293,7 @@ router.post('/verify/report-issue', portalRateLimiter, async (req: Request, res:
  * Authenticated purely via high-entropy customer portal token.
  * Authoritative amount is strictly calculated on server.
  */
-router.post('/payment/orders', portalRateLimiter, async (req: Request, res: Response, next: NextFunction) => {
+router.post('/payment/orders', portalInvalidTokenLimiter, portalPaymentOrderLimiter, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const token = extractPortalToken(req);
 
@@ -332,7 +329,7 @@ router.post('/payment/orders', portalRateLimiter, async (req: Request, res: Resp
  * Customer endpoint to verify payment status server-to-server after return from Cashfree checkout.
  * Authenticated via customer portal token.
  */
-router.get('/payment/orders/:orderId/verify', portalRateLimiter, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/payment/orders/:orderId/verify', portalInvalidTokenLimiter, portalPaymentVerifyLimiter, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const token = extractPortalToken(req);
 

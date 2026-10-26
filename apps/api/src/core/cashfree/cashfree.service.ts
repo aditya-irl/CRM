@@ -45,13 +45,13 @@ export class CashfreeService {
   private static readonly PRODUCTION_URL = 'https://api.cashfree.com/pg';
 
   public static isConfigured(): boolean {
-    const clientId = env.CASHFREE_CLIENT_ID || process.env.CASHFREE_CLIENT_ID;
-    const clientSecret = env.CASHFREE_CLIENT_SECRET || process.env.CASHFREE_CLIENT_SECRET;
+    const clientId = process.env.CASHFREE_CLIENT_ID !== undefined ? process.env.CASHFREE_CLIENT_ID : env.CASHFREE_CLIENT_ID;
+    const clientSecret = process.env.CASHFREE_CLIENT_SECRET !== undefined ? process.env.CASHFREE_CLIENT_SECRET : env.CASHFREE_CLIENT_SECRET;
     return Boolean(clientId && clientSecret && clientId.trim() && clientSecret.trim());
   }
 
   public static getEnvironment(): 'sandbox' | 'production' {
-    const raw = (env.CASHFREE_ENV || process.env.CASHFREE_ENV || 'sandbox').toLowerCase();
+    const raw = (process.env.CASHFREE_ENV !== undefined ? process.env.CASHFREE_ENV : env.CASHFREE_ENV || 'sandbox').toLowerCase();
     return raw === 'production' ? 'production' : 'sandbox';
   }
 
@@ -60,12 +60,12 @@ export class CashfreeService {
   }
 
   public static getApiVersion(): string {
-    return env.CASHFREE_API_VERSION || process.env.CASHFREE_API_VERSION || '2023-08-01';
+    return process.env.CASHFREE_API_VERSION !== undefined ? process.env.CASHFREE_API_VERSION : (env.CASHFREE_API_VERSION || '2023-08-01');
   }
 
   private static getCredentials(): { clientId: string; clientSecret: string } {
-    const clientId = (env.CASHFREE_CLIENT_ID || process.env.CASHFREE_CLIENT_ID || '').trim();
-    const clientSecret = (env.CASHFREE_CLIENT_SECRET || process.env.CASHFREE_CLIENT_SECRET || '').trim();
+    const clientId = (process.env.CASHFREE_CLIENT_ID !== undefined ? process.env.CASHFREE_CLIENT_ID : env.CASHFREE_CLIENT_ID || '').trim();
+    const clientSecret = (process.env.CASHFREE_CLIENT_SECRET !== undefined ? process.env.CASHFREE_CLIENT_SECRET : env.CASHFREE_CLIENT_SECRET || '').trim();
 
     if (!clientId || !clientSecret) {
       throw new AppError(

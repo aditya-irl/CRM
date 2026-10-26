@@ -38,6 +38,14 @@ import { storageDiagnosticGate, runStorageDiagnostic } from './modules/system/st
 
 const app = express();
 
+// Configure trusted reverse proxy hops (Render / Vercel single-hop edge proxies)
+// Allows Express to securely parse client IP from the rightmost verified proxy hop
+const trustProxyEnv = process.env.TRUST_PROXY;
+const trustProxyConfig = trustProxyEnv !== undefined
+  ? (trustProxyEnv === 'true' ? true : (!isNaN(Number(trustProxyEnv)) ? Number(trustProxyEnv) : trustProxyEnv))
+  : 1;
+app.set('trust proxy', trustProxyConfig);
+
 // --- Blocker 1: Secure, environment-based CORS ---
 // CORS_ORIGIN accepts a single origin or comma-separated list of origins.
 // In production, an explicit value is required. In dev/test, defaults to permissive if unset.

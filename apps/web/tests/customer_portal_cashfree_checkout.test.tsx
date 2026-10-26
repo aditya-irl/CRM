@@ -237,5 +237,32 @@ describe('Customer Portal Cashfree Redirect Checkout Tests', () => {
       const [url] = mockFetch.mock.calls[0];
       expect(url).toContain('/portal/payment/orders/CF_CRM_TEST_101/verify?token=portal_token_xyz');
     });
+
+    it('throws PortalApiError with statusCode 429 and retryAfter on rate limit breach', async () => {
+      const mockFetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 429,
+        headers: {
+          get: (header: string) => (header.toLowerCase() === 'retry-after' ? '45' : null),
+        },
+        json: async () => ({
+          success: false,
+          error: {
+            code: 'TOO_MANY_REQUESTS',
+            message: 'Too many portal access attempts. Please wait a moment and try again.',
+            retryAfter: 45,
+          },
+        }),
+      });
+      (global as any).fetch = mockFetch;
+
+      await expect(ApiClient.getCustomerPortalLoan('token_123')).rejects.toMatchObject({
+        name: 'PortalApiError',
+        statusCode: 429,
+        code: 'TOO_MANY_REQUESTS',
+        retryAfter: 45,
+      });
+    });
   });
 });
+

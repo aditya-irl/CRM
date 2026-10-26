@@ -53,6 +53,30 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
   const [error, setError] = useState<string | null>(
     !initialData && (!token || !token.trim()) ? 'A valid customer portal token is required in the link.' : null
   );
+  const [rateLimitInfo, setRateLimitInfo] = useState<{
+    retryAfter?: number;
+    message?: string;
+  } | null>(null);
+  const [countdown, setCountdown] = useState<number>(0);
+
+  useEffect(() => {
+    if (!rateLimitInfo?.retryAfter) {
+      setCountdown(0);
+      return;
+    }
+    setCountdown(rateLimitInfo.retryAfter);
+    const interval = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [rateLimitInfo]);
+
   const [activeTab, setActiveTab] = useState<'schedule' | 'history' | 'kyc' | 'profile'>('schedule');
   const [kycDocs, setKycDocs] = useState<any[]>([]);
   const [loadingKyc, setLoadingKyc] = useState<boolean>(false);
@@ -251,8 +275,21 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
     try {
       const result = await ApiClient.getCustomerPortalLoan(token);
       setData(result);
+      setRateLimitInfo(null);
     } catch (err: any) {
-      setError(err.message || 'This portal link is invalid, expired, or has been revoked.');
+      const isRateLimited =
+        err.statusCode === 429 ||
+        err.code === 'TOO_MANY_REQUESTS' ||
+        err.message?.toLowerCase().includes('too many');
+
+      if (isRateLimited) {
+        setRateLimitInfo({
+          retryAfter: err.retryAfter || 60,
+          message: err.message,
+        });
+      } else {
+        setError(err.message || 'This portal link is invalid, expired, or has been revoked.');
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -263,8 +300,14 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
     fetchPortalData();
 
     // Auto-refresh when customer refocuses the window (e.g. after WhatsApp/UPI payment)
+    // Throttled to at most once every 15 seconds to eliminate spurious rapid requests
+    let lastFocusFetchTime = 0;
     const onFocus = () => {
-      fetchPortalData(true);
+      const now = Date.now();
+      if (now - lastFocusFetchTime >= 15000) {
+        lastFocusFetchTime = now;
+        fetchPortalData(true);
+      }
     };
 
     window.addEventListener('focus', onFocus);
@@ -300,7 +343,14 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
         }
       } catch (err: any) {
         if (!isCancelled) {
-          setPaymentError(err.message || 'Unable to verify payment status.');
+          const is429 = err.statusCode === 429 || err.code === 'TOO_MANY_REQUESTS';
+          setPaymentError(
+            is429
+              ? (lang === 'hi'
+                  ? 'सत्यापन अनुरोध सीमा पार हो गई। कृपया थोड़ी देर प्रतीक्षा करें।'
+                  : 'Verification rate limit reached. Please wait a moment and refresh.')
+              : (err.message || 'Unable to verify payment status.')
+          );
         }
       } finally {
         if (!isCancelled) {
@@ -335,7 +385,14 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
       });
     } catch (err: any) {
       console.error('Cashfree checkout initiation failed:', err);
-      setPaymentError(err.message || 'Unable to start checkout. Please try again or contact support.');
+      const is429 = err.statusCode === 429 || err.code === 'TOO_MANY_REQUESTS';
+      setPaymentError(
+        is429
+          ? (lang === 'hi'
+              ? 'अत्यधिक भुगतान अनुरोध। कृपया कुछ मिनट प्रतीक्षा करें और पुनः प्रयास करें।'
+              : 'Too many checkout attempts. Please wait a few moments before trying again.')
+          : (err.message || 'Unable to start checkout. Please try again or contact support.')
+      );
       setPaymentPhase('idle');
       setPayingInstallmentNumber(null);
     }
@@ -532,7 +589,103 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
         )}
 
         {/* Error State */}
-        {!loading && error && (
+        {/* Non-fatal Rate Limit Warning Notice */}
+        {!loading && rateLimitInfo && (
+          <div
+            className="crm-card"
+            style={{
+              padding: '40px 24px',
+              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 16,
+              borderLeft: '4px solid #f59e0b',
+            }}
+            id="portal-rate-limit-card"
+          >
+            <div
+              style={{
+                width: 52,
+                height: 52,
+                borderRadius: '50%',
+                background: 'rgba(245, 158, 11, 0.12)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#f59e0b',
+              }}
+            >
+              <Clock size={28} />
+            </div>
+            <div style={{ maxWidth: 480 }}>
+              <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>
+                {lang === 'hi' ? 'अत्यधिक अनुरोध — कृपया प्रतीक्षा करें' : 'Too Many Requests'}
+              </h2>
+              <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 8, lineHeight: 1.5 }}>
+                {lang === 'hi'
+                  ? 'आपने कम समय में कई बार पोर्टल लोड किया है। आपका लिंक सक्रिय और सुरक्षित है। कृपया थोड़ी देर प्रतीक्षा करें।'
+                  : rateLimitInfo.message ||
+                    'You have accessed or refreshed the portal multiple times. Your link and loan details remain active and valid. Please wait a moment before trying again.'}
+              </p>
+              {countdown > 0 && (
+                <p style={{ fontSize: 13, fontWeight: 600, color: '#f59e0b', marginTop: 12 }}>
+                  {lang === 'hi'
+                    ? `पुनः प्रयास उपलब्ध होगा: ${countdown} सेकंड में`
+                    : `Retry available in ${countdown}s`}
+                </p>
+              )}
+              <div style={{ marginTop: 20, display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRateLimitInfo(null);
+                    fetchPortalData();
+                  }}
+                  disabled={countdown > 0}
+                  className="btn btn-primary"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '8px 20px',
+                    borderRadius: 6,
+                    fontWeight: 600,
+                    cursor: countdown > 0 ? 'not-allowed' : 'pointer',
+                    opacity: countdown > 0 ? 0.6 : 1,
+                  }}
+                  id="portal-rate-limit-retry-btn"
+                >
+                  <RefreshCw size={15} />
+                  <span>{lang === 'hi' ? 'पुनः प्रयास करें' : 'Retry Now'}</span>
+                </button>
+                <a
+                  href={buildWhatsAppSupportUrl(
+                    `Hello ${WHATSAPP_SUPPORT_CONFIG.displayName}, I am seeing a rate limit notice on my customer portal link. My query is: `
+                  )}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-secondary"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '8px 16px',
+                    borderRadius: 6,
+                    fontWeight: 600,
+                    textDecoration: 'none',
+                  }}
+                  id="portal-rate-limit-whatsapp-btn"
+                >
+                  <MessageCircle size={15} />
+                  <span>{lang === 'hi' ? 'व्हाट्सएप सहायता' : 'WhatsApp Support'}</span>
+                </a>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!loading && !rateLimitInfo && error && (
           <div
             className="crm-card"
             style={{
