@@ -10,6 +10,7 @@ import {
   UserRole,
 } from '@crm/shared';
 import { ApiClient } from '../services/api';
+import { AgentMobileCollectionsCard } from '../components/mobile';
 import {
   UserCheck,
   Calendar,
@@ -746,8 +747,10 @@ export const AgentCollectionsView: React.FC<AgentCollectionsViewProps> = ({
             <div style={{ fontSize: 12, marginTop: 4 }}>Try clearing the filters or selecting a different date range.</div>
           </div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table className="crm-table">
+          <>
+            {/* Desktop Table View */}
+            <div className="table-container desktop-only-table-view" style={{ overflowX: 'auto' }}>
+              <table className="crm-table">
               <thead>
                 <tr>
                   <th>Submission Date</th>
@@ -956,7 +959,26 @@ export const AgentCollectionsView: React.FC<AgentCollectionsViewProps> = ({
                 })}
               </tbody>
             </table>
-          </div>
+            </div>
+
+            {/* Mobile Card View */}
+            <div className="mobile-only-card-view" style={{ padding: 12 }}>
+              {records.map((r) => (
+                <AgentMobileCollectionsCard
+                  key={r.id}
+                  record={r}
+                  onViewReceipt={(rec) => handleOpenReceipt(rec.id)}
+                  onViewDetails={(rec) => setSelectedRecord(rec)}
+                  onApprove={(rec) => handleApprove(rec)}
+                  onReject={(rec) => {
+                    setRejectModalPayment(rec);
+                    setRejectionReason('');
+                  }}
+                  isAdmin={isAdminRole}
+                />
+              ))}
+            </div>
+          </>
         )}
 
         {/* Pagination Footer */}

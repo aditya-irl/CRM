@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, Suspense, lazy } from 'react';
 import { IDealerDashboardMetrics, formatINR, formatDateDDMMYYYY, UserRole } from '@crm/shared';
 import { ApiClient } from '../services/api';
 import {
@@ -17,9 +17,12 @@ import {
   TrendingUp,
   UserPlus,
   AlertCircle,
+  Smartphone,
 } from 'lucide-react';
-import { AddCustomerWizard } from '../components/AddCustomerWizard';
-import { RecordPaymentModal } from '../components/RecordPaymentModal';
+import { DealerMobileLoanCard, AgentMobileCollectionsCard } from '../components/mobile';
+
+const AddCustomerWizard = lazy(() => import('../components/AddCustomerWizard').then((m) => ({ default: m.AddCustomerWizard })));
+const RecordPaymentModal = lazy(() => import('../components/RecordPaymentModal').then((m) => ({ default: m.RecordPaymentModal })));
 
 interface DealerDashboardViewProps {
   onNavigateToTab?: (tab: string) => void;
@@ -152,6 +155,352 @@ export const DealerDashboardView: React.FC<DealerDashboardViewProps> = ({ onNavi
         </div>
       )}
 
+      {/* Dealer Mobile Experience (<= 768px) */}
+      <div className="dealer-mobile-view" style={{ marginBottom: 14 }}>
+        {/* Mobile Store Header */}
+        <div
+          data-testid="dealer-mobile-header"
+          style={{
+            background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+            borderRadius: 12,
+            padding: '14px 16px',
+            color: '#ffffff',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>
+              Retail Partner Store
+            </div>
+            <h2 style={{ fontSize: 18, fontWeight: 900, margin: '2px 0 0', color: '#ffffff' }}>
+              {data?.dealer?.storeName || 'Store Partner Dashboard'}
+            </h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+              {data?.dealer?.dealerCode && (
+                <span
+                  className="mono"
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    background: 'rgba(255, 255, 255, 0.15)',
+                    color: '#e2e8f0',
+                    padding: '2px 7px',
+                    borderRadius: 4,
+                  }}
+                >
+                  {data.dealer.dealerCode}
+                </span>
+              )}
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 3,
+                  fontSize: 10,
+                  fontWeight: 700,
+                  padding: '2px 7px',
+                  borderRadius: 4,
+                  background: 'rgba(34, 197, 94, 0.2)',
+                  color: '#4ade80',
+                }}
+              >
+                <ShieldCheck size={10} />
+                <span>Store Active</span>
+              </span>
+            </div>
+          </div>
+
+          <button
+            onClick={fetchDashboardData}
+            disabled={loading || refreshing}
+            aria-label="Refresh store stats"
+            data-testid="dealer-mobile-refresh-btn"
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 8,
+              background: 'rgba(255, 255, 255, 0.12)',
+              border: 'none',
+              color: '#ffffff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              touchAction: 'manipulation',
+            }}
+          >
+            <RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} />
+          </button>
+        </div>
+
+        {/* 6 Mobile KPI Performance Cards (2-column compact grid) */}
+        <div
+          className="dealer-kpi-grid"
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(2, 1fr)',
+            gap: 8,
+            marginTop: 10,
+          }}
+        >
+          {/* 1. Active Financed Phones */}
+          <div
+            className="crm-card"
+            data-testid="kpi-dealer-today-disbursed"
+            style={{
+              padding: 12,
+              background: '#ffffff',
+              border: '1.5px solid #bbf7d0',
+              borderRadius: 10,
+            }}
+          >
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#166534', textTransform: 'uppercase' }}>
+              Active Financed
+            </div>
+            <div className="mono" style={{ fontSize: 18, fontWeight: 900, color: '#15803d', marginTop: 2 }}>
+              {loading ? '—' : data?.metrics.activeLoans || 0} Phones
+            </div>
+            <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
+              {data?.metrics.approvedLoans || 0} approved • {data?.metrics.closedLoans || 0} closed
+            </div>
+          </div>
+
+          {/* 2. Store Borrowers */}
+          <div
+            className="crm-card"
+            data-testid="kpi-dealer-customers"
+            style={{
+              padding: 12,
+              background: '#ffffff',
+              border: '1px solid #e2e8f0',
+              borderRadius: 10,
+            }}
+          >
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>
+              Store Borrowers
+            </div>
+            <div className="mono" style={{ fontSize: 18, fontWeight: 900, color: '#0f172a', marginTop: 2 }}>
+              {loading ? '—' : data?.metrics.totalCustomers || 0}
+            </div>
+            <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
+              Registered customers
+            </div>
+          </div>
+
+          {/* 3. Financed Portfolio */}
+          <div
+            className="crm-card"
+            data-testid="kpi-dealer-financed-portfolio"
+            style={{
+              padding: 12,
+              background: '#ffffff',
+              border: '1px solid #e2e8f0',
+              borderRadius: 10,
+            }}
+          >
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>
+              Financed Portfolio
+            </div>
+            <div className="mono" style={{ fontSize: 18, fontWeight: 900, color: '#2563eb', marginTop: 2 }}>
+              {loading ? '—' : formatINR(data?.metrics.totalFinancedAmount || 0)}
+            </div>
+            <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
+              Total originated
+            </div>
+          </div>
+
+          {/* 4. Store Collections */}
+          <div
+            className="crm-card"
+            data-testid="kpi-dealer-collections"
+            style={{
+              padding: 12,
+              background: '#ffffff',
+              border: '1.5px solid #bbf7d0',
+              borderRadius: 10,
+            }}
+          >
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#166534', textTransform: 'uppercase' }}>
+              EMI Collections
+            </div>
+            <div className="mono" style={{ fontSize: 18, fontWeight: 900, color: '#15803d', marginTop: 2 }}>
+              {loading ? '—' : formatINR(data?.metrics.totalCollectedAmount || 0)}
+            </div>
+            <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
+              Collected at counter
+            </div>
+          </div>
+
+          {/* 5. Pending Remittance */}
+          <div
+            className="crm-card"
+            data-testid="kpi-dealer-pending-remittance"
+            style={{
+              padding: 12,
+              background: '#ffffff',
+              border: (data?.metrics.unsettledCollectionAmount || 0) > 0 ? '1.5px solid #fca5a5' : '1px solid #e2e8f0',
+              borderRadius: 10,
+            }}
+          >
+            <div style={{ fontSize: 10, fontWeight: 700, color: (data?.metrics.unsettledCollectionAmount || 0) > 0 ? '#991b1b' : '#475569', textTransform: 'uppercase' }}>
+              Pending Remittance
+            </div>
+            <div className="mono" style={{ fontSize: 18, fontWeight: 900, color: (data?.metrics.unsettledCollectionAmount || 0) > 0 ? '#b91c1c' : '#0f172a', marginTop: 2 }}>
+              {loading ? '—' : formatINR(data?.metrics.unsettledCollectionAmount || 0)}
+            </div>
+            <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
+              Awaiting settlement
+            </div>
+          </div>
+
+          {/* 6. Pending Review */}
+          <div
+            className="crm-card"
+            data-testid="kpi-dealer-pending-loans"
+            style={{
+              padding: 12,
+              background: '#ffffff',
+              border: (data?.metrics.pendingLoans || 0) > 0 ? '1.5px solid #fde68a' : '1px solid #e2e8f0',
+              borderRadius: 10,
+            }}
+          >
+            <div style={{ fontSize: 10, fontWeight: 700, color: (data?.metrics.pendingLoans || 0) > 0 ? '#854d0e' : '#475569', textTransform: 'uppercase' }}>
+              Pending Review
+            </div>
+            <div className="mono" style={{ fontSize: 18, fontWeight: 900, color: (data?.metrics.pendingLoans || 0) > 0 ? '#b45309' : '#0f172a', marginTop: 2 }}>
+              {loading ? '—' : data?.metrics.pendingLoans || 0} Apps
+            </div>
+            <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
+              Awaiting approval
+            </div>
+          </div>
+        </div>
+
+        {/* Quick Actions (4-column Touch Tiles >= 48px) */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(4, 1fr)',
+            gap: 8,
+            marginTop: 10,
+          }}
+        >
+          {/* Action 1: Add Customer */}
+          <button
+            type="button"
+            data-testid="dealer-quick-add-cust-btn"
+            className="dealer-touch-btn-48"
+            onClick={() => setShowOnboardWizard(true)}
+            style={{
+              height: 52,
+              borderRadius: 10,
+              background: '#eff6ff',
+              border: '1px solid #bfdbfe',
+              color: '#1d4ed8',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 3,
+              cursor: 'pointer',
+              touchAction: 'manipulation',
+            }}
+          >
+            <UserPlus size={18} />
+            <span style={{ fontSize: 11, fontWeight: 700 }}>Add Cust</span>
+          </button>
+
+          {/* Action 2: Create Loan */}
+          <button
+            type="button"
+            data-testid="dealer-quick-create-loan-btn"
+            className="dealer-touch-btn-48"
+            onClick={() => {
+              if (onNavigateToTab) onNavigateToTab('loans');
+              else window.location.hash = '#loans';
+            }}
+            style={{
+              height: 52,
+              borderRadius: 10,
+              background: '#f8fafc',
+              border: '1px solid #cbd5e1',
+              color: '#334155',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 3,
+              cursor: 'pointer',
+              touchAction: 'manipulation',
+            }}
+          >
+            <CreditCard size={18} />
+            <span style={{ fontSize: 11, fontWeight: 700 }}>Loans</span>
+          </button>
+
+          {/* Action 3: Inventory */}
+          <button
+            type="button"
+            data-testid="dealer-quick-inventory-btn"
+            className="dealer-touch-btn-48"
+            onClick={() => {
+              if (onNavigateToTab) onNavigateToTab('devices');
+              else window.location.hash = '#devices';
+            }}
+            style={{
+              height: 52,
+              borderRadius: 10,
+              background: '#f8fafc',
+              border: '1px solid #cbd5e1',
+              color: '#334155',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 3,
+              cursor: 'pointer',
+              touchAction: 'manipulation',
+            }}
+          >
+            <Smartphone size={18} />
+            <span style={{ fontSize: 11, fontWeight: 700 }}>Inventory</span>
+          </button>
+
+          {/* Action 4: Record Payment */}
+          <button
+            type="button"
+            data-testid="dealer-quick-record-emi-btn"
+            className="dealer-touch-btn-48"
+            onClick={() => {
+              setSelectedLoanForPayment(null);
+              setShowRecordPaymentModal(true);
+            }}
+            style={{
+              height: 52,
+              borderRadius: 10,
+              background: '#f0fdf4',
+              border: '1px solid #bbf7d0',
+              color: '#15803d',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 3,
+              cursor: 'pointer',
+              touchAction: 'manipulation',
+            }}
+          >
+            <CreditCard size={18} />
+            <span style={{ fontSize: 11, fontWeight: 700 }}>Record EMI</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Desktop View Banner & KPI Grid (> 768px) */}
+      <div className="dealer-desktop-view">
       {/* Header Banner */}
       <div
         className="crm-card"
@@ -461,6 +810,7 @@ export const DealerDashboardView: React.FC<DealerDashboardViewProps> = ({ onNavi
           </div>
         </div>
       </div>
+      </div>
 
       {/* Main Operations Card */}
       <div className="crm-card" style={{ padding: 20 }}>
@@ -541,73 +891,93 @@ export const DealerDashboardView: React.FC<DealerDashboardViewProps> = ({ onNavi
                 No financed loans found for this partner store.
               </div>
             ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table className="crm-table" style={{ width: '100%' }}>
-                  <thead>
-                    <tr>
-                      <th>Loan Account</th>
-                      <th>Customer Name</th>
-                      <th>Mobile Phone</th>
-                      <th>Principal</th>
-                      <th>EMI Amount</th>
-                      <th>Outstanding</th>
-                      <th>Status</th>
-                      <th>Disbursed On</th>
-                      <th style={{ textAlign: 'right' }}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.recentLoans.map((l) => (
-                      <tr key={l.id}>
-                        <td className="mono font-bold" style={{ color: 'var(--primary)' }}>
-                          {l.loanAccountNo}
-                        </td>
-                        <td>
-                          <strong>{l.customerName}</strong>
-                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                            {l.customerCode}
-                          </div>
-                        </td>
-                        <td className="mono">{l.primaryPhone}</td>
-                        <td className="font-bold">{formatINR(l.principalAmount)}</td>
-                        <td>{formatINR(l.emiAmount)}</td>
-                        <td className="font-bold" style={{ color: 'var(--warning-text, #d97706)' }}>
-                          {formatINR(l.outstandingBalance)}
-                        </td>
-                        <td>
-                          <span
-                            className={`badge ${
-                              l.status === 'ACTIVE'
-                                ? 'badge-paid'
-                                : l.status === 'CLOSED'
-                                ? 'badge-upcoming'
-                                : 'badge-overdue'
-                            }`}
-                          >
-                            {l.status}
-                          </span>
-                        </td>
-                        <td>{formatDate(l.disbursementDate)}</td>
-                        <td style={{ textAlign: 'right' }}>
-                          {(l.status === 'ACTIVE' || Number(l.outstandingBalance) > 0) && (
-                            <button
-                              onClick={() => {
-                                setSelectedLoanForPayment(l);
-                                setShowRecordPaymentModal(true);
-                              }}
-                              className="btn btn-primary btn-xs"
-                              style={{ fontSize: 11, padding: '3px 8px' }}
-                              title="Record EMI payment collected at store"
-                            >
-                              Record EMI
-                            </button>
-                          )}
-                        </td>
+              <>
+                <div className="table-container desktop-only-table-view" style={{ overflowX: 'auto' }}>
+                  <table className="crm-table" style={{ width: '100%' }}>
+                    <thead>
+                      <tr>
+                        <th>Loan Account</th>
+                        <th>Customer Name</th>
+                        <th>Mobile Phone</th>
+                        <th>Principal</th>
+                        <th>EMI Amount</th>
+                        <th>Outstanding</th>
+                        <th>Status</th>
+                        <th>Disbursed On</th>
+                        <th style={{ textAlign: 'right' }}>Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {data.recentLoans.map((l) => (
+                        <tr key={l.id}>
+                          <td className="mono font-bold" style={{ color: 'var(--primary)' }}>
+                            {l.loanAccountNo}
+                          </td>
+                          <td>
+                            <strong>{l.customerName}</strong>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                              {l.customerCode}
+                            </div>
+                          </td>
+                          <td className="mono">{l.primaryPhone}</td>
+                          <td className="font-bold">{formatINR(l.principalAmount)}</td>
+                          <td>{formatINR(l.emiAmount)}</td>
+                          <td className="font-bold" style={{ color: 'var(--warning-text, #d97706)' }}>
+                            {formatINR(l.outstandingBalance)}
+                          </td>
+                          <td>
+                            <span
+                              className={`badge ${
+                                l.status === 'ACTIVE'
+                                  ? 'badge-paid'
+                                  : l.status === 'CLOSED'
+                                  ? 'badge-upcoming'
+                                  : 'badge-overdue'
+                              }`}
+                            >
+                              {l.status}
+                            </span>
+                          </td>
+                          <td>{formatDate(l.disbursementDate)}</td>
+                          <td style={{ textAlign: 'right' }}>
+                            {(l.status === 'ACTIVE' || Number(l.outstandingBalance) > 0) && (
+                              <button
+                                onClick={() => {
+                                  setSelectedLoanForPayment(l);
+                                  setShowRecordPaymentModal(true);
+                                }}
+                                className="btn btn-primary btn-xs"
+                                style={{ fontSize: 11, padding: '3px 8px' }}
+                                title="Record EMI payment collected at store"
+                              >
+                                Record EMI
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile Loan Cards */}
+                <div className="mobile-only-card-view" style={{ marginTop: 10 }}>
+                  {data.recentLoans.map((l) => (
+                    <DealerMobileLoanCard
+                      key={l.id}
+                      loan={l}
+                      onViewDetails={() => {
+                        if (onNavigateToTab) onNavigateToTab('loans');
+                        else window.location.hash = '#loans';
+                      }}
+                      onRecordPayment={(loan) => {
+                        setSelectedLoanForPayment(loan);
+                        setShowRecordPaymentModal(true);
+                      }}
+                    />
+                  ))}
+                </div>
+              </>
             )}
           </div>
         )}
@@ -624,62 +994,79 @@ export const DealerDashboardView: React.FC<DealerDashboardViewProps> = ({ onNavi
                 No collections recorded yet for this partner store.
               </div>
             ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table className="crm-table" style={{ width: '100%' }}>
-                  <thead>
-                    <tr>
-                      <th>Receipt #</th>
-                      <th>Customer</th>
-                      <th>Loan Account</th>
-                      <th>Amount</th>
-                      <th>Payment Mode</th>
-                      <th>Date</th>
-                      <th>Status</th>
-                      <th>Remittance State</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.recentCollections.map((c) => (
-                      <tr key={c.id}>
-                        <td className="mono font-bold" style={{ color: 'var(--primary)' }}>
-                          {c.receiptNumber}
-                        </td>
-                        <td><strong>{c.customerName}</strong></td>
-                        <td className="mono">{c.loanAccountNo}</td>
-                        <td className="font-bold" style={{ color: 'var(--success)' }}>
-                          {formatINR(c.amount)}
-                        </td>
-                        <td>
-                          <span className="badge badge-route">{c.paymentMode}</span>
-                        </td>
-                        <td>{formatDate(c.paymentDate)}</td>
-                        <td>
-                          <span
-                            className={`badge ${
-                              c.status === 'SUCCESS' ? 'badge-paid' : 'badge-overdue'
-                            }`}
-                          >
-                            {c.status}
-                          </span>
-                        </td>
-                        <td>
-                          <span
-                            className={`badge ${
-                              c.settlementStatus === 'SETTLED'
-                                ? 'badge-paid'
-                                : c.settlementStatus === 'PARTIALLY_SETTLED'
-                                ? 'badge-partial'
-                                : 'badge-due-today'
-                            }`}
-                          >
-                            {c.settlementStatus || 'UNSETTLED'}
-                          </span>
-                        </td>
+              <>
+                <div className="table-container desktop-only-table-view" style={{ overflowX: 'auto' }}>
+                  <table className="crm-table" style={{ width: '100%' }}>
+                    <thead>
+                      <tr>
+                        <th>Receipt #</th>
+                        <th>Customer</th>
+                        <th>Loan Account</th>
+                        <th>Amount</th>
+                        <th>Payment Mode</th>
+                        <th>Date</th>
+                        <th>Status</th>
+                        <th>Remittance State</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {data.recentCollections.map((c) => (
+                        <tr key={c.id}>
+                          <td className="mono font-bold" style={{ color: 'var(--primary)' }}>
+                            {c.receiptNumber}
+                          </td>
+                          <td><strong>{c.customerName}</strong></td>
+                          <td className="mono">{c.loanAccountNo}</td>
+                          <td className="font-bold" style={{ color: 'var(--success)' }}>
+                            {formatINR(c.amount)}
+                          </td>
+                          <td>
+                            <span className="badge badge-route">{c.paymentMode}</span>
+                          </td>
+                          <td>{formatDate(c.paymentDate)}</td>
+                          <td>
+                            <span
+                              className={`badge ${
+                                c.status === 'SUCCESS' ? 'badge-paid' : 'badge-overdue'
+                              }`}
+                            >
+                              {c.status}
+                            </span>
+                          </td>
+                          <td>
+                            <span
+                              className={`badge ${
+                                c.settlementStatus === 'SETTLED'
+                                  ? 'badge-paid'
+                                  : c.settlementStatus === 'PARTIALLY_SETTLED'
+                                  ? 'badge-partial'
+                                  : 'badge-due-today'
+                              }`}
+                            >
+                              {c.settlementStatus || 'UNSETTLED'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile Collections Cards */}
+                <div className="mobile-only-card-view" style={{ marginTop: 10 }}>
+                  {data.recentCollections.map((c) => (
+                    <AgentMobileCollectionsCard
+                      key={c.id}
+                      record={{
+                        ...c,
+                        amountCollected: c.amount,
+                        paymentTimestamp: c.paymentDate,
+                      }}
+                      onViewReceipt={() => {}}
+                    />
+                  ))}
+                </div>
+              </>
             )}
           </div>
         )}
@@ -696,44 +1083,88 @@ export const DealerDashboardView: React.FC<DealerDashboardViewProps> = ({ onNavi
                 No remittance settlements recorded yet.
               </div>
             ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table className="crm-table" style={{ width: '100%' }}>
-                  <thead>
-                    <tr>
-                      <th>Settlement Ref</th>
-                      <th>Total Remitted</th>
-                      <th>Payment Method</th>
-                      <th>Settlement Date</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.recentSettlements.map((s) => (
-                      <tr key={s.id}>
-                        <td className="mono font-bold" style={{ color: 'var(--primary)' }}>
-                          {s.settlementReference}
-                        </td>
-                        <td className="font-bold" style={{ color: 'var(--success)' }}>
-                          {formatINR(s.totalAmount)}
-                        </td>
-                        <td>
-                          <span className="badge badge-route">{s.paymentMethod}</span>
-                        </td>
-                        <td>{formatDate(s.settlementDate)}</td>
-                        <td>
-                          <span
-                            className={`badge ${
-                              s.status === 'COMPLETED' ? 'badge-paid' : 'badge-overdue'
-                            }`}
-                          >
-                            {s.status}
-                          </span>
-                        </td>
+              <>
+                <div className="table-container desktop-only-table-view" style={{ overflowX: 'auto' }}>
+                  <table className="crm-table" style={{ width: '100%' }}>
+                    <thead>
+                      <tr>
+                        <th>Settlement Ref</th>
+                        <th>Total Remitted</th>
+                        <th>Payment Method</th>
+                        <th>Settlement Date</th>
+                        <th>Status</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {data.recentSettlements.map((s) => (
+                        <tr key={s.id}>
+                          <td className="mono font-bold" style={{ color: 'var(--primary)' }}>
+                            {s.settlementReference}
+                          </td>
+                          <td className="font-bold" style={{ color: 'var(--success)' }}>
+                            {formatINR(s.totalAmount)}
+                          </td>
+                          <td>
+                            <span className="badge badge-route">{s.paymentMethod}</span>
+                          </td>
+                          <td>{formatDate(s.settlementDate)}</td>
+                          <td>
+                            <span
+                              className={`badge ${
+                                s.status === 'COMPLETED' ? 'badge-paid' : 'badge-overdue'
+                              }`}
+                            >
+                              {s.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile Settlements Cards */}
+                <div className="mobile-only-card-view" style={{ marginTop: 10 }}>
+                  {data.recentSettlements.map((s) => (
+                    <div
+                      key={s.id}
+                      className="crm-card"
+                      data-testid={`dealer-settlement-card-${s.id}`}
+                      style={{
+                        padding: 14,
+                        marginBottom: 10,
+                        background: '#ffffff',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: 12,
+                        boxShadow: '0 2px 4px rgba(15, 23, 42, 0.05)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div>
+                          <span className="mono font-bold" style={{ fontSize: 14, color: '#0f172a' }}>
+                            {s.settlementReference}
+                          </span>
+                          <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                            {formatDate(s.settlementDate)} • {s.paymentMethod}
+                          </div>
+                        </div>
+                        <span
+                          className={`badge ${s.status === 'COMPLETED' ? 'badge-paid' : 'badge-overdue'}`}
+                          style={{ fontSize: 10, fontWeight: 800 }}
+                        >
+                          {s.status}
+                        </span>
+                      </div>
+                      <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: 11, color: '#64748b' }}>Remitted Amount:</span>
+                        <span className="mono font-bold" style={{ fontSize: 16, color: '#16a34a' }}>
+                          {formatINR(s.totalAmount)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
           </div>
         )}
@@ -760,32 +1191,36 @@ export const DealerDashboardView: React.FC<DealerDashboardViewProps> = ({ onNavi
       </div>
 
       {showOnboardWizard && (
-        <AddCustomerWizard
-          isOpen={showOnboardWizard}
-          onClose={() => setShowOnboardWizard(false)}
-          onSuccess={() => {
-            setShowOnboardWizard(false);
-            fetchDashboardData();
-          }}
-        />
+        <Suspense fallback={null}>
+          <AddCustomerWizard
+            isOpen={showOnboardWizard}
+            onClose={() => setShowOnboardWizard(false)}
+            onSuccess={() => {
+              setShowOnboardWizard(false);
+              fetchDashboardData();
+            }}
+          />
+        </Suspense>
       )}
 
       {showRecordPaymentModal && (
-        <RecordPaymentModal
-          isOpen={showRecordPaymentModal}
-          onClose={() => {
-            setShowRecordPaymentModal(false);
-            setSelectedLoanForPayment(null);
-          }}
-          onSuccess={() => {
-            fetchDashboardData();
-          }}
-          preselectedLoan={selectedLoanForPayment}
-          user={ApiClient.getUser() || undefined}
-          isDealerContext={true}
-          dealerId={data?.dealer?.id}
-          dealerStoreName={data?.dealer?.storeName}
-        />
+        <Suspense fallback={null}>
+          <RecordPaymentModal
+            isOpen={showRecordPaymentModal}
+            onClose={() => {
+              setShowRecordPaymentModal(false);
+              setSelectedLoanForPayment(null);
+            }}
+            onSuccess={() => {
+              fetchDashboardData();
+            }}
+            preselectedLoan={selectedLoanForPayment}
+            user={ApiClient.getUser() || undefined}
+            isDealerContext={true}
+            dealerId={data?.dealer?.id}
+            dealerStoreName={data?.dealer?.storeName}
+          />
+        </Suspense>
       )}
     </div>
   );

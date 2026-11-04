@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo, Suspense, lazy } from 'react';
 import { ApiClient } from '../services/api';
 import {
   ILoan,
@@ -39,10 +39,13 @@ import {
   FileText,
   PhoneCall,
 } from 'lucide-react';
-import { PortalLinkManager } from '../components/PortalLinkManager';
-import { LogContactModal } from '../components/LogContactModal';
-import { RecordPaymentModal } from '../components/RecordPaymentModal';
-import { DocumentViewerModal } from '../components/DocumentViewerModal';
+import { DealerMobileLoanCard } from '../components/mobile';
+
+// Lazy-load modal workflows on demand to keep the critical initial Loans chunk minimal
+const PortalLinkManager = lazy(() => import('../components/PortalLinkManager').then((m) => ({ default: m.PortalLinkManager })));
+const LogContactModal = lazy(() => import('../components/LogContactModal').then((m) => ({ default: m.LogContactModal })));
+const RecordPaymentModal = lazy(() => import('../components/RecordPaymentModal').then((m) => ({ default: m.RecordPaymentModal })));
+const DocumentViewerModal = lazy(() => import('../components/DocumentViewerModal').then((m) => ({ default: m.DocumentViewerModal })));
 
 export interface LoansViewProps {
   initialStatusTab?: 'ALL' | 'PENDING_APPROVAL' | 'ACTIVE' | 'CLOSED' | 'REJECTED';
@@ -71,6 +74,29 @@ export const LoansView: React.FC<LoansViewProps> = ({
   const [submittingDecision, setSubmittingDecision] = useState(false);
   const [decisionError, setDecisionError] = useState<string | null>(null);
 
+  // Single-pass memoized status counts and filtered loan list to avoid repeated array filtering
+  const { statusCounts, visibleLoans } = useMemo(() => {
+    const counts = {
+      ALL: loans.length,
+      PENDING_APPROVAL: 0,
+      APPROVED: 0,
+      ACTIVE: 0,
+      CLOSED: 0,
+      REJECTED: 0,
+    };
+    for (let i = 0; i < loans.length; i++) {
+      const s = loans[i].status || (loans[i] as any).status;
+      if (s && s in counts) {
+        (counts as any)[s]++;
+      }
+    }
+    const filtered =
+      activeStatusTab === 'ALL'
+        ? loans
+        : loans.filter((l) => (l.status || (l as any).status) === activeStatusTab);
+    return { statusCounts: counts, visibleLoans: filtered };
+  }, [loans, activeStatusTab]);
+
   // Loan & EMI Terms Simulator State
   const [simPrincipal, setSimPrincipal] = useState<number>(30000);
   const [simDownPayment, setSimDownPayment] = useState<number>(0);
@@ -78,7 +104,9 @@ export const LoansView: React.FC<LoansViewProps> = ({
   const [simTenure, setSimTenure] = useState<number>(6);
   const [simSchedule, setSimSchedule] = useState<any | null>(null);
 
+  // Defer simulator calculation until the TERMS tab is explicitly active
   useEffect(() => {
+    if (activeStatusTab !== 'TERMS') return;
     try {
       const today = getBusinessDateStr();
       const sched = generateAmortizationSchedule({
@@ -96,7 +124,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
     } catch {
       setSimSchedule(null);
     }
-  }, [simPrincipal, simDownPayment, simRate, simTenure]);
+  }, [simPrincipal, simDownPayment, simRate, simTenure, activeStatusTab]);
 
   // Origination Modal State
   const [showOriginationModal, setShowOriginationModal] = useState(false);
@@ -785,7 +813,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
             onClick={() => setActiveStatusTab('PENDING_APPROVAL')}
             className={`btn btn-sm ${activeStatusTab === 'PENDING_APPROVAL' ? 'btn-primary' : 'btn-secondary'}`}
           >
-            Pending Review ({loans.filter((l) => (l.status || (l as any).status) === 'PENDING_APPROVAL').length})
+            Pending Review ({statusCounts.PENDING_APPROVAL})
           </button>
         ) : (currentUser?.role === UserRole.SUPER_ADMIN || currentUser?.role === UserRole.ADMIN || currentUser?.role === UserRole.BRANCH_MANAGER) ? (
           <button
@@ -800,25 +828,25 @@ export const LoansView: React.FC<LoansViewProps> = ({
           onClick={() => setActiveStatusTab('APPROVED')}
           className={`btn btn-sm ${activeStatusTab === 'APPROVED' ? 'btn-primary' : 'btn-secondary'}`}
         >
-          Approved ({loans.filter((l) => (l.status || (l as any).status) === 'APPROVED').length})
+          Approved ({statusCounts.APPROVED})
         </button>
         <button
           onClick={() => setActiveStatusTab('ACTIVE')}
           className={`btn btn-sm ${activeStatusTab === 'ACTIVE' ? 'btn-primary' : 'btn-secondary'}`}
         >
-          Active Loans ({loans.filter((l) => (l.status || (l as any).status) === 'ACTIVE').length})
+          Active Loans ({statusCounts.ACTIVE})
         </button>
         <button
           onClick={() => setActiveStatusTab('CLOSED')}
           className={`btn btn-sm ${activeStatusTab === 'CLOSED' ? 'btn-primary' : 'btn-secondary'}`}
         >
-          Closed ({loans.filter((l) => (l.status || (l as any).status) === 'CLOSED').length})
+          Closed ({statusCounts.CLOSED})
         </button>
         <button
           onClick={() => setActiveStatusTab('REJECTED')}
           className={`btn btn-sm ${activeStatusTab === 'REJECTED' ? 'btn-primary' : 'btn-secondary'}`}
         >
-          Rejected ({loans.filter((l) => (l.status || (l as any).status) === 'REJECTED').length})
+          Rejected ({statusCounts.REJECTED})
         </button>
         {(currentUser?.role === UserRole.SUPER_ADMIN || currentUser?.role === UserRole.ADMIN) && (
           <button
@@ -1109,7 +1137,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
           <div className="mobile-scroll-cue">
             <span>← Swipe horizontally to view complete portfolio details & actions →</span>
           </div>
-          <div className="table-container">
+          <div className="table-container desktop-only-table-view">
           {activeStatusTab === 'PENDING_APPROVAL' && currentUser?.role !== UserRole.DEALER ? (
           <table className="crm-table">
             <thead>
@@ -1244,14 +1272,14 @@ export const LoansView: React.FC<LoansViewProps> = ({
                     Loading loan accounts...
                   </td>
                 </tr>
-              ) : (activeStatusTab === 'ALL' ? loans : loans.filter((l) => (l.status || (l as any).status) === activeStatusTab)).length === 0 ? (
+              ) : visibleLoans.length === 0 ? (
                 <tr>
                   <td colSpan={12} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
                     No {activeStatusTab.toLowerCase()} loans found.
                   </td>
                 </tr>
               ) : (
-                (activeStatusTab === 'ALL' ? loans : loans.filter((l) => (l.status || (l as any).status) === activeStatusTab)).map((loan) => {
+                visibleLoans.map((loan) => {
                   const statusStr = loan.status || (loan as any).status;
                   const isPending = statusStr === 'PENDING_APPROVAL';
                   const isRejected = statusStr === 'REJECTED';
@@ -1381,6 +1409,51 @@ export const LoansView: React.FC<LoansViewProps> = ({
             </tbody>
           </table>
         )}
+        </div>
+
+        {/* Loans Cards (Mobile View <= 768px) */}
+        <div className="mobile-only-card-view">
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-secondary)' }}>
+              Loading loans...
+            </div>
+          ) : activeStatusTab === 'PENDING_APPROVAL' && currentUser?.role !== UserRole.DEALER ? (
+            pendingApprovalsList.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
+                No dealer-originated loans pending approval. All applications are up to date.
+              </div>
+            ) : (
+              pendingApprovalsList.map((loan) => (
+                <DealerMobileLoanCard
+                  key={loan.id}
+                  loan={loan}
+                  onViewDetails={() => handleViewLoan(loan.id, 'schedule')}
+                />
+              ))
+            )
+          ) : visibleLoans.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
+              No {activeStatusTab.toLowerCase()} loans found.
+            </div>
+          ) : (
+            visibleLoans.map((loan) => (
+              <DealerMobileLoanCard
+                key={loan.id}
+                loan={loan}
+                onViewDetails={() => handleViewLoan(loan.id, 'schedule')}
+                onRecordPayment={() => {
+                  setSelectedInstallmentForPayment(null);
+                  setSelectedLoanDetail({
+                    loan,
+                    installments: [],
+                    payments: [],
+                    kycDocs: [],
+                  });
+                  setShowRecordPaymentModal(true);
+                }}
+              />
+            ))
+          )}
         </div>
       </div>
       )}
@@ -2296,13 +2369,15 @@ export const LoansView: React.FC<LoansViewProps> = ({
                 )}
               </div>
             ) : loanModalTab === 'portal' ? (
-              <PortalLinkManager
-                loanId={selectedLoanDetail.loan.id}
-                loanAccountNo={selectedLoanDetail.loan.loanAccountNo || (selectedLoanDetail.loan as any).loan_account_no}
-                customerName={selectedLoanDetail.loan.customerName || (selectedLoanDetail.loan as any).customer_name}
-                primaryPhone={selectedLoanDetail.loan.primaryPhone || (selectedLoanDetail.loan as any).primary_phone || (selectedLoanDetail.loan as any).phone}
-                userRole={currentUser?.role}
-              />
+              <Suspense fallback={<div style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>Loading repayment portal...</div>}>
+                <PortalLinkManager
+                  loanId={selectedLoanDetail.loan.id}
+                  loanAccountNo={selectedLoanDetail.loan.loanAccountNo || (selectedLoanDetail.loan as any).loan_account_no}
+                  customerName={selectedLoanDetail.loan.customerName || (selectedLoanDetail.loan as any).customer_name}
+                  primaryPhone={selectedLoanDetail.loan.primaryPhone || (selectedLoanDetail.loan as any).primary_phone || (selectedLoanDetail.loan as any).phone}
+                  userRole={currentUser?.role}
+                />
+              </Suspense>
             ) : loanModalTab === 'contacts' ? (
               /* Contact & Recovery Timeline Tab */
               <div style={{ maxHeight: 360, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -3211,63 +3286,69 @@ export const LoansView: React.FC<LoansViewProps> = ({
       )}
 
       {showRecordPaymentModal && (
-        <RecordPaymentModal
-          isOpen={showRecordPaymentModal}
-          onClose={() => {
-            setShowRecordPaymentModal(false);
-            setSelectedInstallmentForPayment(null);
-          }}
-          onSuccess={() => {
-            if (selectedLoanDetail) {
-              handleViewLoan(selectedLoanDetail.loan.id, 'payments');
-            }
-            ApiClient.listLoans().then(setLoans).catch(console.error);
-          }}
-          user={currentUser}
-          isDealerContext={currentUser?.role === UserRole.DEALER}
-          dealerId={currentUser?.dealerId || selectedLoanDetail?.loan?.dealerId || (selectedLoanDetail?.loan as any)?.dealer_id}
-          preselectedLoan={selectedLoanDetail?.loan}
-          preselectedInstallment={selectedInstallmentForPayment}
-        />
+        <Suspense fallback={null}>
+          <RecordPaymentModal
+            isOpen={showRecordPaymentModal}
+            onClose={() => {
+              setShowRecordPaymentModal(false);
+              setSelectedInstallmentForPayment(null);
+            }}
+            onSuccess={() => {
+              if (selectedLoanDetail) {
+                handleViewLoan(selectedLoanDetail.loan.id, 'payments');
+              }
+              ApiClient.listLoans().then(setLoans).catch(console.error);
+            }}
+            user={currentUser}
+            isDealerContext={currentUser?.role === UserRole.DEALER}
+            dealerId={currentUser?.dealerId || selectedLoanDetail?.loan?.dealerId || (selectedLoanDetail?.loan as any)?.dealer_id}
+            preselectedLoan={selectedLoanDetail?.loan}
+            preselectedInstallment={selectedInstallmentForPayment}
+          />
+        </Suspense>
       )}
 
       {/* Secure Document Viewer Modal */}
       {viewingDoc && (
-        <DocumentViewerModal
-          documentId={viewingDoc.id}
-          initialUrl={viewingDoc.url}
-          title={viewingDoc.title}
-          docType={viewingDoc.docType}
-          fileMimeType={viewingDoc.fileMimeType}
-          onClose={() => setViewingDoc(null)}
-        />
+        <Suspense fallback={null}>
+          <DocumentViewerModal
+            documentId={viewingDoc.id}
+            initialUrl={viewingDoc.url}
+            title={viewingDoc.title}
+            docType={viewingDoc.docType}
+            fileMimeType={viewingDoc.fileMimeType}
+            onClose={() => setViewingDoc(null)}
+          />
+        </Suspense>
       )}
 
       {/* Log Contact Activity Modal */}
-      {selectedLoanDetail && (
-        <LogContactModal
-          isOpen={showLogContactModal}
-          onClose={() => setShowLogContactModal(false)}
-          onSuccess={() => {
-            const customerId = selectedLoanDetail.loan.customerId || selectedLoanDetail.loan.customer_id;
-            if (customerId) {
-              ApiClient.getCustomerContactActivities(customerId)
-                .then(setLoanContactActivities)
-                .catch(() => {});
-            }
-          }}
-          preselectedCustomer={{
-            id: selectedLoanDetail.loan.customerId || selectedLoanDetail.loan.customer_id,
-            fullName: selectedLoanDetail.loan.customerName || (selectedLoanDetail.loan as any).customer_name,
-            customerCode: selectedLoanDetail.loan.customerCode || (selectedLoanDetail.loan as any).customer_code,
-            primaryPhone: selectedLoanDetail.loan.primaryPhone || (selectedLoanDetail.loan as any).primary_phone || (selectedLoanDetail.loan as any).phone,
-            areaRoute: selectedLoanDetail.loan.areaRoute || (selectedLoanDetail.loan as any).area_route,
-          }}
-          preselectedLoan={{
-            id: selectedLoanDetail.loan.id,
-            loanAccountNo: selectedLoanDetail.loan.loanAccountNo || (selectedLoanDetail.loan as any).loan_account_no,
-          }}
-        />
+      {selectedLoanDetail && showLogContactModal && (
+        <Suspense fallback={null}>
+          <LogContactModal
+            isOpen={showLogContactModal}
+            onClose={() => setShowLogContactModal(false)}
+            onSuccess={() => {
+              const customerId = selectedLoanDetail.loan.customerId || selectedLoanDetail.loan.customer_id;
+              if (customerId) {
+                ApiClient.getCustomerContactActivities(customerId)
+                  .then(setLoanContactActivities)
+                  .catch(() => {});
+              }
+            }}
+            preselectedCustomer={{
+              id: selectedLoanDetail.loan.customerId || selectedLoanDetail.loan.customer_id,
+              fullName: selectedLoanDetail.loan.customerName || (selectedLoanDetail.loan as any).customer_name,
+              customerCode: selectedLoanDetail.loan.customerCode || (selectedLoanDetail.loan as any).customer_code,
+              primaryPhone: selectedLoanDetail.loan.primaryPhone || (selectedLoanDetail.loan as any).primary_phone || (selectedLoanDetail.loan as any).phone,
+              areaRoute: selectedLoanDetail.loan.areaRoute || (selectedLoanDetail.loan as any).area_route,
+            }}
+            preselectedLoan={{
+              id: selectedLoanDetail.loan.id,
+              loanAccountNo: selectedLoanDetail.loan.loanAccountNo || (selectedLoanDetail.loan as any).loan_account_no,
+            }}
+          />
+        </Suspense>
       )}
     </div>
   );

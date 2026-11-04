@@ -11,6 +11,7 @@ import {
 } from '@crm/shared';
 import { RecordPaymentModal } from '../components/RecordPaymentModal';
 import { LogContactModal } from '../components/LogContactModal';
+import { AgentMobileQueueCard, AgentMobileCollectionsCard } from '../components/mobile';
 import {
   LayoutDashboard,
   Users,
@@ -30,6 +31,12 @@ import {
   X,
   FileText,
   ShieldCheck,
+  Wifi,
+  WifiOff,
+  Navigation,
+  MapPin,
+  TrendingUp,
+  Target,
 } from 'lucide-react';
 
 interface AgentDashboardStats {
@@ -95,6 +102,34 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
     id: string;
     loanAccountNo: string;
   } | null>(null);
+
+  // Reliable network connection status
+  const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good Morning';
+    if (hour < 17) return 'Good Afternoon';
+    return 'Good Evening';
+  };
+
+  const assignedRoute =
+    queueItems.find((q) => q.areaRoute)?.areaRoute ||
+    currentUser?.assignedBranch ||
+    'Field Collection Area';
+  const dailyTarget = (stats?.todayCollected ?? 0) + (stats?.todayDue ?? 0);
+  const remainingTarget = stats?.todayDue ?? 0;
 
   const loadDashboardData = async () => {
     try {
@@ -166,52 +201,403 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
 
   return (
     <div style={{ padding: '16px 20px', maxWidth: 1400, margin: '0 auto' }}>
-      {/* Field Collection Header */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 20,
-          flexWrap: 'wrap',
-          gap: 12,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div
+      {/* Mobile-First Agent Field Collection Experience (<= 768px) */}
+      <div className="agent-mobile-view" style={{ marginBottom: 14 }}>
+        {/* Mobile Header */}
+        <div
+          data-testid="agent-mobile-header"
+          style={{
+            background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+            borderRadius: 12,
+            padding: '14px 16px',
+            color: '#ffffff',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>
+              {getGreeting()}
+            </div>
+            <h2 style={{ fontSize: 18, fontWeight: 900, margin: '2px 0 0', color: '#ffffff' }}>
+              {currentUser?.fullName || 'Field Recovery Agent'}
+            </h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 3,
+                  fontSize: 10,
+                  fontWeight: 700,
+                  background: 'rgba(255, 255, 255, 0.12)',
+                  color: '#e2e8f0',
+                  padding: '2px 7px',
+                  borderRadius: 4,
+                }}
+              >
+                <MapPin size={10} />
+                <span>{assignedRoute}</span>
+              </span>
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 3,
+                  fontSize: 10,
+                  fontWeight: 700,
+                  padding: '2px 7px',
+                  borderRadius: 4,
+                  background: isOnline ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                  color: isOnline ? '#4ade80' : '#f87171',
+                }}
+              >
+                {isOnline ? <Wifi size={10} /> : <WifiOff size={10} />}
+                <span>{isOnline ? 'Online' : 'Offline'}</span>
+              </span>
+            </div>
+          </div>
+
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            aria-label="Refresh agent stats"
             style={{
-              width: 36,
-              height: 36,
-              borderRadius: 'var(--radius-md)',
-              background: 'var(--primary-subtle)',
-              color: 'var(--primary)',
+              width: 44,
+              height: 44,
+              borderRadius: 8,
+              background: 'rgba(255, 255, 255, 0.12)',
+              border: 'none',
+              color: '#ffffff',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
+              cursor: 'pointer',
+              touchAction: 'manipulation',
             }}
           >
-            <LayoutDashboard size={20} />
+            <RefreshCw size={18} className={refreshing ? 'spin' : ''} />
+          </button>
+        </div>
+
+        {/* 6 Prominent Performance KPI Cards (2-column compact grid) */}
+        <div
+          className="agent-kpi-grid"
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(2, 1fr)',
+            gap: 8,
+            marginTop: 10,
+          }}
+        >
+          {/* 1. Today's Approved Collection */}
+          <div
+            className="crm-card"
+            data-testid="kpi-today-collection"
+            style={{
+              padding: 12,
+              background: '#ffffff',
+              border: '1.5px solid #bbf7d0',
+              borderRadius: 10,
+            }}
+          >
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#166534', textTransform: 'uppercase' }}>
+              Today Collected
+            </div>
+            <div className="mono" style={{ fontSize: 18, fontWeight: 900, color: '#15803d', marginTop: 2 }}>
+              {stats ? formatINR(stats.todayCollected) : '—'}
+            </div>
+            <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
+              Approved: {stats?.todayCollectionCount ?? 0}
+            </div>
           </div>
-          <div>
-            <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
-              Collection Agent Dashboard (Recovery Agent Dashboard)
-            </h1>
-            <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text-muted)' }}>
-              Field collection targets, assigned customer obligations, and payment receipts
-            </p>
+
+          {/* 2. Daily Collection Target */}
+          <div
+            className="crm-card"
+            data-testid="kpi-daily-target"
+            style={{
+              padding: 12,
+              background: '#ffffff',
+              border: '1px solid #e2e8f0',
+              borderRadius: 10,
+            }}
+          >
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>
+              Daily Target
+            </div>
+            <div className="mono" style={{ fontSize: 18, fontWeight: 900, color: '#0f172a', marginTop: 2 }}>
+              {formatINR(dailyTarget)}
+            </div>
+            <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
+              Target Portfolio
+            </div>
+          </div>
+
+          {/* 3. Remaining Target */}
+          <div
+            className="crm-card"
+            data-testid="kpi-remaining-target"
+            style={{
+              padding: 12,
+              background: '#ffffff',
+              border: '1.5px solid #fde68a',
+              borderRadius: 10,
+            }}
+          >
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#854d0e', textTransform: 'uppercase' }}>
+              Remaining Target
+            </div>
+            <div className="mono" style={{ fontSize: 18, fontWeight: 900, color: '#b45309', marginTop: 2 }}>
+              {formatINR(remainingTarget)}
+            </div>
+            <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
+              To collect today
+            </div>
+          </div>
+
+          {/* 4. EMIs Due Today */}
+          <div
+            className="crm-card"
+            data-testid="kpi-emis-due-today"
+            style={{
+              padding: 12,
+              background: '#ffffff',
+              border: '1px solid #e2e8f0',
+              borderRadius: 10,
+            }}
+          >
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>
+              Due Today
+            </div>
+            <div className="mono" style={{ fontSize: 18, fontWeight: 900, color: '#d97706', marginTop: 2 }}>
+              {stats ? formatINR(stats.todayDue) : '—'}
+            </div>
+            <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
+              {stats?.todayDueCount ?? 0} Borrowers
+            </div>
+          </div>
+
+          {/* 5. Overdue Customers */}
+          <div
+            className="crm-card"
+            data-testid="kpi-overdue-customers"
+            style={{
+              padding: 12,
+              background: '#ffffff',
+              border: '1.5px solid #fca5a5',
+              borderRadius: 10,
+            }}
+          >
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#991b1b', textTransform: 'uppercase' }}>
+              Overdue Portfolio
+            </div>
+            <div className="mono" style={{ fontSize: 18, fontWeight: 900, color: '#b91c1c', marginTop: 2 }}>
+              {stats ? formatINR(stats.overdueAmount) : '—'}
+            </div>
+            <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
+              {stats?.overdueCustomers ?? 0} Overdue ({stats?.overdueEmisCount ?? 0} EMIs)
+            </div>
+          </div>
+
+          {/* 6. Pending Visits / Follow-ups */}
+          <div
+            className="crm-card"
+            data-testid="kpi-pending-visits"
+            style={{
+              padding: 12,
+              background: '#ffffff',
+              border: '1px solid #e2e8f0',
+              borderRadius: 10,
+            }}
+          >
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>
+              Pending Visits
+            </div>
+            <div className="mono" style={{ fontSize: 18, fontWeight: 900, color: '#2563eb', marginTop: 2 }}>
+              {contactSummary?.followUpsDueToday ?? 0}
+            </div>
+            <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>
+              Overdue: {contactSummary?.followUpsOverdue ?? 0}
+            </div>
           </div>
         </div>
 
-        <button
-          onClick={handleRefresh}
-          disabled={refreshing}
-          className="btn btn-secondary btn-sm"
-          style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+        {/* Quick Actions (4-column Touch Tiles >= 48px) */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(4, 1fr)',
+            gap: 8,
+            marginTop: 10,
+          }}
         >
-          <RefreshCw size={13} className={refreshing ? 'spin' : ''} />
-          <span>{refreshing ? 'Updating...' : 'Refresh'}</span>
-        </button>
+          {/* Action 1: My Route */}
+          <button
+            type="button"
+            data-testid="agent-quick-route-btn"
+            onClick={() => {
+              if (onNavigateToTab) onNavigateToTab('queue');
+              else window.location.hash = '#queue';
+            }}
+            style={{
+              height: 52,
+              borderRadius: 10,
+              background: '#eff6ff',
+              border: '1px solid #bfdbfe',
+              color: '#1d4ed8',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 3,
+              cursor: 'pointer',
+              touchAction: 'manipulation',
+            }}
+          >
+            <Navigation size={18} />
+            <span style={{ fontSize: 11, fontWeight: 700 }}>My Route</span>
+          </button>
+
+          {/* Action 2: Collect Payment */}
+          <button
+            type="button"
+            data-testid="agent-quick-collect-btn"
+            onClick={() => {
+              if (filteredItems.length > 0) {
+                setSelectedItemForPayment(filteredItems[0]);
+              } else if (queueItems.length > 0) {
+                setSelectedItemForPayment(queueItems[0]);
+              } else {
+                alert('No queue items available to collect. Please check My Route.');
+              }
+            }}
+            style={{
+              height: 52,
+              borderRadius: 10,
+              background: '#f0fdf4',
+              border: '1px solid #bbf7d0',
+              color: '#15803d',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 3,
+              cursor: 'pointer',
+              touchAction: 'manipulation',
+            }}
+          >
+            <DollarSign size={18} />
+            <span style={{ fontSize: 11, fontWeight: 700 }}>Collect</span>
+          </button>
+
+          {/* Action 3: Log Visit */}
+          <button
+            type="button"
+            data-testid="agent-quick-visit-btn"
+            onClick={() => {
+              setSelectedCustomerForLog(null);
+              setSelectedLoanForLog(null);
+              setShowLogContactModal(true);
+            }}
+            style={{
+              height: 52,
+              borderRadius: 10,
+              background: '#f8fafc',
+              border: '1px solid #cbd5e1',
+              color: '#334155',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 3,
+              cursor: 'pointer',
+              touchAction: 'manipulation',
+            }}
+          >
+            <PhoneCall size={18} />
+            <span style={{ fontSize: 11, fontWeight: 700 }}>Log Visit</span>
+          </button>
+
+          {/* Action 4: Follow-ups */}
+          <button
+            type="button"
+            data-testid="agent-quick-followup-btn"
+            onClick={() => {
+              if (onNavigateToTab) onNavigateToTab('contact-activity');
+              else window.location.hash = '#contact-activity';
+            }}
+            style={{
+              height: 52,
+              borderRadius: 10,
+              background: '#fff7ed',
+              border: '1px solid #fed7aa',
+              color: '#c2410c',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 3,
+              cursor: 'pointer',
+              touchAction: 'manipulation',
+            }}
+          >
+            <Clock size={18} />
+            <span style={{ fontSize: 11, fontWeight: 700 }}>Follow-ups</span>
+          </button>
+        </div>
       </div>
+
+      {/* Desktop Agent Field Collection Experience (> 768px) */}
+      <div className="agent-desktop-view">
+        {/* Field Collection Header */}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 20,
+            flexWrap: 'wrap',
+            gap: 12,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--primary-subtle)',
+                color: 'var(--primary)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <LayoutDashboard size={20} />
+            </div>
+            <div>
+              <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+                Collection Agent Dashboard (Recovery Agent Dashboard)
+              </h1>
+              <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text-muted)' }}>
+                Field collection targets, assigned customer obligations, and payment receipts
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="btn btn-secondary btn-sm"
+            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+          >
+            <RefreshCw size={13} className={refreshing ? 'spin' : ''} />
+            <span>{refreshing ? 'Updating...' : 'Refresh'}</span>
+          </button>
+        </div>
 
       {/* 4 Authoritative Summary Cards (Layout E) */}
       <div
@@ -466,6 +852,7 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
           </div>
         </div>
       </div>
+    </div>
 
       {/* Main Tabs Navigation */}
       <div
@@ -566,8 +953,8 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
             ))}
           </div>
 
-          {/* Assigned Customers Table / Cards */}
-          <div className="crm-card" style={{ padding: 0, overflow: 'hidden' }}>
+          {/* Assigned Customers Table (Desktop > 768px) */}
+          <div className="crm-card desktop-only-table-view" style={{ padding: 0, overflow: 'hidden' }}>
             <div style={{ overflowX: 'auto' }}>
               <table className="crm-table">
                 <thead>
@@ -777,6 +1164,53 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
               </table>
             </div>
           </div>
+
+          {/* Assigned Customers Mobile Cards (<= 768px) */}
+          <div className="mobile-only-card-view">
+            {loading ? (
+              <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
+                Loading assigned customer obligations...
+              </div>
+            ) : filteredItems.length === 0 ? (
+              <div className="crm-card" style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
+                No assigned customers or EMI obligations found for this filter.
+              </div>
+            ) : (
+              filteredItems.map((item) => (
+                <AgentMobileQueueCard
+                  key={item.installmentId}
+                  item={item}
+                  onCall={(it) => {
+                    const rawPhone = it.primaryPhone || it.customerPhone || '';
+                    window.location.href = `tel:${rawPhone}`;
+                  }}
+                  onWhatsApp={(it) => handleSendWhatsApp(it)}
+                  onNavigate={(it) => {
+                    const query = it.addressSummary || it.areaRoute || '';
+                    if (query) {
+                      window.open(`https://maps.google.com/?q=${encodeURIComponent(query)}`, '_blank');
+                    }
+                  }}
+                  onLogVisit={(it) => {
+                    setSelectedCustomerForLog({
+                      id: it.customerId,
+                      fullName: it.customerName,
+                      customerCode: it.customerCode,
+                      primaryPhone: it.primaryPhone || it.customerPhone,
+                      areaRoute: it.areaRoute,
+                    });
+                    setSelectedLoanForLog({
+                      id: it.loanId,
+                      loanAccountNo: it.loanAccountNo,
+                    });
+                    setShowLogContactModal(true);
+                  }}
+                  onCollect={(it) => setSelectedItemForPayment(it)}
+                  onViewDetails={(it) => handleOpenDetails(it)}
+                />
+              ))
+            )}
+          </div>
         </div>
       )}
 
@@ -840,7 +1274,8 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
             ))}
           </div>
 
-          <div style={{ overflowX: 'auto' }}>
+          {/* Collections Desktop Table (> 768px) */}
+          <div className="desktop-only-table-view" style={{ overflowX: 'auto' }}>
             <table className="crm-table">
               <thead>
                 <tr>
@@ -958,6 +1393,49 @@ export const AgentDashboardView: React.FC<AgentDashboardViewProps> = ({ onNaviga
                 })()}
               </tbody>
             </table>
+          </div>
+
+          {/* Collections Mobile Cards (<= 768px) */}
+          <div className="mobile-only-card-view" style={{ padding: 12 }}>
+            {(() => {
+              const filtered = (stats?.recentCollections || []).filter((col: any) => {
+                if (collectionStatusFilter === 'ALL') return true;
+                if (collectionStatusFilter === 'PENDING')
+                  return col.status === 'PENDING_APPROVAL' || col.status === 'PENDING_VERIFICATION';
+                if (collectionStatusFilter === 'APPROVED') return col.status === 'SUCCESS';
+                if (collectionStatusFilter === 'REJECTED') return col.status === 'REJECTED';
+                return true;
+              });
+
+              if (filtered.length === 0) {
+                return (
+                  <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
+                    No collections found matching filter "{collectionStatusFilter}".
+                  </div>
+                );
+              }
+
+              return filtered.map((col: any) => (
+                <AgentMobileCollectionsCard
+                  key={col.id || col.receipt_number}
+                  record={{
+                    id: col.id,
+                    receiptNumber: col.receipt_number || col.receiptNumber || 'RECEIPT',
+                    customerName: col.customer_name || col.customerName,
+                    customerPhone: col.customer_phone || col.customerPhone,
+                    loanAccountNo: col.loan_account_no || col.loanAccountNo,
+                    amountCollected: col.amount,
+                    paymentMode: col.payment_mode || col.paymentMode,
+                    paymentTimestamp: col.payment_date || col.paymentTimestamp,
+                    status: col.status,
+                    rejectionReason: col.reversal_reason || col.rejectionReason,
+                  }}
+                  onViewReceipt={(rec) => {
+                    alert(`Receipt: ${rec.receiptNumber}\nCustomer: ${rec.customerName}\nAmount: ${formatINR(rec.amountCollected)}\nStatus: ${rec.status}`);
+                  }}
+                />
+              ));
+            })()}
           </div>
         </div>
       )}
