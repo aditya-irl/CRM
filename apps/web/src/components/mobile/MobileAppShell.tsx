@@ -35,6 +35,7 @@ export const MobileAppShell: React.FC<MobileAppShellProps> = ({
         onSelectTab={onSelectTab}
         user={user}
         onOpenMore={onOpenMore}
+        onLogout={onLogout}
         isMoreOpen={isMoreOpen}
         unreadNotificationsCount={unreadNotificationsCount}
       />

@@ -12,6 +12,7 @@ import {
   PhoneCall,
   Clock,
   Menu,
+  LogOut,
 } from 'lucide-react';
 
 export interface MobileBottomNavProps {
@@ -19,12 +20,13 @@ export interface MobileBottomNavProps {
   onSelectTab: (tab: NavTab) => void;
   user: IUser;
   onOpenMore: () => void;
+  onLogout?: () => void;
   isMoreOpen?: boolean;
   unreadNotificationsCount?: number;
 }
 
 interface BottomNavItem {
-  id: NavTab | 'more';
+  id: NavTab | 'more' | 'logout';
   label: string;
   icon: React.ReactNode;
   isActive: (activeTab: NavTab, isMoreOpen?: boolean) => boolean;
@@ -36,31 +38,39 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   onSelectTab,
   user,
   onOpenMore,
+  onLogout,
   isMoreOpen = false,
   unreadNotificationsCount = 0,
 }) => {
   const isAgent = user.role === UserRole.COLLECTION_AGENT;
   const isDealer = user.role === UserRole.DEALER;
 
+  const logoutItem: BottomNavItem = {
+    id: 'logout',
+    label: 'Logout',
+    icon: <LogOut size={18} strokeWidth={2.2} />,
+    isActive: () => false,
+  };
+
   // 1. ADMIN / SUPER_ADMIN / BRANCH_MANAGER TABS
-  // 1. Home (dashboard) | 2. Loans (loans) | 3. Collections (dealer-collections) | 4. Reports (reports) | 5. More
+  // 1. Home (dashboard) | 2. Loans (loans) | 3. Collections (dealer-collections) | 4. Reports (reports) | 5. More | 6. Logout
   const adminTabs: BottomNavItem[] = [
     {
       id: 'dashboard',
       label: 'Home',
-      icon: <LayoutDashboard size={20} strokeWidth={2.2} />,
+      icon: <LayoutDashboard size={18} strokeWidth={2.2} />,
       isActive: (tab, more) => !more && tab === 'dashboard',
     },
     {
       id: 'loans',
       label: 'Loans',
-      icon: <CreditCard size={20} strokeWidth={2.2} />,
+      icon: <CreditCard size={18} strokeWidth={2.2} />,
       isActive: (tab, more) => !more && tab === 'loans',
     },
     {
       id: 'dealer-collections',
       label: 'Collections',
-      icon: <Landmark size={20} strokeWidth={2.2} />,
+      icon: <Landmark size={18} strokeWidth={2.2} />,
       isActive: (tab, more) =>
         !more &&
         ['dealer-collections', 'payments', 'agent-collections', 'direct-collections'].includes(tab),
@@ -68,86 +78,89 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
     {
       id: 'reports',
       label: 'Reports',
-      icon: <FileSpreadsheet size={20} strokeWidth={2.2} />,
+      icon: <FileSpreadsheet size={18} strokeWidth={2.2} />,
       isActive: (tab, more) => !more && tab === 'reports',
     },
     {
       id: 'more',
       label: 'More',
-      icon: <Menu size={20} strokeWidth={2.2} />,
+      icon: <Menu size={18} strokeWidth={2.2} />,
       isActive: (_tab, more) => Boolean(more),
       badge: unreadNotificationsCount > 0 ? unreadNotificationsCount : undefined,
     },
+    logoutItem,
   ];
 
   // 2. DEALER TABS
-  // 1. Home (dashboard) | 2. Customers (customers) | 3. Loans (loans) | 4. Inventory (devices) | 5. More
+  // 1. Home (dashboard) | 2. Customers (customers) | 3. Loans (loans) | 4. Inventory (devices) | 5. More | 6. Logout
   const dealerTabs: BottomNavItem[] = [
     {
       id: 'dashboard',
       label: 'Home',
-      icon: <LayoutDashboard size={20} strokeWidth={2.2} />,
+      icon: <LayoutDashboard size={18} strokeWidth={2.2} />,
       isActive: (tab, more) => !more && tab === 'dashboard',
     },
     {
       id: 'customers',
       label: 'Customers',
-      icon: <Users size={20} strokeWidth={2.2} />,
+      icon: <Users size={18} strokeWidth={2.2} />,
       isActive: (tab, more) => !more && tab === 'customers',
     },
     {
       id: 'loans',
       label: 'Loans',
-      icon: <CreditCard size={20} strokeWidth={2.2} />,
+      icon: <CreditCard size={18} strokeWidth={2.2} />,
       isActive: (tab, more) => !more && tab === 'loans',
     },
     {
       id: 'devices',
       label: 'Inventory',
-      icon: <Smartphone size={20} strokeWidth={2.2} />,
+      icon: <Smartphone size={18} strokeWidth={2.2} />,
       isActive: (tab, more) => !more && tab === 'devices',
     },
     {
       id: 'more',
       label: 'More',
-      icon: <Menu size={20} strokeWidth={2.2} />,
+      icon: <Menu size={18} strokeWidth={2.2} />,
       isActive: (_tab, more) => Boolean(more),
     },
+    logoutItem,
   ];
 
   // 3. COLLECTION AGENT TABS
-  // 1. Home (dashboard) | 2. My Route (queue) | 3. Collections (agent-collections) | 4. Follow-ups (contact-activity) | 5. More
+  // 1. Home (dashboard) | 2. My Route (queue) | 3. Collections (agent-collections) | 4. Follow-ups (contact-activity) | 5. More | 6. Logout
   const agentTabs: BottomNavItem[] = [
     {
       id: 'dashboard',
       label: 'Home',
-      icon: <LayoutDashboard size={20} strokeWidth={2.2} />,
+      icon: <LayoutDashboard size={18} strokeWidth={2.2} />,
       isActive: (tab, more) => !more && tab === 'dashboard',
     },
     {
       id: 'queue',
       label: 'My Route',
-      icon: <Clock size={20} strokeWidth={2.2} />,
+      icon: <Clock size={18} strokeWidth={2.2} />,
       isActive: (tab, more) => !more && tab === 'queue',
     },
     {
       id: 'agent-collections',
       label: 'Collections',
-      icon: <Receipt size={20} strokeWidth={2.2} />,
+      icon: <Receipt size={18} strokeWidth={2.2} />,
       isActive: (tab, more) => !more && tab === 'agent-collections',
     },
     {
       id: 'contact-activity',
       label: 'Follow-ups',
-      icon: <PhoneCall size={20} strokeWidth={2.2} />,
+      icon: <PhoneCall size={18} strokeWidth={2.2} />,
       isActive: (tab, more) => !more && tab === 'contact-activity',
     },
     {
       id: 'more',
       label: 'More',
-      icon: <Menu size={20} strokeWidth={2.2} />,
+      icon: <Menu size={18} strokeWidth={2.2} />,
       isActive: (_tab, more) => Boolean(more),
     },
+    logoutItem,
   ];
 
   const currentTabs = isAgent ? agentTabs : isDealer ? dealerTabs : adminTabs;
@@ -183,6 +196,10 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
         const handleClick = () => {
           if (item.id === 'more') {
             onOpenMore();
+          } else if (item.id === 'logout') {
+            if (onLogout) {
+              onLogout();
+            }
           } else {
             onSelectTab(item.id as NavTab);
           }
@@ -194,7 +211,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
             type="button"
             data-testid={`mobile-nav-tab-${item.id}`}
             onClick={handleClick}
-            className={`mobile-bottom-nav-item ${active ? 'active' : ''}`}
+            className={`mobile-bottom-nav-item ${active ? 'active' : ''} ${item.id === 'logout' ? 'logout-tab' : ''}`}
             aria-label={item.label}
             aria-current={active ? 'page' : undefined}
             style={{
@@ -203,14 +220,18 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: 3,
+              gap: 2,
               background: 'transparent',
               border: 'none',
               cursor: 'pointer',
-              color: active ? 'var(--primary)' : 'var(--text-secondary)',
-              padding: '6px 2px',
+              color: active
+                ? 'var(--primary)'
+                : item.id === 'logout'
+                ? 'var(--danger, #dc2626)'
+                : 'var(--text-secondary)',
+              padding: '4px 1px',
               minHeight: 48,
-              minWidth: 48,
+              minWidth: 0,
               position: 'relative',
               touchAction: 'manipulation',
               userSelect: 'none',
@@ -263,11 +284,14 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
 
             <span
               style={{
-                fontSize: 10.5,
+                fontSize: 9.5,
                 fontWeight: active ? 700 : 500,
-                letterSpacing: active ? '-0.01em' : 'normal',
+                letterSpacing: '-0.02em',
                 whiteSpace: 'nowrap',
-                lineHeight: 1,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                maxWidth: '100%',
+                lineHeight: 1.1,
               }}
             >
               {item.label}

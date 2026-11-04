@@ -60,7 +60,7 @@ describe('CRM Mobile Transformation – Phase 1: Shared Mobile Shell & Navigatio
   // TEST SUITE 1: ADMIN ROLE NAVIGATION
   // -------------------------------------------------------------
   describe('1. Admin Role Bottom Navigation & More Sheet', () => {
-    test('Admin bottom navigation renders 5 required tabs: Home, Loans, Collections, Reports, More', () => {
+    test('Admin bottom navigation renders required tabs: Home, Loans, Collections, Reports, More, Logout', () => {
       const html = renderToString(
         <MobileBottomNav
           activeTab="dashboard"
@@ -70,12 +70,13 @@ describe('CRM Mobile Transformation – Phase 1: Shared Mobile Shell & Navigatio
         />
       );
 
-      // Verify all 5 admin tabs are present
+      // Verify all admin tabs are present
       expect(html).toContain('Home');
       expect(html).toContain('Loans');
       expect(html).toContain('Collections');
       expect(html).toContain('Reports');
       expect(html).toContain('More');
+      expect(html).toContain('Logout');
 
       // Verify test-ids
       expect(html).toContain('mobile-nav-tab-dashboard');
@@ -83,6 +84,25 @@ describe('CRM Mobile Transformation – Phase 1: Shared Mobile Shell & Navigatio
       expect(html).toContain('mobile-nav-tab-dealer-collections');
       expect(html).toContain('mobile-nav-tab-reports');
       expect(html).toContain('mobile-nav-tab-more');
+      expect(html).toContain('mobile-nav-tab-logout');
+    });
+
+    test('Admin bottom navigation Logout tab invokes onLogout handler when clicked', () => {
+      const mockLogout = jest.fn();
+      const el = MobileBottomNav({
+        activeTab: 'dashboard',
+        onSelectTab: () => {},
+        user: adminUser,
+        onOpenMore: () => {},
+        onLogout: mockLogout,
+      }) as React.ReactElement;
+
+      const logoutBtn = (el.props.children as React.ReactElement[]).find(
+        (c) => c.key === 'logout'
+      );
+      expect(logoutBtn).toBeDefined();
+      logoutBtn?.props.onClick();
+      expect(mockLogout).toHaveBeenCalledTimes(1);
     });
 
     test('Super Admin and Branch Manager both receive the Executive bottom navigation tabs', () => {
@@ -163,7 +183,7 @@ describe('CRM Mobile Transformation – Phase 1: Shared Mobile Shell & Navigatio
   // TEST SUITE 2: DEALER ROLE NAVIGATION
   // -------------------------------------------------------------
   describe('2. Dealer Role Bottom Navigation & More Sheet', () => {
-    test('Dealer bottom navigation renders 5 required tabs: Home, Customers, Loans, Inventory, More', () => {
+    test('Dealer bottom navigation renders required tabs: Home, Customers, Loans, Inventory, More, Logout', () => {
       const html = renderToString(
         <MobileBottomNav
           activeTab="dashboard"
@@ -173,22 +193,42 @@ describe('CRM Mobile Transformation – Phase 1: Shared Mobile Shell & Navigatio
         />
       );
 
-      // Verify all 5 dealer tabs
+      // Verify all dealer tabs
       expect(html).toContain('Home');
       expect(html).toContain('Customers');
       expect(html).toContain('Loans');
       expect(html).toContain('Inventory');
       expect(html).toContain('More');
+      expect(html).toContain('Logout');
 
       expect(html).toContain('mobile-nav-tab-dashboard');
       expect(html).toContain('mobile-nav-tab-customers');
       expect(html).toContain('mobile-nav-tab-loans');
       expect(html).toContain('mobile-nav-tab-devices');
       expect(html).toContain('mobile-nav-tab-more');
+      expect(html).toContain('mobile-nav-tab-logout');
 
       // Admin-only bottom tabs must not appear
       expect(html).not.toContain('Reports');
       expect(html).not.toContain('My Route');
+    });
+
+    test('Dealer bottom navigation Logout tab invokes onLogout handler when clicked', () => {
+      const mockLogout = jest.fn();
+      const el = MobileBottomNav({
+        activeTab: 'dashboard',
+        onSelectTab: () => {},
+        user: dealerUser,
+        onOpenMore: () => {},
+        onLogout: mockLogout,
+      }) as React.ReactElement;
+
+      const logoutBtn = (el.props.children as React.ReactElement[]).find(
+        (c) => c.key === 'logout'
+      );
+      expect(logoutBtn).toBeDefined();
+      logoutBtn?.props.onClick();
+      expect(mockLogout).toHaveBeenCalledTimes(1);
     });
 
     test('Dealer More Sheet exposes store-authorized destinations: Settlements, Company Payments, Support, Profile, Logout', () => {
@@ -221,7 +261,7 @@ describe('CRM Mobile Transformation – Phase 1: Shared Mobile Shell & Navigatio
   // TEST SUITE 3: COLLECTION AGENT ROLE NAVIGATION
   // -------------------------------------------------------------
   describe('3. Collection Agent Role Bottom Navigation & More Sheet', () => {
-    test('Agent bottom navigation renders 5 required tabs: Home, My Route, Collections, Follow-ups, More', () => {
+    test('Agent bottom navigation renders required tabs: Home, My Route, Collections, Follow-ups, More, Logout', () => {
       const html = renderToString(
         <MobileBottomNav
           activeTab="dashboard"
@@ -231,23 +271,43 @@ describe('CRM Mobile Transformation – Phase 1: Shared Mobile Shell & Navigatio
         />
       );
 
-      // Verify all 5 agent tabs
+      // Verify all agent tabs
       expect(html).toContain('Home');
       expect(html).toContain('My Route');
       expect(html).toContain('Collections');
       expect(html).toContain('Follow-ups');
       expect(html).toContain('More');
+      expect(html).toContain('Logout');
 
       expect(html).toContain('mobile-nav-tab-dashboard');
       expect(html).toContain('mobile-nav-tab-queue');
       expect(html).toContain('mobile-nav-tab-agent-collections');
       expect(html).toContain('mobile-nav-tab-contact-activity');
       expect(html).toContain('mobile-nav-tab-more');
+      expect(html).toContain('mobile-nav-tab-logout');
 
       // Unrelated items must NOT appear in Agent bottom navigation
       expect(html).not.toContain('Loans');
       expect(html).not.toContain('Inventory');
       expect(html).not.toContain('Reports');
+    });
+
+    test('Agent bottom navigation Logout tab invokes onLogout handler when clicked', () => {
+      const mockLogout = jest.fn();
+      const el = MobileBottomNav({
+        activeTab: 'dashboard',
+        onSelectTab: () => {},
+        user: agentUser,
+        onOpenMore: () => {},
+        onLogout: mockLogout,
+      }) as React.ReactElement;
+
+      const logoutBtn = (el.props.children as React.ReactElement[]).find(
+        (c) => c.key === 'logout'
+      );
+      expect(logoutBtn).toBeDefined();
+      logoutBtn?.props.onClick();
+      expect(mockLogout).toHaveBeenCalledTimes(1);
     });
 
     test('Agent More Sheet exposes field-authorized destinations: Profile, Route Info, Helpdesk, Logout', () => {
@@ -362,6 +422,22 @@ describe('CRM Mobile Transformation – Phase 1: Shared Mobile Shell & Navigatio
 
       expect(html).toContain('data-testid="mobile-bottom-nav"');
       expect(html).toContain('data-testid="mobile-more-sheet-content"');
+    });
+
+    test('MobileAppShell connects onLogout handler to MobileBottomNav Logout action', () => {
+      const mockLogout = jest.fn();
+      const shellEl = MobileAppShell({
+        user: adminUser,
+        activeTab: 'dashboard',
+        onSelectTab: () => {},
+        onLogout: mockLogout,
+        isMoreOpen: false,
+        onCloseMore: () => {},
+        onOpenMore: () => {},
+      }) as React.ReactElement;
+
+      const bottomNavEl = shellEl.props.children[0];
+      expect(bottomNavEl.props.onLogout).toBe(mockLogout);
     });
 
     test('MobileSettingsModal renders account profile & password update form', () => {

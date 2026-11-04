@@ -58,7 +58,7 @@ describe('Dealer Mobile Experience Tests (Phase 3)', () => {
   // 1. DEALER MOBILE NAVIGATION & SHELL INTEGRATION
   // =========================================================================
   describe('1. Dealer Mobile Navigation & Role-Based Shell', () => {
-    test('Dealer bottom navigation renders 5 authorized tabs: Home, Customers, Loans, Inventory, More', () => {
+    test('Dealer bottom navigation renders authorized tabs: Home, Customers, Loans, Inventory, More, Logout', () => {
       const html = renderToString(
         <MobileBottomNav
           activeTab="dashboard"
@@ -73,12 +73,14 @@ describe('Dealer Mobile Experience Tests (Phase 3)', () => {
       expect(html).toContain('Loans');
       expect(html).toContain('Inventory');
       expect(html).toContain('More');
+      expect(html).toContain('Logout');
 
       expect(html).toContain('mobile-nav-tab-dashboard');
       expect(html).toContain('mobile-nav-tab-customers');
       expect(html).toContain('mobile-nav-tab-loans');
       expect(html).toContain('mobile-nav-tab-devices');
       expect(html).toContain('mobile-nav-tab-more');
+      expect(html).toContain('mobile-nav-tab-logout');
     });
 
     test('Dealer More Sheet exposes store features and hides unauthorized administrative menus', () => {

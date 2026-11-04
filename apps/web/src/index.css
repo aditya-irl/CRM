@@ -792,6 +792,32 @@ h1, h2, h3, h4, h5, h6 {
     display: flex !important;
   }
 
+  .mobile-bottom-nav-item {
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
+    padding: 4px 1px !important;
+  }
+
+  .mobile-bottom-nav-item span {
+    font-size: 9.5px !important;
+    letter-spacing: -0.02em !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    max-width: 100% !important;
+  }
+
+  @media (max-width: 360px) {
+    .mobile-bottom-nav-item span {
+      font-size: 8.5px !important;
+      letter-spacing: -0.03em !important;
+    }
+    .mobile-bottom-nav-item svg {
+      width: 17px !important;
+      height: 17px !important;
+    }
+  }
+
   .mobile-more-sheet-portal {
     display: flex !important;
   }
