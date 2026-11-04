@@ -6,11 +6,37 @@ import { KYCService } from './kyc.service';
 import { authenticate, requireRole, authenticateMediaView, JWT_SECRET } from '../../middlewares/auth.middleware';
 import { validateBody } from '../../middlewares/validate.middleware';
 import { kycUploadInitSchema, kycConfirmSchema, kycDirectUploadSchema, UserRole } from '@crm/shared';
+import { env } from '../../config/env';
 
 const router = Router();
 
+/**
+ * Security Gate: Local storage vault endpoints (/local-vault) are exclusively permitted
+ * during local development when STORAGE_PROVIDER=local.
+ * In production or whenever cloud object storage (S3/B2) is configured, these endpoints
+ * are strictly disabled and return HTTP 404 Not Found to prevent unauthorized filesystem access.
+ */
+export function localVaultGate(_req: Request, res: Response, next: NextFunction) {
+  const currentEnv = process.env.NODE_ENV || env.NODE_ENV;
+  const storageProvider = process.env.STORAGE_PROVIDER || env.STORAGE_PROVIDER;
+
+  if (currentEnv === 'production' || storageProvider !== 'local') {
+    return res.status(404).json({
+      success: false,
+      error: {
+        code: 'NOT_FOUND',
+        message: 'Local storage vault is disabled in this environment',
+      },
+      timestamp: new Date().toISOString(),
+    });
+  }
+  next();
+}
+
+router.use('/local-vault', localVaultGate);
+
 // Local development storage vault stream (Safe multi-directory path validation)
-router.get('/local-vault', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/local-vault', localVaultGate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const rawKey = req.query.key as string;
     if (!rawKey) {
@@ -69,7 +95,7 @@ router.get('/local-vault', async (req: Request, res: Response, next: NextFunctio
 });
 
 // Local development file upload receiver
-router.put('/local-vault', async (req: Request, res: Response, next: NextFunction) => {
+router.put('/local-vault', localVaultGate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const rawKey = req.query.key as string;
     if (!rawKey) {

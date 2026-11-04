@@ -88,7 +88,7 @@ export const envSchema = z.object({
   CASHFREE_ENV: z.enum(['sandbox', 'production']).default('sandbox'),
   CASHFREE_API_VERSION: z.string().default('2023-08-01'),
 }).superRefine((data, ctx) => {
-  // Cashfree Production Credentials Validation
+  // Cashfree Environment & Credential Validation
   if (data.CASHFREE_ENV === 'production') {
     if (!data.CASHFREE_CLIENT_ID || !data.CASHFREE_CLIENT_ID.trim()) {
       ctx.addIssue({
@@ -96,13 +96,31 @@ export const envSchema = z.object({
         path: ['CASHFREE_CLIENT_ID'],
         message: 'CASHFREE_CLIENT_ID is required when CASHFREE_ENV is set to "production".',
       });
+    } else if (/^TEST/i.test(data.CASHFREE_CLIENT_ID.trim())) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['CASHFREE_CLIENT_ID'],
+        message: 'CASHFREE_CLIENT_ID appears to be a Sandbox test credential (starts with "TEST"), but CASHFREE_ENV is set to "production". Production credentials must be used.',
+      });
     }
+
     if (!data.CASHFREE_CLIENT_SECRET || !data.CASHFREE_CLIENT_SECRET.trim()) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['CASHFREE_CLIENT_SECRET'],
         message: 'CASHFREE_CLIENT_SECRET is required when CASHFREE_ENV is set to "production".',
       });
+    }
+  } else if (data.CASHFREE_ENV === 'sandbox') {
+    // When credentials are provided in sandbox, prevent accidental usage of production credentials
+    if (data.CASHFREE_CLIENT_ID && data.CASHFREE_CLIENT_ID.trim()) {
+      if (!/^TEST/i.test(data.CASHFREE_CLIENT_ID.trim())) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['CASHFREE_CLIENT_ID'],
+          message: 'CASHFREE_CLIENT_ID does not match documented Cashfree Sandbox format (Sandbox App IDs must begin with "TEST"). Production credentials cannot be used when CASHFREE_ENV is set to "sandbox".',
+        });
+      }
     }
   }
 

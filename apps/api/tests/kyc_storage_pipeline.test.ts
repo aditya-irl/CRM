@@ -361,4 +361,92 @@ describe('KYC End-to-End Pipeline & Storage Resilience Test Suite', () => {
       await queryPostgres('DELETE FROM kyc_documents WHERE id = $1', [ghostDocId]);
     });
   });
+
+  describe('Local Storage Vault Gating & Production Isolation (M-1)', () => {
+    test('GET /api/v1/kyc/local-vault is strictly blocked with 404 when NODE_ENV=production', async () => {
+      const originalNodeEnv = process.env.NODE_ENV;
+      try {
+        process.env.NODE_ENV = 'production';
+
+        const res = await request(app)
+          .get('/api/v1/kyc/local-vault?key=kyc/test/document.pdf');
+
+        expect(res.status).toBe(404);
+        expect(res.body.success).toBe(false);
+        expect(res.body.error.code).toBe('NOT_FOUND');
+        expect(res.body.error.message).toContain('Local storage vault is disabled');
+      } finally {
+        process.env.NODE_ENV = originalNodeEnv;
+      }
+    });
+
+    test('PUT /api/v1/kyc/local-vault is strictly blocked with 404 when NODE_ENV=production', async () => {
+      const originalNodeEnv = process.env.NODE_ENV;
+      try {
+        process.env.NODE_ENV = 'production';
+
+        const res = await request(app)
+          .put('/api/v1/kyc/local-vault?key=kyc/test/document.pdf')
+          .send('sample-content');
+
+        expect(res.status).toBe(404);
+        expect(res.body.success).toBe(false);
+        expect(res.body.error.code).toBe('NOT_FOUND');
+        expect(res.body.error.message).toContain('Local storage vault is disabled');
+      } finally {
+        process.env.NODE_ENV = originalNodeEnv;
+      }
+    });
+
+    test('GET /api/v1/kyc/local-vault is blocked with 404 when STORAGE_PROVIDER=s3', async () => {
+      const originalProvider = process.env.STORAGE_PROVIDER;
+      try {
+        process.env.STORAGE_PROVIDER = 's3';
+
+        const res = await request(app)
+          .get('/api/v1/kyc/local-vault?key=kyc/test/document.pdf');
+
+        expect(res.status).toBe(404);
+        expect(res.body.success).toBe(false);
+        expect(res.body.error.code).toBe('NOT_FOUND');
+        expect(res.body.error.message).toContain('Local storage vault is disabled');
+      } finally {
+        process.env.STORAGE_PROVIDER = originalProvider;
+      }
+    });
+
+    test('PUT /api/v1/kyc/local-vault is blocked with 404 when STORAGE_PROVIDER=s3', async () => {
+      const originalProvider = process.env.STORAGE_PROVIDER;
+      try {
+        process.env.STORAGE_PROVIDER = 's3';
+
+        const res = await request(app)
+          .put('/api/v1/kyc/local-vault?key=kyc/test/document.pdf')
+          .send('sample-content');
+
+        expect(res.status).toBe(404);
+        expect(res.body.success).toBe(false);
+        expect(res.body.error.code).toBe('NOT_FOUND');
+        expect(res.body.error.message).toContain('Local storage vault is disabled');
+      } finally {
+        process.env.STORAGE_PROVIDER = originalProvider;
+      }
+    });
+
+    test('Authenticated standard S3/B2 presigned-download route remains functional', async () => {
+      const docRes = await queryPostgres(
+        'SELECT id FROM kyc_documents WHERE customer_id = $1 LIMIT 1',
+        [customer1Id]
+      );
+      const docId = docRes.rows[0].id;
+
+      const res = await request(app)
+        .get(`/api/v1/kyc/${docId}/presigned-download`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.downloadUrl).toBeDefined();
+    });
+  });
 });

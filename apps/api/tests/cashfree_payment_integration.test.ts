@@ -735,5 +735,115 @@ describe('Cashfree Payments & Redirect Checkout Integration Tests', () => {
         (env as any).CASHFREE_CLIENT_SECRET = savedEnvSecret;
       }
     });
+
+    it('rejects startup/validation when CASHFREE_ENV=production but CASHFREE_CLIENT_ID starts with TEST (Sandbox key in production)', () => {
+      const sampleEnv = {
+        NODE_ENV: 'production',
+        PORT: '4000',
+        DATABASE_DRIVER: 'postgres',
+        DATABASE_URL: 'postgres://user:pass@localhost:5432/db',
+        JWT_SECRET: 'test_super_secret_jwt_32_characters_long_min',
+        JWT_REFRESH_SECRET: 'test_super_secret_jwt_refresh_32_chars',
+        REDIS_URL: 'redis://localhost:6379',
+        STORAGE_PROVIDER: 's3',
+        AWS_ACCESS_KEY_ID: 'fake_key',
+        AWS_SECRET_ACCESS_KEY: 'fake_secret',
+        PORTAL_BASE_URL: 'https://crm.example.com/portal',
+        CASHFREE_ENV: 'production',
+        CASHFREE_CLIENT_ID: 'TEST_sandbox_client_id_12345',
+        CASHFREE_CLIENT_SECRET: 'cfsk_prod_secret_mock',
+      };
+
+      const result = envSchema.safeParse(sampleEnv);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const issues = result.error.issues;
+        expect(issues.some((i) => i.path.includes('CASHFREE_CLIENT_ID') && i.message.includes('Sandbox test credential'))).toBe(true);
+      }
+    });
+
+    it('rejects startup/validation when CASHFREE_ENV=sandbox but CASHFREE_CLIENT_ID does not start with TEST (Production key in sandbox)', () => {
+      const sampleEnv = {
+        NODE_ENV: 'development',
+        CASHFREE_ENV: 'sandbox',
+        CASHFREE_CLIENT_ID: '1234567890prod_merchant_id',
+        CASHFREE_CLIENT_SECRET: 'cfsk_secret_mock',
+      };
+
+      const result = envSchema.safeParse(sampleEnv);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const issues = result.error.issues;
+        expect(issues.some((i) => i.path.includes('CASHFREE_CLIENT_ID') && i.message.includes('Cashfree Sandbox format'))).toBe(true);
+      }
+    });
+
+    it('accepts valid production credentials (non-TEST prefix) when CASHFREE_ENV=production', () => {
+      const sampleEnv = {
+        NODE_ENV: 'production',
+        PORT: '4000',
+        DATABASE_DRIVER: 'postgres',
+        DATABASE_URL: 'postgres://user:pass@localhost:5432/db',
+        JWT_SECRET: 'test_super_secret_jwt_32_characters_long_min',
+        JWT_REFRESH_SECRET: 'test_super_secret_jwt_refresh_32_chars',
+        REDIS_URL: 'redis://localhost:6379',
+        STORAGE_PROVIDER: 's3',
+        AWS_ACCESS_KEY_ID: 'fake_key',
+        AWS_SECRET_ACCESS_KEY: 'fake_secret',
+        PORTAL_BASE_URL: 'https://crm.example.com/portal',
+        CASHFREE_ENV: 'production',
+        CASHFREE_CLIENT_ID: 'PROD_MERCHANT_1029384756',
+        CASHFREE_CLIENT_SECRET: 'cfsk_prod_secret_live_998877',
+      };
+
+      const result = envSchema.safeParse(sampleEnv);
+      expect(result.success).toBe(true);
+    });
+
+    it('CashfreeService.validateCredentialsEnvironment correctly rejects mismatched keys and never exposes secret', () => {
+      // 1. Sandbox key in production
+      expect(() => {
+        CashfreeService.validateCredentialsEnvironment('TEST10293847', 'production');
+      }).toThrow('Sandbox test credentials');
+
+      // 2. Production key in sandbox
+      expect(() => {
+        CashfreeService.validateCredentialsEnvironment('9988776655', 'sandbox');
+      }).toThrow('Production credentials cannot be used');
+
+      // 3. Valid sandbox key in sandbox
+      expect(() => {
+        CashfreeService.validateCredentialsEnvironment('TEST10293847', 'sandbox');
+      }).not.toThrow();
+
+      // 4. Valid production key in production
+      expect(() => {
+        CashfreeService.validateCredentialsEnvironment('9988776655', 'production');
+      }).not.toThrow();
+
+      // 5. Verification error message must never expose sensitive raw key
+      try {
+        CashfreeService.validateCredentialsEnvironment('TEST_SECRET_RAW_KEY_123', 'production');
+      } catch (err: any) {
+        expect(err.message).not.toContain('TEST_SECRET_RAW_KEY_123');
+      }
+    });
+
+    it('CashfreeService.areCredentialsValid operational checker reflects credential validity', () => {
+      const savedId = process.env.CASHFREE_CLIENT_ID;
+      const savedEnv = process.env.CASHFREE_ENV;
+      try {
+        process.env.CASHFREE_CLIENT_ID = 'TEST_valid_sandbox_id';
+        process.env.CASHFREE_ENV = 'sandbox';
+        expect(CashfreeService.areCredentialsValid()).toBe(true);
+
+        process.env.CASHFREE_CLIENT_ID = 'PROD_numeric_id_12345';
+        process.env.CASHFREE_ENV = 'sandbox';
+        expect(CashfreeService.areCredentialsValid()).toBe(false);
+      } finally {
+        process.env.CASHFREE_CLIENT_ID = savedId;
+        process.env.CASHFREE_ENV = savedEnv;
+      }
+    });
   });
 });

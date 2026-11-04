@@ -74,7 +74,51 @@ export class CashfreeService {
       );
     }
 
+    this.validateCredentialsEnvironment(clientId, this.getEnvironment());
+
     return { clientId, clientSecret };
+  }
+
+  /**
+   * Validates that the configured Cashfree Client ID matches the active gateway environment.
+   * Documented characteristics:
+   * - Cashfree Sandbox App IDs strictly begin with "TEST" (case-insensitive).
+   * - Cashfree Production App IDs do not begin with "TEST".
+   * Note: Client secrets are never prefix-checked because secret tokens do not follow a documented prefix standard.
+   * Under no circumstances is the actual credential value logged or exposed.
+   */
+  public static validateCredentialsEnvironment(clientId: string, envName: 'sandbox' | 'production'): void {
+    const trimmedId = (clientId || '').trim();
+    if (!trimmedId) return;
+
+    const isSandboxKey = /^TEST/i.test(trimmedId);
+
+    if (envName === 'production' && isSandboxKey) {
+      throw new AppError(
+        'Invalid Cashfree configuration: Sandbox test credentials (starting with "TEST") cannot be used when CASHFREE_ENV is set to "production".',
+        500
+      );
+    }
+
+    if (envName === 'sandbox' && !isSandboxKey) {
+      throw new AppError(
+        'Invalid Cashfree configuration: Production credentials cannot be used when CASHFREE_ENV is set to "sandbox". Cashfree Sandbox App ID must begin with "TEST".',
+        500
+      );
+    }
+  }
+
+  /**
+   * Operational check to verify credentials are both configured and valid for the current environment.
+   */
+  public static areCredentialsValid(): boolean {
+    if (!this.isConfigured()) return false;
+    try {
+      const { clientId } = this.getCredentials();
+      return Boolean(clientId);
+    } catch {
+      return false;
+    }
   }
 
   /**
