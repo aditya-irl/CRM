@@ -24,6 +24,7 @@ import {
   HelpCircle,
   Plus,
   Clock,
+  Share2,
 } from 'lucide-react';
 import { BrandLogo } from './BrandLogo';
 
@@ -712,6 +713,41 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                     );
                   })()}
 
+                  {/* Prominent Receipt Sharing on WhatsApp */}
+                  <button
+                    type="button"
+                    data-testid="receipt-share-whatsapp-btn"
+                    onClick={() => {
+                      const rawPhone = receipt.customer?.phone || selectedLoan?.primaryPhone || '';
+                      const cleanPhone = rawPhone.replace(/\D/g, '');
+                      const phoneWithCode = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+                      const dateStr = formatDateDDMMYYYY(receipt.paymentTimestamp || new Date().toISOString());
+                      const amountStr = formatINR(Number(receipt.amountCollected || receipt.amount || 0));
+                      const msg = `Official Payment Receipt from Alpha Mobile Gallery / Shubh CRM:\nReceipt No: ${receipt.receiptNumber}\nCustomer: ${receipt.customer?.name || selectedLoan?.customerName}\nLoan Account: ${receipt.loan?.accountNo || selectedLoan?.loanAccountNo}\nAmount Paid: ${amountStr}\nDate: ${dateStr}\nStatus: ${isPending ? 'Pending Administrative Verification' : 'Approved & Posted'}\nThank you!`;
+                      window.open(`https://wa.me/${phoneWithCode}?text=${encodeURIComponent(msg)}`, '_blank');
+                    }}
+                    style={{
+                      height: 48,
+                      borderRadius: 8,
+                      background: '#f0fdf4',
+                      border: '1px solid #bbf7d0',
+                      color: '#15803d',
+                      fontWeight: 700,
+                      fontSize: 13,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                      cursor: 'pointer',
+                      touchAction: 'manipulation',
+                      marginBottom: 10,
+                      width: '100%',
+                    }}
+                  >
+                    <Share2 size={16} />
+                    <span>Share Receipt on WhatsApp</span>
+                  </button>
+
                   <div style={{ display: 'flex', gap: 10 }}>
                     <button
                       type="button"
@@ -719,10 +755,12 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                       className="btn btn-secondary"
                       style={{
                         flex: 1,
+                        height: 48,
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         gap: 6,
+                        touchAction: 'manipulation',
                       }}
                     >
                       <Printer size={15} />
@@ -732,7 +770,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                       type="button"
                       onClick={onClose}
                       className="btn btn-primary"
-                      style={{ flex: 1 }}
+                      style={{ flex: 1, height: 48, touchAction: 'manipulation' }}
                     >
                       Done
                     </button>
@@ -933,7 +971,20 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
               </div>
             </div>
 
-            <div className="modal-actions-footer" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <div
+              className="modal-actions-footer"
+              style={{
+                display: 'flex',
+                gap: 10,
+                flexWrap: 'wrap',
+                position: 'sticky',
+                bottom: 0,
+                background: 'var(--bg-surface, #ffffff)',
+                paddingTop: 10,
+                paddingBottom: 'calc(8px + var(--sab, 0px))',
+                zIndex: 10,
+              }}
+            >
               <button
                 type="button"
                 onClick={() => {
@@ -941,16 +992,26 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                   submissionIdempotencyKeyRef.current = '';
                 }}
                 className="btn btn-secondary"
-                style={{ flex: 1 }}
+                style={{ flex: 1, minHeight: 48, touchAction: 'manipulation' }}
                 disabled={submitting}
               >
                 Back to Edit
               </button>
               <button
                 type="button"
+                data-testid="confirm-final-payment-btn"
                 onClick={handleFinalPaymentSubmit}
                 className="btn btn-primary"
-                style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  minHeight: 48,
+                  fontWeight: 800,
+                  touchAction: 'manipulation',
+                }}
                 disabled={submitting}
               >
                 <CheckCircle2 size={16} />
@@ -1491,6 +1552,41 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                   >
                     Payment Mode
                   </label>
+                  {/* Large Touch Payment Mode Selectors (>= 48px target) */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginBottom: 8 }}>
+                    {[
+                      { mode: PaymentMode.CASH, label: 'Cash' },
+                      { mode: PaymentMode.UPI, label: 'UPI' },
+                      { mode: PaymentMode.BANK_TRANSFER, label: 'Bank' },
+                    ].map((m) => {
+                      const isSelected = paymentMode === m.mode;
+                      return (
+                        <button
+                          key={m.mode}
+                          type="button"
+                          data-testid={`payment-mode-btn-${m.mode.toLowerCase()}`}
+                          onClick={() => setPaymentMode(m.mode)}
+                          style={{
+                            height: 48,
+                            borderRadius: 8,
+                            border: isSelected ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                            background: isSelected ? '#eff6ff' : '#f8fafc',
+                            color: isSelected ? '#1e40af' : '#334155',
+                            fontWeight: isSelected ? 800 : 600,
+                            fontSize: 13,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            touchAction: 'manipulation',
+                          }}
+                        >
+                          {m.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
                   <select
                     className="form-select"
                     value={paymentMode}
@@ -1673,22 +1769,47 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
               )}
 
               {/* Submit Buttons */}
-              <div className="modal-actions-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
+              <div
+                className="modal-actions-footer"
+                style={{
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  gap: 10,
+                  marginTop: 8,
+                  flexWrap: 'wrap',
+                  position: 'sticky',
+                  bottom: 0,
+                  background: 'var(--bg-surface, #ffffff)',
+                  paddingTop: 10,
+                  paddingBottom: 'calc(8px + var(--sab, 0px))',
+                  zIndex: 10,
+                }}
+              >
                 <button
                   type="button"
                   onClick={onClose}
                   className="btn btn-secondary"
                   disabled={submitting}
+                  style={{ minHeight: 48, padding: '0 16px', touchAction: 'manipulation' }}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
+                  data-testid="record-payment-review-btn"
                   className="btn btn-primary"
                   disabled={submitting || loadingLoans || loadingPreview || Boolean(selectedLoan?.status && selectedLoan.status !== 'ACTIVE')}
-                  style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                  style={{
+                    minHeight: 48,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '0 20px',
+                    fontWeight: 800,
+                    touchAction: 'manipulation',
+                  }}
                 >
-                  <CheckCircle2 size={15} />
+                  <CheckCircle2 size={16} />
                   <span>{loadingPreview ? 'Calculating...' : 'Review & Record Payment'}</span>
                 </button>
               </div>

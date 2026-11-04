@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { RecordPaymentModal } from '../components/RecordPaymentModal';
 import { LogContactModal } from '../components/LogContactModal';
+import { AgentMobileQueueCard, AgentMobileFilterSheet } from '../components/mobile';
 
 export const QueueView: React.FC = () => {
   const [queue, setQueue] = useState<IAgentQueueItem[]>([]);
@@ -36,6 +37,7 @@ export const QueueView: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'DUE_TODAY' | 'OVERDUE' | 'UPCOMING' | 'TODAY' | 'TOMORROW' | 'NEXT_7_DAYS'>('ALL');
   const [routeFilter, setRouteFilter] = useState('');
   const [search, setSearch] = useState('');
+  const [showFilterSheet, setShowFilterSheet] = useState(false);
 
   // Modals state
   const [selectedItemForCall, setSelectedItemForCall] = useState<IAgentQueueItem | null>(null);
@@ -172,6 +174,18 @@ export const QueueView: React.FC = () => {
           })}
         </div>
 
+        {/* Mobile Filter Sheet Trigger Button (<= 768px) */}
+        <button
+          type="button"
+          data-testid="agent-queue-open-filter-btn"
+          onClick={() => setShowFilterSheet(true)}
+          className="btn btn-secondary btn-sm"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+        >
+          <Filter size={13} color="#2563eb" />
+          <span>Filter: <strong>{statusFilter}</strong></span>
+        </button>
+
         <form onSubmit={handleSearchSubmit} style={{ display: 'flex', gap: 10, flex: 1, minWidth: 260 }}>
           <input
             type="text"
@@ -197,8 +211,8 @@ export const QueueView: React.FC = () => {
         </form>
       </div>
 
-      {/* Queue Table */}
-      <div className="table-container">
+      {/* Queue Table (Desktop View > 768px) */}
+      <div className="table-container desktop-only-table-view">
         <table className="crm-table">
           <thead>
             <tr>
@@ -325,6 +339,60 @@ export const QueueView: React.FC = () => {
           </tbody>
         </table>
       </div>
+
+      {/* Mobile Queue Cards (<= 768px) */}
+      <div className="mobile-only-card-view">
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-secondary)' }}>
+            Loading collection tasks...
+          </div>
+        ) : queue.length === 0 ? (
+          <div className="crm-card" style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
+            <CheckCircle2 size={32} color="var(--success)" style={{ margin: '0 auto 8px' }} />
+            <div style={{ fontWeight: 700, fontSize: 14 }}>Zero Pending Collections</div>
+            <div style={{ fontSize: 12, marginTop: 4 }}>No customers in this queue filter.</div>
+          </div>
+        ) : (
+          queue.map((item) => (
+            <AgentMobileQueueCard
+              key={item.installmentId}
+              item={item}
+              onCall={() => {
+                window.location.href = `tel:${item.primaryPhone}`;
+              }}
+              onWhatsApp={() => sendWhatsAppReminder(item)}
+              onNavigate={(it) => {
+                const q = it.addressSummary || it.areaRoute || '';
+                if (q) {
+                  window.open(`https://maps.google.com/?q=${encodeURIComponent(q)}`, '_blank');
+                }
+              }}
+              onLogVisit={(it) => {
+                setSelectedItemForContact(it);
+                setShowLogContactModal(true);
+              }}
+              onCollect={(it) => handleOpenPaymentModal(it)}
+            />
+          ))
+        )}
+      </div>
+
+      {/* Mobile Filter Sheet Drawer */}
+      <AgentMobileFilterSheet
+        isOpen={showFilterSheet}
+        onClose={() => setShowFilterSheet(false)}
+        statusFilter={statusFilter}
+        onSelectStatus={(s) => setStatusFilter(s as any)}
+        routeFilter={routeFilter}
+        onChangeRoute={(r) => setRouteFilter(r)}
+        statusOptions={[
+          { id: 'ALL', label: 'All Active Dues' },
+          { id: 'TODAY', label: "Today's Due" },
+          { id: 'OVERDUE', label: 'Overdue Queue' },
+          { id: 'TOMORROW', label: 'Due Tomorrow' },
+          { id: 'NEXT_7_DAYS', label: 'Next 7 Days' },
+        ]}
+      />
 
       {/* Call Log Modal */}
       {selectedItemForCall && (

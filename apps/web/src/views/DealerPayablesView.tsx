@@ -422,7 +422,7 @@ export const DealerPayablesView: React.FC<DealerPayablesViewProps> = ({
             </div>
           </div>
 
-          <div className="table-container">
+          <div className="table-container desktop-only-table-view">
             <table className="crm-table">
               <thead>
                 <tr>
@@ -532,6 +532,111 @@ export const DealerPayablesView: React.FC<DealerPayablesViewProps> = ({
               </tbody>
             </table>
           </div>
+
+          {/* Mobile Dealer Payables Cards */}
+          <div className="mobile-only-card-view" style={{ marginTop: 10 }}>
+            {loading ? (
+              <div style={{ textAlign: 'center', padding: 24, color: 'var(--text-secondary)' }}>
+                Loading dealer payables breakdown...
+              </div>
+            ) : (!summary?.dealers || summary.dealers.length === 0) ? (
+              <div style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>
+                No dealer payables records found for this criteria.
+              </div>
+            ) : (
+              summary.dealers.map((dealer) => {
+                const isFullyPaid = dealer.payoutStatus === DealerPayableStatus.PAID;
+                const isPartiallyPaid = dealer.payoutStatus === DealerPayableStatus.PARTIALLY_PAID;
+                return (
+                  <div
+                    key={dealer.dealerId}
+                    className="crm-card"
+                    data-testid={`dealer-payable-card-${dealer.dealerId}`}
+                    style={{
+                      padding: 14,
+                      marginBottom: 10,
+                      background: '#ffffff',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: 12,
+                      boxShadow: '0 2px 4px rgba(15, 23, 42, 0.05)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: 14 }}>{dealer.storeName}</div>
+                        <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                          <span className="mono badge badge-primary" style={{ fontSize: 10 }}>
+                            {dealer.dealerCode}
+                          </span>
+                          <span className="badge badge-route">{dealer.areaCity}</span>
+                        </div>
+                      </div>
+                      <span
+                        className={`badge ${
+                          isFullyPaid
+                            ? 'badge-paid'
+                            : isPartiallyPaid
+                            ? 'badge-partial'
+                            : 'badge-warning'
+                        }`}
+                      >
+                        {dealer.payoutStatus === DealerPayableStatus.PAID
+                          ? 'Paid'
+                          : dealer.payoutStatus === DealerPayableStatus.PARTIALLY_PAID
+                          ? 'Partially Paid'
+                          : 'Pending'}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 12 }}>
+                      <div style={{ background: '#f8fafc', padding: 8, borderRadius: 8 }}>
+                        <div style={{ fontSize: 10, color: '#64748b' }}>Financed Devices</div>
+                        <div className="mono font-semibold" style={{ fontSize: 12, marginTop: 2 }}>{dealer.eligibleLoansCount} devices</div>
+                      </div>
+                      <div style={{ background: '#f8fafc', padding: 8, borderRadius: 8 }}>
+                        <div style={{ fontSize: 10, color: '#64748b' }}>Total Financed</div>
+                        <div className="mono font-bold" style={{ fontSize: 12, marginTop: 2 }}>{formatINR(dealer.totalPayable)}</div>
+                      </div>
+                      <div style={{ background: '#f8fafc', padding: 8, borderRadius: 8 }}>
+                        <div style={{ fontSize: 10, color: '#64748b' }}>Remaining Due</div>
+                        <div
+                          className="mono font-bold"
+                          style={{
+                            fontSize: 12,
+                            marginTop: 2,
+                            color: dealer.remainingPayable > 0 ? 'var(--warning-text)' : 'var(--text-secondary)',
+                          }}
+                        >
+                          {formatINR(dealer.remainingPayable)}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
+                      <button
+                        onClick={() => handleOpenLoansModal(dealer)}
+                        className="btn btn-secondary dealer-touch-btn-48"
+                        style={{ flex: 1, minHeight: 48, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                      >
+                        <Eye size={14} />
+                        <span>{isDealer ? 'Financed Phones' : 'Eligible Loans'}</span>
+                      </button>
+                      {canManagePayables && dealer.remainingPayable > 0 && (
+                        <button
+                          onClick={() => handleOpenRecordModal(dealer.dealerId)}
+                          className="btn btn-primary dealer-touch-btn-48"
+                          style={{ flex: 1, minHeight: 48, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                        >
+                          <Plus size={14} />
+                          <span>Record Payout</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
       )}
 
@@ -593,7 +698,7 @@ export const DealerPayablesView: React.FC<DealerPayablesViewProps> = ({
           </div>
 
           {/* Payments Table */}
-          <div className="table-container">
+          <div className="table-container desktop-only-table-view">
             <table className="crm-table">
               <thead>
                 <tr>
@@ -694,6 +799,92 @@ export const DealerPayablesView: React.FC<DealerPayablesViewProps> = ({
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* Mobile Payouts Cards */}
+          <div className="mobile-only-card-view" style={{ marginTop: 10 }}>
+            {loading ? (
+              <div style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>
+                Loading payout history...
+              </div>
+            ) : payments.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>
+                No payout records found.
+              </div>
+            ) : (
+              payments.map((p) => {
+                const isReversed = p.status === 'REVERSED';
+                return (
+                  <div
+                    key={p.id}
+                    className="crm-card"
+                    data-testid={`dealer-payout-card-${p.id}`}
+                    style={{
+                      padding: 14,
+                      marginBottom: 10,
+                      background: '#ffffff',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: 12,
+                      boxShadow: '0 2px 4px rgba(15, 23, 42, 0.05)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div>
+                        <span className="mono font-bold" style={{ fontSize: 13, color: 'var(--primary)' }}>
+                          {p.payoutNumber}
+                        </span>
+                        <div style={{ fontWeight: 600, fontSize: 13, marginTop: 2 }}>{p.dealerStoreName || 'Dealer Store'}</div>
+                        <div style={{ fontSize: 11, color: '#64748b' }}>
+                          {formatDateDDMMYYYY(p.paymentDate)} • {p.paymentMethod}
+                        </div>
+                      </div>
+                      <span className={`badge ${isReversed ? 'badge-danger' : 'badge-paid'}`}>
+                        {p.status}
+                      </span>
+                    </div>
+
+                    <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 12, color: '#64748b' }}>Payout Amount:</span>
+                      <span
+                        className="mono font-bold"
+                        style={{
+                          fontSize: 16,
+                          color: isReversed ? 'var(--text-muted)' : 'var(--success)',
+                          textDecoration: isReversed ? 'line-through' : 'none',
+                        }}
+                      >
+                        {formatINR(p.amount)}
+                      </span>
+                    </div>
+
+                    <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
+                      <button
+                        onClick={() => handleOpenPayoutDetail(p.id)}
+                        className="btn btn-secondary dealer-touch-btn-48"
+                        style={{ flex: 1, minHeight: 48, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                      >
+                        <Eye size={14} />
+                        <span>View Allocations</span>
+                      </button>
+                      {canManagePayables && !isReversed && (
+                        <button
+                          onClick={() => {
+                            setReversingPayment(p);
+                            setReversalReason('');
+                            setReversalError(null);
+                          }}
+                          className="btn btn-secondary dealer-touch-btn-48"
+                          style={{ minHeight: 48, color: 'var(--danger-text)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                        >
+                          <RotateCcw size={14} />
+                          <span>Reverse</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
 
           {/* Pagination */}

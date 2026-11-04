@@ -634,7 +634,7 @@ export const DealerSettlementsView: React.FC<DealerSettlementsViewProps> = ({
           </div>
 
           {/* Collections Table */}
-          <div className="table-container">
+          <div className="table-container desktop-only-table-view">
             <table className="crm-table">
               <thead>
                 <tr>
@@ -786,6 +786,69 @@ export const DealerSettlementsView: React.FC<DealerSettlementsViewProps> = ({
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* Mobile Collections Cards */}
+          <div className="mobile-only-card-view" style={{ marginTop: 10 }}>
+            {loading ? (
+              <div style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>
+                Loading collections ledger...
+              </div>
+            ) : collections.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>
+                No collections records found.
+              </div>
+            ) : (
+              collections.map((item) => {
+                const isApproved = item.status === 'APPROVED' || item.status === 'SUCCESS';
+                const isPending = item.status === 'PENDING';
+                return (
+                  <div
+                    key={item.id}
+                    className="crm-card"
+                    data-testid={`dealer-collection-card-${item.id}`}
+                    style={{
+                      padding: 14,
+                      marginBottom: 10,
+                      background: '#ffffff',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: 12,
+                      boxShadow: '0 2px 4px rgba(15, 23, 42, 0.05)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div>
+                        <span className="mono font-bold" style={{ fontSize: 13, color: 'var(--primary)' }}>
+                          {item.receiptNumber || '—'}
+                        </span>
+                        <div style={{ fontWeight: 600, fontSize: 13, marginTop: 2 }}>{item.customerName || 'Borrower'}</div>
+                        <div style={{ fontSize: 11, color: '#64748b' }}>
+                          {formatDate(item.paymentTimestamp)} • Loan: {item.loanAccountNo}
+                        </div>
+                      </div>
+                      <span className={`badge ${isApproved ? 'badge-paid' : isPending ? 'badge-warning' : 'badge-danger'}`}>
+                        {item.status}
+                      </span>
+                    </div>
+
+                    <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontSize: 10, color: '#64748b' }}>Collected Amount</div>
+                        <div className="mono font-bold" style={{ fontSize: 16, color: 'var(--success)' }}>
+                          {formatINR(item.amount)}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: 10, color: '#64748b' }}>Settlement</div>
+                        <span className={`badge ${item.settlementStatus === 'SETTLED' ? 'badge-paid' : 'badge-due-today'}`}>
+                          {item.settlementStatus || 'UNSETTLED'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
 
           {/* Pagination */}
@@ -975,7 +1038,7 @@ export const DealerSettlementsView: React.FC<DealerSettlementsViewProps> = ({
           </div>
 
           {/* Settlements History Ledger Table */}
-          <div className="table-container">
+          <div className="table-container desktop-only-table-view">
             <table className="crm-table">
               <thead>
                 <tr>
@@ -1118,6 +1181,93 @@ export const DealerSettlementsView: React.FC<DealerSettlementsViewProps> = ({
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* Mobile Settlements Cards */}
+          <div className="mobile-only-card-view" style={{ marginTop: 10 }}>
+            {loading ? (
+              <div style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>
+                Loading settlement history...
+              </div>
+            ) : settlements.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>
+                No dealer settlement records found.
+              </div>
+            ) : (
+              settlements.map((settlement) => {
+                const isPending = settlement.status === SettlementStatus.PENDING_APPROVAL;
+                const isCompleted = settlement.status === SettlementStatus.COMPLETED;
+                const isRejected = settlement.status === SettlementStatus.REJECTED;
+                const isReversed = settlement.status === SettlementStatus.REVERSED;
+                return (
+                  <div
+                    key={settlement.id}
+                    className="crm-card"
+                    data-testid={`dealer-settlement-card-${settlement.id}`}
+                    style={{
+                      padding: 14,
+                      marginBottom: 10,
+                      background: '#ffffff',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: 12,
+                      boxShadow: '0 2px 4px rgba(15, 23, 42, 0.05)',
+                      opacity: isReversed ? 0.7 : 1,
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div>
+                        <span className="mono badge badge-terracotta" style={{ fontWeight: 700 }}>
+                          {settlement.settlementNumber}
+                        </span>
+                        <div style={{ fontWeight: 700, fontSize: 13, marginTop: 4 }}>{settlement.dealerStoreName}</div>
+                        <div style={{ fontSize: 11, color: '#64748b' }}>
+                          {formatDate(settlement.settlementDate)} • {settlement.paymentMethod}
+                        </div>
+                      </div>
+                      <span
+                        className={`badge ${
+                          isCompleted
+                            ? 'badge-paid'
+                            : isPending
+                            ? 'badge-warning'
+                            : isRejected
+                            ? 'badge-danger'
+                            : 'badge-overdue'
+                        }`}
+                      >
+                        {settlement.status}
+                      </span>
+                    </div>
+
+                    <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontSize: 10, color: '#64748b' }}>Settled Amount</div>
+                        <div className="mono font-bold" style={{ fontSize: 16, color: 'var(--success)' }}>
+                          {formatINR(settlement.amount)}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: 10, color: '#64748b' }}>Receipts</div>
+                        <span className="mono font-semibold" style={{ fontSize: 12 }}>
+                          {settlement.allocationsCount || 0} collections
+                        </span>
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
+                      <button
+                        onClick={() => handleOpenDetail(settlement.id)}
+                        className="btn btn-secondary dealer-touch-btn-48"
+                        style={{ flex: 1, minHeight: 48, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                      >
+                        <ExternalLink size={14} />
+                        <span>View Details</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
 
           {/* Pagination Controls */}

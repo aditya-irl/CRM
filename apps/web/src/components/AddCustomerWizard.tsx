@@ -940,6 +940,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                       </label>
                       <input
                         type="tel"
+                        inputMode="tel"
                         className="form-input mono"
                         placeholder="+91 98765 43210"
                         value={primaryPhone}
@@ -956,6 +957,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                       </label>
                       <input
                         type="tel"
+                        inputMode="tel"
                         className="form-input mono"
                         placeholder="+91 98111 22233"
                         value={alternatePhone}
@@ -1002,7 +1004,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                     </div>
                     <div>
                       <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Pincode <span style={{ color: 'var(--danger)' }}>*</span></label>
-                      <input type="text" className="form-input mono" value={pincode} onChange={(e) => setPincode(e.target.value)} />
+                      <input type="text" inputMode="numeric" className="form-input mono" value={pincode} onChange={(e) => setPincode(e.target.value)} />
                     </div>
                   </div>
 
@@ -1137,6 +1139,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                       </label>
                       <input
                         type="number"
+                        inputMode="decimal"
                         className="form-input mono"
                         value={productPrice}
                         onChange={(e) => setProductPrice(Number(e.target.value))}
@@ -1198,6 +1201,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                       </label>
                       <input
                         type="number"
+                        inputMode="decimal"
                         className="form-input mono"
                         value={downPayment}
                         onChange={(e) => setDownPayment(Number(e.target.value))}
@@ -1651,6 +1655,7 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
 
             {/* Footer Navigation Buttons */}
             <div
+              className="wizard-sticky-footer"
               style={{
                 padding: '16px 24px',
                 borderTop: '1px solid var(--border-subtle)',
@@ -1659,18 +1664,20 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 flexShrink: 0,
+                paddingBottom: 'calc(16px + var(--sab, 0px))',
               }}
             >
               <button
                 type="button"
                 onClick={currentStep === 1 ? handleClose : handlePrev}
-                className="btn btn-secondary"
+                className="btn btn-secondary dealer-touch-btn-48"
+                style={{ minHeight: 48, minWidth: 90, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
               >
                 {currentStep === 1 ? (
                   'Cancel'
                 ) : (
                   <>
-                    <ChevronLeft size={15} />
+                    <ChevronLeft size={16} />
                     <span>Back</span>
                   </>
                 )}
@@ -1678,16 +1685,22 @@ export const AddCustomerWizard: React.FC<AddCustomerWizardProps> = ({ isOpen, on
 
               <div style={{ display: 'flex', gap: 10 }}>
                 {currentStep < 5 ? (
-                  <button type="button" onClick={handleNext} className="btn btn-primary">
+                  <button
+                    type="button"
+                    onClick={handleNext}
+                    className="btn btn-primary dealer-touch-btn-48"
+                    style={{ minHeight: 48, minWidth: 140, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                  >
                     <span>Continue to Step {currentStep + 1}</span>
-                    <ChevronRight size={15} />
+                    <ChevronRight size={16} />
                   </button>
                 ) : (
                   <button
                     type="button"
                     onClick={handleFinalSubmit}
                     disabled={submitting}
-                    className="btn btn-primary btn-lg"
+                    className="btn btn-primary btn-lg dealer-touch-btn-48"
+                    style={{ minHeight: 48, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
                   >
                     {submitting ? 'Creating Customer & Booking Loan...' : 'Confirm & Create Customer'}
                   </button>

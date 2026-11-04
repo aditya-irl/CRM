@@ -62,6 +62,7 @@
   --sab: env(safe-area-inset-bottom, 0px);
   --sal: env(safe-area-inset-left, 0px);
   --sar: env(safe-area-inset-right, 0px);
+  --mobile-nav-height: 58px;
 }
 
 *, *::before, *::after {
@@ -637,6 +638,38 @@ h1, h2, h3, h4, h5, h6 {
   line-height: 1.3;
 }
 
+/* Shared Mobile Navigation & App Shell Styles (Hidden by default on Desktop) */
+.mobile-bottom-nav {
+  display: none;
+}
+.mobile-more-sheet-portal {
+  display: none;
+}
+.crm-mobile-header {
+  display: none;
+}
+.agent-mobile-view {
+  display: none !important;
+}
+.agent-desktop-view {
+  display: block;
+}
+.dealer-mobile-view {
+  display: none !important;
+}
+.dealer-desktop-view {
+  display: block;
+}
+.agent-touch-btn-48,
+.dealer-touch-btn-48 {
+  min-height: 48px;
+  min-width: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: manipulation;
+}
+
 /* Medium Desktop & Laptops (< 1200px and >= 769px): 3 columns (2 rows of 3) */
 @media screen and (max-width: 1199px) and (min-width: 769px) {
   .dashboard-kpi-grid {
@@ -745,6 +778,37 @@ h1, h2, h3, h4, h5, h6 {
     to { opacity: 1; }
   }
 
+  @keyframes slideUpSheet {
+    from {
+      transform: translate3d(0, 100%, 0);
+    }
+    to {
+      transform: translate3d(0, 0, 0);
+    }
+  }
+
+  /* Shared Mobile Navigation Display on Mobile Viewports (<= 768px) */
+  .mobile-bottom-nav {
+    display: flex !important;
+  }
+
+  .mobile-more-sheet-portal {
+    display: flex !important;
+  }
+
+  /* Agent & Dealer Mobile Display */
+  .agent-mobile-view,
+  .dealer-mobile-view {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+  }
+
+  .agent-desktop-view,
+  .dealer-desktop-view {
+    display: none !important;
+  }
+
   /* Safe Area Navigation Header */
   .navbar-header {
     padding-top: calc(10px + var(--sat)) !important;
@@ -759,7 +823,7 @@ h1, h2, h3, h4, h5, h6 {
 
   .main-content-container {
     padding: 12px 10px !important;
-    padding-bottom: calc(16px + var(--sab)) !important;
+    padding-bottom: calc(var(--mobile-nav-height, 58px) + 16px + var(--sab, 0px)) !important;
     overflow-x: hidden !important;
     max-width: 100vw !important;
   }

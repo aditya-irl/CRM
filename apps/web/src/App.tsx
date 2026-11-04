@@ -6,11 +6,18 @@ import { Sidebar, NavTab } from './components/Sidebar';
 import { LoginView } from './views/LoginView';
 import { ChangePasswordView } from './views/ChangePasswordView';
 import { DealerDashboardView } from './views/DealerDashboardView';
-import { AddCustomerWizard } from './components/AddCustomerWizard';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { lazyWithRetry } from './utils/lazyWithRetry';
+import { MobileAppShell } from './components/mobile';
 
 // Route-level code splitting with resilient auto-retry and deployment update recovery
+const AddCustomerWizard = lazyWithRetry(() => import('./components/AddCustomerWizard').then((m) => ({ default: m.AddCustomerWizard })));
+const MobileSettingsModal = lazyWithRetry(() => import('./components/mobile/MobileSettingsModal').then((m) => ({ default: m.MobileSettingsModal })));
+
+// Target route early chunk prefetch to eliminate waterfall latency for initial deep links
+if (typeof window !== 'undefined' && window.location.hash.startsWith('#loans')) {
+  import('./views/LoansView');
+}
 const DashboardView = lazyWithRetry(() => import('./views/DashboardView').then((m) => ({ default: m.DashboardView })));
 const DealersView = lazyWithRetry(() => import('./views/DealersView').then((m) => ({ default: m.DealersView })));
 const DealerCollectionsView = lazyWithRetry(() => import('./views/DealerCollectionsView').then((m) => ({ default: m.DealerCollectionsView })));
@@ -72,6 +79,8 @@ export const App: React.FC = () => {
   const [user, setUser] = useState<IUser | null>(ApiClient.getUser());
   const [activeTab, setActiveTab] = useState<NavTab>(() => getTabFromHash() || 'dashboard');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [selectedDealerIdForCollections, setSelectedDealerIdForCollections] = useState<string | null>(null);
   const [selectedDealerIdForSettlements, setSelectedDealerIdForSettlements] = useState<string | null>(null);
   const [selectedDealerIdForPayables, setSelectedDealerIdForPayables] = useState<string | null>(null);
@@ -140,6 +149,17 @@ export const App: React.FC = () => {
   // Hardware back button behavior for Android / Native mobile
   useEffect(() => {
     const handleNativeBackPressed = (e: Event) => {
+      // 0. Close mobile settings modal or more sheet if open
+      if (showSettingsModal) {
+        setShowSettingsModal(false);
+        e.preventDefault();
+        return;
+      }
+      if (mobileMoreOpen) {
+        setMobileMoreOpen(false);
+        e.preventDefault();
+        return;
+      }
       // 1. Close Add Customer Wizard modal if open
       if (showAddCustomerWizard) {
         setShowAddCustomerWizard(false);
@@ -200,6 +220,8 @@ export const App: React.FC = () => {
       return () => window.removeEventListener('crm_native_back_pressed', handleNativeBackPressed);
     }
   }, [
+    showSettingsModal,
+    mobileMoreOpen,
     showAddCustomerWizard,
     mobileMenuOpen,
     focusedLoanParams,
@@ -298,13 +320,13 @@ export const App: React.FC = () => {
     // If dealer attempts to access unauthorized admin view, redirect to store dashboard
     if (
       isDealer &&
-      !['dashboard', 'customers', 'devices', 'dealer-payables', 'dealer-collections', 'dealer-settlements'].includes(activeTab)
+      !['dashboard', 'customers', 'devices', 'dealer-payables', 'dealer-collections', 'dealer-settlements', 'loans'].includes(activeTab)
     ) {
       return <DealerDashboardView onNavigateToTab={(t) => selectTab(t as NavTab)} userRole={user.role} />;
     }
 
     // If collection agent attempts to access loans, customer onboarding, or admin-only tabs, redirect to collection dashboard
-    const agentAllowedTabs: NavTab[] = ['dashboard', 'agent-collections'];
+    const agentAllowedTabs: NavTab[] = ['dashboard', 'agent-collections', 'contact-activity', 'queue'];
     if (isAgent && !agentAllowedTabs.includes(activeTab)) {
       return <AgentDashboardView onNavigateToTab={(t) => selectTab(t as NavTab)} />;
     }
@@ -396,7 +418,7 @@ export const App: React.FC = () => {
         onLogout={handleLogout}
         onOpenAddCustomer={() => setShowAddCustomerWizard(true)}
         onNavigate={handleNotificationNavigate}
-        onToggleMobileMenu={() => setMobileMenuOpen((prev) => !prev)}
+        onToggleMobileMenu={() => setMobileMoreOpen((prev) => !prev)}
       />
       {secureStorageError && (
         <div
@@ -435,6 +457,7 @@ export const App: React.FC = () => {
           onSelectTab={(tab) => {
             selectTab(tab);
             setMobileMenuOpen(false);
+            setMobileMoreOpen(false);
           }}
           user={user}
           mobileOpen={mobileMenuOpen}
@@ -450,15 +473,46 @@ export const App: React.FC = () => {
       </div>
 
       {/* Global Add Customer Wizard */}
-      <AddCustomerWizard
-        isOpen={showAddCustomerWizard && !isAgent}
-        onClose={() => setShowAddCustomerWizard(false)}
-        onSuccess={() => {
-          setShowAddCustomerWizard(false);
-          setCustomersRefreshTrigger((prev) => prev + 1);
-          setActiveTab('customers');
+      {showAddCustomerWizard && !isAgent && (
+        <Suspense fallback={null}>
+          <AddCustomerWizard
+            isOpen={true}
+            onClose={() => setShowAddCustomerWizard(false)}
+            onSuccess={() => {
+              setShowAddCustomerWizard(false);
+              setCustomersRefreshTrigger((prev) => prev + 1);
+              setActiveTab('customers');
+            }}
+          />
+        </Suspense>
+      )}
+
+      {/* Shared Mobile App Shell (Role-Based Bottom Navigation & More Sheet) */}
+      <MobileAppShell
+        user={user}
+        activeTab={activeTab}
+        onSelectTab={(tab) => {
+          selectTab(tab);
+          setMobileMoreOpen(false);
+          setMobileMenuOpen(false);
         }}
+        onLogout={handleLogout}
+        isMoreOpen={mobileMoreOpen}
+        onCloseMore={() => setMobileMoreOpen(false)}
+        onOpenMore={() => setMobileMoreOpen(true)}
+        onOpenSettingsModal={() => setShowSettingsModal(true)}
       />
+
+      {/* Account Settings & Voluntary Password Change Modal */}
+      {showSettingsModal && (
+        <Suspense fallback={null}>
+          <MobileSettingsModal
+            isOpen={true}
+            onClose={() => setShowSettingsModal(false)}
+            user={user}
+          />
+        </Suspense>
+      )}
     </div>
   );
 };

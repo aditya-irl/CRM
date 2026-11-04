@@ -636,7 +636,8 @@ export const ContactActivityView: React.FC = () => {
             </button>
           </div>
         ) : (
-          <div className="table-container">
+          <>
+            <div className="table-container desktop-only-table-view">
             <table className="crm-table">
               <thead>
                 <tr>
@@ -832,6 +833,193 @@ export const ContactActivityView: React.FC = () => {
               </tbody>
             </table>
           </div>
+
+          {/* Mobile Contact Activity Cards (<= 768px) */}
+          <div className="mobile-only-card-view">
+            {activities.map((act) => {
+              const createdAtDate = new Date(act.createdAt).toLocaleString('en-IN', {
+                timeZone: 'Asia/Kolkata',
+                day: '2-digit',
+                month: 'short',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: true,
+              });
+
+              return (
+                <div
+                  key={act.id}
+                  className="crm-card"
+                  data-testid={`activity-card-${act.id}`}
+                  style={{
+                    padding: 14,
+                    background: '#ffffff',
+                    borderRadius: 12,
+                    border: '1px solid #e2e8f0',
+                    boxShadow: '0 2px 4px rgba(15, 23, 42, 0.05)',
+                  }}
+                >
+                  {/* Header: Customer & Timestamp */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                    <div>
+                      <div style={{ fontWeight: 800, fontSize: 15, color: '#0f172a' }}>
+                        {act.customerName || 'Customer'}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                        {act.customerCode && <span className="mono font-bold">{act.customerCode} • </span>}
+                        <span>{createdAtDate}</span>
+                      </div>
+                    </div>
+
+                    {/* Outcome Badge */}
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        padding: '3px 8px',
+                        borderRadius: 6,
+                        background:
+                          act.contactOutcome.includes('ANSWERED') || act.contactOutcome.includes('VISIT')
+                            ? '#dcfce7'
+                            : act.contactOutcome.includes('NO_ANSWER') || act.contactOutcome.includes('BUSY')
+                            ? '#fef3c7'
+                            : '#fee2e2',
+                        color:
+                          act.contactOutcome.includes('ANSWERED') || act.contactOutcome.includes('VISIT')
+                            ? '#15803d'
+                            : act.contactOutcome.includes('NO_ANSWER') || act.contactOutcome.includes('BUSY')
+                            ? '#b45309'
+                            : '#b91c1c',
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      {act.contactOutcome.replace(/_/g, ' ')}
+                    </span>
+                  </div>
+
+                  {/* Method & Loan details */}
+                  <div
+                    style={{
+                      background: '#f8fafc',
+                      borderRadius: 8,
+                      padding: '8px 10px',
+                      marginTop: 8,
+                      fontSize: 12,
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      border: '1px solid #e2e8f0',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: '#475569' }}>Method:</span>
+                      <span className="badge badge-neutral" style={{ fontSize: 10 }}>
+                        {act.contactMethod.replace(/_/g, ' ')}
+                      </span>
+                    </div>
+                    {act.loanAccountNo && (
+                      <div style={{ fontSize: 11, color: '#64748b' }}>
+                        Loan: <span className="mono font-bold" style={{ color: '#0f172a' }}>{act.loanAccountNo}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Commitment / Promise Banner if present */}
+                  {act.promisedPaymentAmount ? (
+                    <div
+                      style={{
+                        background: '#f0fdf4',
+                        border: '1px solid #bbf7d0',
+                        borderRadius: 8,
+                        padding: '8px 10px',
+                        marginTop: 8,
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: '#166534', textTransform: 'uppercase' }}>
+                          Promise to Pay
+                        </div>
+                        <div className="mono" style={{ fontSize: 16, fontWeight: 900, color: '#15803d', marginTop: 2 }}>
+                          {formatINR(Number(act.promisedPaymentAmount))}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right', fontSize: 11 }}>
+                        <span style={{ color: '#64748b' }}>Date: </span>
+                        <strong style={{ color: '#0f172a' }}>{act.promisedPaymentDate || 'N/A'}</strong>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: act.commitmentStatus === 'FULFILLED' ? '#15803d' : '#92400e', textTransform: 'uppercase' }}>
+                          {act.commitmentStatus}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {/* Follow-up Banner if present */}
+                  {act.followUpDate && (
+                    <div
+                      style={{
+                        background: '#eff6ff',
+                        border: '1px solid #bfdbfe',
+                        borderRadius: 8,
+                        padding: '6px 10px',
+                        marginTop: 6,
+                        fontSize: 11,
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        color: '#1e40af',
+                      }}
+                    >
+                      <div>
+                        <span>Next Follow-up: </span>
+                        <strong>{act.followUpDate}</strong> ({act.followUpPriority})
+                      </div>
+                      <span className="badge badge-info" style={{ fontSize: 9 }}>
+                        {act.followUpStatus}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Notes snippet */}
+                  {(act.customerResponseNotes || act.agentNotes) && (
+                    <div style={{ fontSize: 11, color: '#475569', marginTop: 6, fontStyle: 'italic', background: '#f8fafc', padding: '6px 8px', borderRadius: 6 }}>
+                      "{act.customerResponseNotes || act.agentNotes}"
+                    </div>
+                  )}
+
+                  {/* Action Button (min 48px target) */}
+                  <button
+                    type="button"
+                    data-testid="activity-card-view-btn"
+                    onClick={() => setSelectedActivity(act)}
+                    style={{
+                      width: '100%',
+                      height: 48,
+                      borderRadius: 8,
+                      background: '#f8fafc',
+                      border: '1px solid #cbd5e1',
+                      color: '#0f172a',
+                      fontWeight: 700,
+                      fontSize: 13,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                      marginTop: 8,
+                      cursor: 'pointer',
+                      touchAction: 'manipulation',
+                    }}
+                  >
+                    <Eye size={15} />
+                    <span>View Full Details & Audit Trail</span>
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+          </>
         )}
 
         {/* Pagination */}

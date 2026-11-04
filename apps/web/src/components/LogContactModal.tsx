@@ -43,6 +43,7 @@ export interface LogContactModalProps {
     totalAmount?: number | string;
     outstandingBalance?: number | string;
   } | null;
+  forceMobileView?: boolean;
 }
 
 const OUTCOMES_BY_METHOD: Record<ContactMethod, ContactOutcome[]> = {
@@ -86,6 +87,7 @@ export const LogContactModal: React.FC<LogContactModalProps> = ({
   onSuccess,
   preselectedCustomer,
   preselectedLoan,
+  forceMobileView,
 }) => {
   // Step navigation
   const [currentStep, setCurrentStep] = useState<number>(1);
@@ -138,6 +140,20 @@ export const LogContactModal: React.FC<LogContactModalProps> = ({
   );
   const [followUpNotes, setFollowUpNotes] = useState<string>('');
   const [agentNotes, setAgentNotes] = useState<string>('');
+
+  // Mobile single-page streamlined view detection
+  const [isMobileView, setIsMobileView] = useState<boolean>(() => {
+    if (forceMobileView !== undefined) return forceMobileView;
+    return typeof window !== 'undefined' ? window.innerWidth <= 768 : false;
+  });
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobileView(typeof window !== 'undefined' && window.innerWidth <= 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Submission state
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -443,6 +459,308 @@ export const LogContactModal: React.FC<LogContactModalProps> = ({
           </button>
         </div>
 
+        {isMobileView ? (
+          /* Streamlined Mobile Single-Page Sheet (<= 768px) */
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflowY: 'auto', padding: '16px' }}>
+            {/* Customer & Loan Overview */}
+            <div style={{ background: '#f8fafc', padding: 12, borderRadius: 8, border: '1px solid #e2e8f0', marginBottom: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Target Customer</span>
+                {customerCode && <span className="badge badge-neutral" style={{ fontSize: 10 }}>{customerCode}</span>}
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: '#0f172a', marginTop: 2 }}>{customerName || 'Select Customer'}</div>
+              {customerPhone && (
+                <div style={{ fontSize: 12, color: '#475569', marginTop: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Phone size={12} color="#2563eb" />
+                  <span className="mono font-bold">{customerPhone}</span>
+                </div>
+              )}
+              {loanAccountNo && (
+                <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>
+                  Loan Acc: <span className="mono font-bold" style={{ color: '#0f172a' }}>{loanAccountNo}</span>
+                </div>
+              )}
+            </div>
+
+            {errorMsg && (
+              <div style={{ background: '#fee2e2', border: '1px solid #fca5a5', color: '#b91c1c', padding: '10px 12px', borderRadius: 8, fontSize: 12, marginBottom: 12 }}>
+                {errorMsg}
+              </div>
+            )}
+
+            {/* 1. Contact Method Chips (Min 48px Touch Targets) */}
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#475569', textTransform: 'uppercase', marginBottom: 6 }}>
+                Contact Method
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+                {[
+                  { id: ContactMethod.PHONE_CALL, label: 'Phone Call', icon: Phone },
+                  { id: ContactMethod.IN_PERSON_VISIT, label: 'In-Person Visit', icon: UserCheck },
+                  { id: ContactMethod.WHATSAPP, label: 'WhatsApp', icon: MessageSquare },
+                  { id: ContactMethod.SMS, label: 'SMS', icon: Mail },
+                ].map((m) => {
+                  const isSelected = contactMethod === m.id;
+                  const Icon = m.icon;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      data-testid={`mobile-contact-method-${m.id.toLowerCase()}`}
+                      onClick={() => setContactMethod(m.id)}
+                      style={{
+                        height: 48,
+                        borderRadius: 8,
+                        border: isSelected ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                        background: isSelected ? '#eff6ff' : '#f8fafc',
+                        color: isSelected ? '#1e40af' : '#334155',
+                        fontWeight: isSelected ? 800 : 600,
+                        fontSize: 12,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        cursor: 'pointer',
+                        touchAction: 'manipulation',
+                      }}
+                    >
+                      <Icon size={15} />
+                      <span>{m.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 2. Quick Contact Outcome */}
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#475569', textTransform: 'uppercase', marginBottom: 6 }}>
+                Attempt Outcome
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
+                {[
+                  { id: ContactOutcome.ANSWERED_CONVERSATION_COMPLETED, label: 'Conversation Done' },
+                  { id: ContactOutcome.VISIT_COMPLETED, label: 'Visit Completed' },
+                  { id: ContactOutcome.NO_ANSWER, label: 'No Answer / Ringing' },
+                  { id: ContactOutcome.SWITCHED_OFF_UNREACHABLE, label: 'Unreachable' },
+                  { id: ContactOutcome.CUSTOMER_REFUSED_TO_TALK, label: 'Refused to Pay' },
+                  { id: ContactOutcome.OTHER, label: 'Other Outcome' },
+                ].map((o) => {
+                  const isSelected = contactOutcome === o.id;
+                  return (
+                    <button
+                      key={o.id}
+                      type="button"
+                      data-testid={`mobile-outcome-${o.id.toLowerCase()}`}
+                      onClick={() => {
+                        setContactOutcome(o.id);
+                        if (o.id === ContactOutcome.ANSWERED_CONVERSATION_COMPLETED || o.id === ContactOutcome.VISIT_COMPLETED) {
+                          setResponseCategory(CustomerResponseCategory.WILL_PAY_ON_SPECIFIC_DATE);
+                        }
+                      }}
+                      style={{
+                        height: 44,
+                        borderRadius: 8,
+                        border: isSelected ? '2px solid #2563eb' : '1px solid #e2e8f0',
+                        background: isSelected ? '#eff6ff' : '#f8fafc',
+                        color: isSelected ? '#1e40af' : '#334155',
+                        fontWeight: isSelected ? 800 : 500,
+                        fontSize: 12,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        touchAction: 'manipulation',
+                        padding: '0 8px',
+                        textAlign: 'center',
+                      }}
+                    >
+                      {o.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 3. Progressive Commitment Section */}
+            <div style={{ background: '#f8fafc', padding: 12, borderRadius: 8, border: '1px solid #e2e8f0', marginBottom: 14 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontWeight: 700, fontSize: 13, color: '#0f172a' }}>
+                <input
+                  type="checkbox"
+                  data-testid="mobile-has-commitment-checkbox"
+                  checked={hasCommitment}
+                  onChange={(e) => {
+                    setHasCommitment(e.target.checked);
+                    if (e.target.checked && !promisedDate) {
+                      setPromisedDate(new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0]);
+                    }
+                  }}
+                  style={{ width: 18, height: 18, accentColor: '#16a34a' }}
+                />
+                <span>Customer Promised Payment</span>
+              </label>
+
+              {hasCommitment && (
+                <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#64748b', marginBottom: 4 }}>
+                      Promised Amount (₹)
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      data-testid="mobile-promised-amount-input"
+                      className="form-input mono"
+                      placeholder="e.g. 5000"
+                      value={promisedAmount}
+                      onChange={(e) => setPromisedAmount(e.target.value)}
+                      style={{ height: 44, fontSize: 14, fontWeight: 700 }}
+                      required={hasCommitment}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#64748b', marginBottom: 4 }}>
+                      Promise Date
+                    </label>
+                    <input
+                      type="date"
+                      data-testid="mobile-promised-date-input"
+                      className="form-input"
+                      value={promisedDate}
+                      onChange={(e) => setPromisedDate(e.target.value)}
+                      style={{ height: 44, fontSize: 13 }}
+                      required={hasCommitment}
+                    />
+                  </div>
+                  <div style={{ gridColumn: 'span 2', fontSize: 11, color: '#b45309', background: '#fef3c7', padding: '6px 8px', borderRadius: 4 }}>
+                    ℹ️ Note: A payment promise does not record a ledger entry until cash is verified.
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 4. Progressive Follow-up Section */}
+            <div style={{ background: '#f8fafc', padding: 12, borderRadius: 8, border: '1px solid #e2e8f0', marginBottom: 14 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontWeight: 700, fontSize: 13, color: '#0f172a' }}>
+                <input
+                  type="checkbox"
+                  data-testid="mobile-has-followup-checkbox"
+                  checked={hasFollowUp}
+                  onChange={(e) => {
+                    setHasFollowUp(e.target.checked);
+                    if (e.target.checked && !followUpDate) {
+                      setFollowUpDate(new Date(Date.now() + 86400000).toISOString().split('T')[0]);
+                    }
+                  }}
+                  style={{ width: 18, height: 18, accentColor: '#2563eb' }}
+                />
+                <span>Schedule Field Follow-up</span>
+              </label>
+
+              {hasFollowUp && (
+                <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#64748b', marginBottom: 4 }}>
+                      Follow-up Date
+                    </label>
+                    <input
+                      type="date"
+                      className="form-input"
+                      value={followUpDate}
+                      onChange={(e) => setFollowUpDate(e.target.value)}
+                      style={{ height: 44, fontSize: 13 }}
+                      required={hasFollowUp}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#64748b', marginBottom: 4 }}>
+                      Priority
+                    </label>
+                    <select
+                      className="form-select"
+                      value={followUpPriority}
+                      onChange={(e) => setFollowUpPriority(e.target.value as FollowUpPriority)}
+                      style={{ height: 44, fontSize: 13 }}
+                    >
+                      <option value={FollowUpPriority.HIGH}>High</option>
+                      <option value={FollowUpPriority.MEDIUM}>Medium</option>
+                      <option value={FollowUpPriority.LOW}>Low</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 5. Conversation / Visit Notes */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#475569', textTransform: 'uppercase', marginBottom: 6 }}>
+                Conversation / Visit Notes
+              </label>
+              <textarea
+                className="form-textarea"
+                rows={3}
+                placeholder="Record customer remarks, visit findings, reason for delay..."
+                value={agentNotes}
+                onChange={(e) => setAgentNotes(e.target.value)}
+                style={{ width: '100%', fontSize: 13, borderRadius: 8 }}
+              />
+            </div>
+
+            {/* Sticky Bottom Actions */}
+            <div
+              style={{
+                position: 'sticky',
+                bottom: 0,
+                background: '#ffffff',
+                paddingTop: 10,
+                paddingBottom: 'calc(10px + var(--sab, 0px))',
+                display: 'flex',
+                gap: 10,
+                borderTop: '1px solid #e2e8f0',
+              }}
+            >
+              <button
+                type="button"
+                onClick={onClose}
+                className="btn btn-secondary"
+                disabled={isSubmitting}
+                style={{ flex: 1, height: 48, touchAction: 'manipulation' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                data-testid="mobile-save-contact-btn"
+                className="btn btn-primary"
+                disabled={isSubmitting || !customerId}
+                style={{
+                  flex: 2,
+                  height: 48,
+                  backgroundColor: '#16a34a',
+                  borderColor: '#16a34a',
+                  fontWeight: 800,
+                  fontSize: 14,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  touchAction: 'manipulation',
+                }}
+              >
+                {isSubmitting ? (
+                  <span>Saving Log...</span>
+                ) : (
+                  <>
+                    <Send size={16} />
+                    <span>Save Contact Log</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        ) : (
+          /* Desktop 7-Step Wizard Form (> 768px) */
+          <>
         {/* Step Indicator */}
         <div
           style={{
@@ -1242,6 +1560,8 @@ export const LogContactModal: React.FC<LogContactModalProps> = ({
             </div>
           </div>
         </form>
+        </>
+        )}
       </div>
     </div>
   );

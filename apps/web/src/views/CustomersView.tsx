@@ -22,6 +22,7 @@ import { DynamicAttachmentManager, AttachmentItem } from '../components/DynamicA
 import { PortalLinkManager } from '../components/PortalLinkManager';
 import { DocumentViewerModal } from '../components/DocumentViewerModal';
 import { LogContactModal } from '../components/LogContactModal';
+import { DealerMobileCustomerCard } from '../components/mobile';
 import {
   Plus,
   Search,
@@ -336,8 +337,8 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
         </form>
       </div>
 
-      {/* Customers Table */}
-      <div className="table-container">
+      {/* Customers Table (Desktop View) */}
+      <div className="table-container desktop-only-table-view">
         <table className="crm-table">
           <thead>
             <tr>
@@ -391,6 +392,28 @@ export const CustomersView: React.FC<CustomersViewProps> = ({ userRole, refreshT
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Customers Cards (Mobile View <= 768px) */}
+      <div className="mobile-only-card-view">
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-secondary)' }}>
+            Loading borrower directory...
+          </div>
+        ) : customers.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
+            No customers found matching the search criteria.
+          </div>
+        ) : (
+          customers.map((c) => (
+            <DealerMobileCustomerCard
+              key={c.id}
+              customer={c}
+              onViewProfile={() => handleOpenDetail(c.id)}
+              onWhatsApp={() => sendWhatsApp(c)}
+            />
+          ))
+        )}
       </div>
 
       {/* 5-Step Customer Onboarding Wizard (Restricted to Authorized Roles) */}

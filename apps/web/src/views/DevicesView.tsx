@@ -23,6 +23,7 @@ import {
   Hash,
   Clock,
 } from 'lucide-react';
+import { DealerMobileDeviceCard } from '../components/mobile';
 
 interface DevicesViewProps {
   onNavigateToTab?: (tab: string) => void;
@@ -254,7 +255,7 @@ export const DevicesView: React.FC<DevicesViewProps> = ({ onNavigateToTab }) => 
 
       {/* Devices Table */}
       <div className="crm-card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ overflowX: 'auto' }}>
+        <div className="desktop-only-table-view" style={{ overflowX: 'auto' }}>
           <table className="crm-table" style={{ width: '100%' }}>
             <thead>
               <tr>
@@ -423,6 +424,27 @@ export const DevicesView: React.FC<DevicesViewProps> = ({ onNavigateToTab }) => 
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Devices Cards (Mobile View <= 768px) */}
+        <div className="mobile-only-card-view" style={{ padding: 12 }}>
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-secondary)' }}>
+              Loading financed devices...
+            </div>
+          ) : devices.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
+              No financed devices found matching your filters.
+            </div>
+          ) : (
+            devices.map((device) => (
+              <DealerMobileDeviceCard
+                key={device.id}
+                device={device}
+                onViewDetails={(d) => setSelectedDevice(d)}
+              />
+            ))
+          )}
         </div>
 
         {/* Pagination footer */}
