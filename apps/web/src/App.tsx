@@ -37,6 +37,7 @@ const AgentDashboardView = lazyWithRetry(() => import('./views/AgentDashboardVie
 const AgentsView = lazyWithRetry(() => import('./views/AgentsView').then((m) => ({ default: m.AgentsView })));
 const DealerPayablesView = lazyWithRetry(() => import('./views/DealerPayablesView').then((m) => ({ default: m.DealerPayablesView })));
 const ContactActivityView = lazyWithRetry(() => import('./views/ContactActivityView').then((m) => ({ default: m.ContactActivityView })));
+const ProductionCleanupView = lazyWithRetry(() => import('./views/ProductionCleanupView').then((m) => ({ default: m.ProductionCleanupView })));
 
 const getTabFromHash = (): NavTab | null => {
   if (typeof window === 'undefined') return null;
@@ -44,7 +45,7 @@ const getTabFromHash = (): NavTab | null => {
   const validTabs: NavTab[] = [
     'dashboard', 'dealers', 'agents', 'dealer-collections', 'dealer-settlements',
     'dealer-payables', 'agent-collections', 'contact-activity', 'direct-collections', 'customers',
-    'devices', 'queue', 'loans', 'payments', 'reports', 'audit',
+    'devices', 'queue', 'loans', 'payments', 'reports', 'audit', 'data-cleanup',
   ];
   return validTabs.includes(hash as NavTab) ? (hash as NavTab) : null;
 };
@@ -472,6 +473,16 @@ export const App: React.FC = () => {
         return <ReportsView />;
       case 'audit':
         return <AuditView />;
+      case 'data-cleanup':
+        if (user.role !== UserRole.SUPER_ADMIN) {
+          return (
+            <DashboardView
+              onOpenAddCustomer={() => setShowAddCustomerWizard(true)}
+              onNavigateToTab={(t) => selectTab(t as NavTab)}
+            />
+          );
+        }
+        return <ProductionCleanupView user={user} onNavigateToTab={(t) => selectTab(t as NavTab)} />;
       default:
         return <QueueView />;
     }

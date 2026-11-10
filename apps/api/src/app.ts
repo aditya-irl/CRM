@@ -35,6 +35,7 @@ import { authenticate, requireRole } from './middlewares/auth.middleware';
 import { UserRole } from '@crm/shared';
 import rateLimit from 'express-rate-limit';
 import { storageDiagnosticGate, runStorageDiagnostic } from './modules/system/storage-diagnostic';
+import cleanupRoutes from './modules/system/cleanup.routes';
 
 const app = express();
 
@@ -151,6 +152,7 @@ app.use('/api/v1/contact-activities', contactActivityRoutes);
 app.use('/api/v1/portal', portalRoutes);
 app.use('/api/v1/settings', settingsRoutes);
 app.use('/api/v1/notifications', notificationRoutes);
+app.use('/api/v1/system/cleanup', cleanupRoutes);
 
 const diagnosticLimiter = rateLimit({
   windowMs: 60 * 1000,

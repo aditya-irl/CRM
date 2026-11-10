@@ -10,6 +10,7 @@ import {
   FileSpreadsheet,
   ShieldCheck,
   ShieldAlert,
+  Database,
   Landmark,
   CreditCard,
   UserCheck,
@@ -36,7 +37,8 @@ export type NavTab =
   | 'loans'
   | 'payments'
   | 'reports'
-  | 'audit';
+  | 'audit'
+  | 'data-cleanup';
 
 interface SidebarProps {
   activeTab: NavTab;
@@ -140,6 +142,16 @@ const SidebarComponent: React.FC<SidebarProps> = ({
     { id: 'payments', label: 'Payments Ledger', icon: <Receipt size={17} />, hiddenForAgent: true },
     { id: 'reports', label: 'Reports & Analytics', icon: <FileSpreadsheet size={17} />, hiddenForAgent: true },
     { id: 'audit', label: 'Audit Trail & Logs', icon: <ShieldCheck size={17} />, hiddenForAgent: true },
+    ...(user.role === UserRole.SUPER_ADMIN
+      ? [
+          {
+            id: 'data-cleanup' as NavTab,
+            label: 'System Handover',
+            icon: <Database size={17} />,
+            hiddenForAgent: true,
+          },
+        ]
+      : []),
   ];
 
   return (

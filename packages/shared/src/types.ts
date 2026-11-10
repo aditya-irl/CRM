@@ -1424,3 +1424,67 @@ export interface IAdminContactActivitySummary {
   agents: IAgentPerformanceMetrics[];
 }
 
+export interface ICleanupTableCount {
+  table: string;
+  category: 'CASHFREE' | 'LOANS_EMIS' | 'DEALERS' | 'CUSTOMERS' | 'COLLECTIONS' | 'SYSTEM';
+  rowCount: number;
+  description: string;
+}
+
+export interface IPreservedStaffAccount {
+  id: string;
+  email: string;
+  fullName: string;
+  role: string;
+  status: string;
+  exists: boolean;
+}
+
+export interface IDatabaseIdentityPreview {
+  databaseName: string;
+  currentSchema: string;
+  serverHost: string;
+  serverPort: number | null;
+  serverIp: string | null;
+  pgVersion: string;
+  sslActive: boolean;
+  providerGuess: 'Neon PostgreSQL' | 'Local PostgreSQL' | 'Managed PostgreSQL';
+}
+
+export interface IProductionCleanupPreview {
+  databaseIdentity: IDatabaseIdentityPreview;
+  operationalCounts: ICleanupTableCount[];
+  totalOperationalRows: number;
+  preservedStaff: IPreservedStaffAccount[];
+  allStaffPresent: boolean;
+  systemSettings: {
+    allowDealerPenalty: boolean | null;
+    totalSettings: number;
+    migrationsCount: number;
+    latestMigration: string | null;
+    cashfreeEnv: string;
+    cashfreeConfigured: boolean;
+  };
+  cleanupReadiness: {
+    phase: 'PHASE_1_PREVIEW' | 'PHASE_2_READY';
+    canProceedToPhase2: boolean;
+    deletionEnabled: boolean;
+    lockStatus: string;
+    message: string;
+    generatedAt: string;
+  };
+}
+
+export interface IProductionCleanupExecutionResult {
+  success: boolean;
+  databaseIdentity: IDatabaseIdentityPreview;
+  deletedCounts: Record<string, number>;
+  verifiedAfterCounts: Record<string, number>;
+  preservedStaff: IPreservedStaffAccount[];
+  auditLogId: string;
+  executedAt: string;
+  executedBy: string;
+  status: 'COMPLETED_SUCCESSFULLY';
+  message: string;
+}
+

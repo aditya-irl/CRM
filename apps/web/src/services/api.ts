@@ -41,8 +41,10 @@ import {
   IContactActivitySummary,
   IAgentPerformanceMetrics,
   IAdminContactActivitySummary,
+  IProductionCleanupPreview,
+  IProductionCleanupExecutionResult,
 } from '@crm/shared';
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { Preferences } from '@capacitor/preferences';
 import { NativeTokenStorage } from '../mobile/secureStorage';
 
@@ -793,6 +795,10 @@ export class ApiClient {
     }
 
     const url = buildApiUrl(endpoint);
+    if (Capacitor.isNativePlatform()) {
+      console.log(`[CRM Native API] ${options.method || 'GET'} ${url}`);
+    }
+
     let res: Response;
     try {
       res = await fetch(url, {
@@ -800,13 +806,50 @@ export class ApiClient {
         headers,
       });
     } catch (networkErr: any) {
-      const msg = (networkErr?.message || '').toLowerCase();
-      if (msg.includes('failed to fetch') || msg.includes('load failed') || msg.includes('networkerror')) {
-        throw new Error(
-          'Unable to reach the CRM server. Please check your internet connection. If the backend is waking from a cold start, please retry in a few moments.'
-        );
+      // Defensive fallback for native mobile: if WebView fetch was blocked by CORS or network, invoke CapacitorHttp directly
+      if (Capacitor.isNativePlatform()) {
+        try {
+          const nativeMethod = (options.method || 'GET').toUpperCase() as any;
+          let bodyData: any = undefined;
+          if (options.body) {
+            try {
+              bodyData = typeof options.body === 'string' ? JSON.parse(options.body) : options.body;
+            } catch {
+              bodyData = options.body;
+            }
+          }
+          const nativeRes = await CapacitorHttp.request({
+            url,
+            method: nativeMethod,
+            headers,
+            data: bodyData,
+          });
+          res = new Response(
+            typeof nativeRes.data === 'object' ? JSON.stringify(nativeRes.data) : nativeRes.data,
+            {
+              status: nativeRes.status,
+              headers: nativeRes.headers as any,
+            }
+          );
+        } catch (directNativeErr: any) {
+          console.error('[CRM Native Direct Http Error]:', directNativeErr);
+          const msg = (networkErr?.message || '').toLowerCase();
+          if (msg.includes('failed to fetch') || msg.includes('load failed') || msg.includes('networkerror')) {
+            throw new Error(
+              'Unable to reach the CRM server. Please check your internet connection. If the backend is waking from a cold start, please retry in a few moments.'
+            );
+          }
+          throw networkErr;
+        }
+      } else {
+        const msg = (networkErr?.message || '').toLowerCase();
+        if (msg.includes('failed to fetch') || msg.includes('load failed') || msg.includes('networkerror')) {
+          throw new Error(
+            'Unable to reach the CRM server. Please check your internet connection. If the backend is waking from a cold start, please retry in a few moments.'
+          );
+        }
+        throw networkErr;
       }
-      throw networkErr;
     }
 
     let json: ApiResponse<T> | undefined;
@@ -933,6 +976,35 @@ export class ApiClient {
       session.setItem('crm_user', JSON.stringify(updated));
     }
     return updated;
+  }
+
+  /**
+   * Probes backend health status via the root /health endpoint.
+   * Useful for early startup connectivity diagnostics and connection monitoring.
+   */
+  public static async healthCheck(): Promise<{ status: string; service?: string; timestamp?: string }> {
+    const base = buildApiUrl('');
+    const rootHost = base.replace(/\/api\/v1\/?$/, '');
+    const healthUrl = `${rootHost}/health`;
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const nativeRes = await CapacitorHttp.request({
+          url: healthUrl,
+          method: 'GET',
+        });
+        const parsed = typeof nativeRes.data === 'string' ? JSON.parse(nativeRes.data) : nativeRes.data;
+        return parsed;
+      } catch (err: any) {
+        console.warn('[CRM Native HealthCheck] Native probe fallback warning:', err);
+      }
+    }
+
+    const res = await fetch(healthUrl, { method: 'GET' });
+    if (!res.ok) {
+      throw new Error(`Health check failed with HTTP ${res.status}`);
+    }
+    return res.json();
   }
 
   // Auth
@@ -2317,6 +2389,29 @@ export class ApiClient {
     a.click();
     document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
+  }
+
+  // System Cleanup & Handover (Phase 1 Read-Only Preview)
+  public static async getCleanupPreview(): Promise<IProductionCleanupPreview> {
+    return this.request<IProductionCleanupPreview>('/system/cleanup/preview');
+  }
+
+  public static async verifyAdminCleanupSession(password: string): Promise<{ success: boolean; message: string }> {
+    return this.request<{ success: boolean; message: string }>('/system/cleanup/verify-session', {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    });
+  }
+
+  // System Cleanup & Handover (Phase 2 Transactional Execution)
+  public static async executeProductionCleanup(
+    confirmationPhrase: string,
+    password: string
+  ): Promise<IProductionCleanupExecutionResult> {
+    return this.request<IProductionCleanupExecutionResult>('/system/cleanup/execute', {
+      method: 'POST',
+      body: JSON.stringify({ confirmationPhrase, password }),
+    });
   }
 }
 
