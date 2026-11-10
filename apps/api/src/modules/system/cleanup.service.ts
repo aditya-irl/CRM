@@ -15,9 +15,6 @@ import { randomUUID } from 'crypto';
 
 export const PRESERVED_STAFF_EMAILS = [
   'admin@financecrm.com',
-  'manager@financecrm.com',
-  'agent.rahul@financecrm.com',
-  'agent.priya@financecrm.com',
 ];
 
 export const CLEANUP_TARGET_TABLES: Array<{

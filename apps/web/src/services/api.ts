@@ -41,8 +41,6 @@ import {
   IContactActivitySummary,
   IAgentPerformanceMetrics,
   IAdminContactActivitySummary,
-  IProductionCleanupPreview,
-  IProductionCleanupExecutionResult,
 } from '@crm/shared';
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { Preferences } from '@capacitor/preferences';
@@ -2389,29 +2387,6 @@ export class ApiClient {
     a.click();
     document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
-  }
-
-  // System Cleanup & Handover (Phase 1 Read-Only Preview)
-  public static async getCleanupPreview(): Promise<IProductionCleanupPreview> {
-    return this.request<IProductionCleanupPreview>('/system/cleanup/preview');
-  }
-
-  public static async verifyAdminCleanupSession(password: string): Promise<{ success: boolean; message: string }> {
-    return this.request<{ success: boolean; message: string }>('/system/cleanup/verify-session', {
-      method: 'POST',
-      body: JSON.stringify({ password }),
-    });
-  }
-
-  // System Cleanup & Handover (Phase 2 Transactional Execution)
-  public static async executeProductionCleanup(
-    confirmationPhrase: string,
-    password: string
-  ): Promise<IProductionCleanupExecutionResult> {
-    return this.request<IProductionCleanupExecutionResult>('/system/cleanup/execute', {
-      method: 'POST',
-      body: JSON.stringify({ confirmationPhrase, password }),
-    });
   }
 }
 

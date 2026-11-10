@@ -2,6 +2,8 @@ import request from 'supertest';
 import app from '../src/app';
 import { queryPostgres } from '../src/database/postgres';
 import { UserRole } from '@crm/shared';
+import bcrypt from 'bcryptjs';
+import { SEED_MANAGER_ID, SEED_AGENT_RAHUL_ID, SEED_AGENT_PRIYA_ID } from '../src/database/seed';
 
 describe('Production Cleanup Phase 1 Read-Only Preview Tests', () => {
   jest.setTimeout(60000);
@@ -9,6 +11,19 @@ describe('Production Cleanup Phase 1 Read-Only Preview Tests', () => {
   let managerToken: string;
 
   beforeAll(async () => {
+    // Ensure test users exist in test database
+    const passwordHash = bcrypt.hashSync('Admin@123456', 10);
+    const agentPasswordHash = bcrypt.hashSync('Agent@123456', 10);
+    await queryPostgres(`
+      INSERT INTO users (id, email, phone, password_hash, full_name, role, status, assigned_branch, created_at, updated_at)
+      VALUES 
+        ('a0000000-0000-0000-0000-000000000001', 'admin@financecrm.com', '+919876500001', $1, 'Mr. Sparsh', 'SUPER_ADMIN', 'ACTIVE', 'Headquarters', NOW(), NOW()),
+        ('a0000000-0000-0000-0000-000000000002', 'manager@financecrm.com', '+919876500002', $1, 'Anita Deshmukh (Branch Manager)', 'BRANCH_MANAGER', 'ACTIVE', 'North Branch', NOW(), NOW()),
+        ('a0000000-0000-0000-0000-000000000003', 'agent.rahul@financecrm.com', '+919876500003', $2, 'Rahul Sharma (Field Agent)', 'COLLECTION_AGENT', 'ACTIVE', 'North Branch', NOW(), NOW()),
+        ('a0000000-0000-0000-0000-000000000004', 'agent.priya@financecrm.com', '+919876500004', $2, 'Priya Verma (Field Agent)', 'COLLECTION_AGENT', 'ACTIVE', 'North Branch', NOW(), NOW())
+      ON CONFLICT (email) DO NOTHING
+    `, [passwordHash, agentPasswordHash]);
+
     // 1. Authenticate as Super Admin
     const adminLoginRes = await request(app)
       .post('/api/v1/auth/login')
@@ -101,13 +116,10 @@ describe('Production Cleanup Phase 1 Read-Only Preview Tests', () => {
       expect(res.status).toBe(200);
       const { preservedStaff, allStaffPresent } = res.body.data;
       expect(Array.isArray(preservedStaff)).toBe(true);
-      expect(preservedStaff.length).toBe(4);
+      expect(preservedStaff.length).toBe(1);
 
       const emails = preservedStaff.map((s: any) => s.email);
       expect(emails).toContain('admin@financecrm.com');
-      expect(emails).toContain('manager@financecrm.com');
-      expect(emails).toContain('agent.rahul@financecrm.com');
-      expect(emails).toContain('agent.priya@financecrm.com');
       expect(typeof allStaffPresent).toBe('boolean');
     });
 
@@ -261,17 +273,28 @@ describe('Production Cleanup Phase 1 Read-Only Preview Tests', () => {
 
       // Preserved staff accounts check
       const userCount = await queryPostgres<{ count: number }>('SELECT COUNT(*)::int as count FROM users');
-      expect(userCount.rows[0].count).toBe(4);
+      expect(userCount.rows[0].count).toBe(1);
 
       const preservedStaffRes = await queryPostgres<{ email: string }>(
         'SELECT email FROM users ORDER BY email'
       );
       const remainingEmails = preservedStaffRes.rows.map((r) => r.email.toLowerCase());
-      expect(remainingEmails).toContain('admin@financecrm.com');
-      expect(remainingEmails).toContain('manager@financecrm.com');
-      expect(remainingEmails).toContain('agent.rahul@financecrm.com');
-      expect(remainingEmails).toContain('agent.priya@financecrm.com');
+      expect(remainingEmails).toEqual(['admin@financecrm.com']);
     });
+  });
+
+  afterAll(async () => {
+    // Re-seed the other staff users in local test DB so subsequent test suites have their accounts
+    const passwordHash = bcrypt.hashSync('Admin@123456', 10);
+    const agentPasswordHash = bcrypt.hashSync('Agent@123456', 10);
+    await queryPostgres(`
+      INSERT INTO users (id, email, phone, password_hash, full_name, role, status, assigned_branch, created_at, updated_at)
+      VALUES 
+        ($1, 'manager@financecrm.com', '+919876500002', $4, 'Anita Deshmukh (Branch Manager)', 'BRANCH_MANAGER', 'ACTIVE', 'North Branch', NOW(), NOW()),
+        ($2, 'agent.rahul@financecrm.com', '+919876500003', $5, 'Rahul Sharma (Field Agent)', 'COLLECTION_AGENT', 'ACTIVE', 'North Branch', NOW(), NOW()),
+        ($3, 'agent.priya@financecrm.com', '+919876500004', $5, 'Priya Verma (Field Agent)', 'COLLECTION_AGENT', 'ACTIVE', 'North Branch', NOW(), NOW())
+      ON CONFLICT (email) DO NOTHING
+    `, [SEED_MANAGER_ID, SEED_AGENT_RAHUL_ID, SEED_AGENT_PRIYA_ID, passwordHash, agentPasswordHash]);
   });
 });
 
