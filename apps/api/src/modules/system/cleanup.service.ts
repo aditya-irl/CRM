@@ -641,8 +641,8 @@ export class CleanupService {
               preservedStaffEmails: PRESERVED_STAFF_EMAILS,
               handoverVerifiedAt: executionTimestamp,
             }),
-            clientIp ? clientIp.split(',')[0].trim().slice(0, 45) : null,
-            userAgent ? userAgent.slice(0, 500) : null,
+            clientIp ? String(clientIp).split(',')[0].trim().slice(0, 45) : '127.0.0.1',
+            userAgent ? String(userAgent).slice(0, 500) : 'CRM Handover Client',
           ]
         );
       });

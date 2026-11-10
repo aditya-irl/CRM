@@ -125,7 +125,7 @@ app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 // Health Check
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', service: 'Finance & EMI Collection CRM API', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok', service: 'Finance & EMI Collection CRM API', version: '1.0.1-handover-purge', timestamp: new Date().toISOString() });
 });
 
 // Mount V1 API Routes
