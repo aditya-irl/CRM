@@ -95,8 +95,9 @@ router.post('/verify-session', async (req: Request, res: Response, next: NextFun
 router.post('/execute', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { confirmationPhrase, password } = req.body || {};
-    const clientIp = (req.headers['x-forwarded-for'] as string) || req.ip || '127.0.0.1';
-    const userAgent = (req.headers['user-agent'] as string) || 'Unknown Agent';
+    const rawIp = (req.headers['x-forwarded-for'] as string) || req.ip || '127.0.0.1';
+    const clientIp = rawIp.split(',')[0].trim().slice(0, 45);
+    const userAgent = ((req.headers['user-agent'] as string) || 'Unknown Agent').slice(0, 500);
 
     const result = await CleanupService.executeCleanup(
       req.user!,

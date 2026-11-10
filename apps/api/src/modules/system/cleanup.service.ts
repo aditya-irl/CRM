@@ -641,8 +641,8 @@ export class CleanupService {
               preservedStaffEmails: PRESERVED_STAFF_EMAILS,
               handoverVerifiedAt: executionTimestamp,
             }),
-            clientIp || null,
-            userAgent || null,
+            clientIp ? clientIp.split(',')[0].trim().slice(0, 45) : null,
+            userAgent ? userAgent.slice(0, 500) : null,
           ]
         );
       });
