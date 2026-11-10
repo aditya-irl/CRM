@@ -39,8 +39,19 @@ router.get('/preview', async (req: Request, res: Response, next: NextFunction) =
       data: preview,
       timestamp: new Date().toISOString(),
     });
-  } catch (err) {
-    next(err);
+  } catch (err: any) {
+    console.error('[CLEANUP EXECUTE ERROR]:', err);
+    return res.status(err.statusCode || 500).json({
+      success: false,
+      error: {
+        code: err.errorCode || 'CLEANUP_EXECUTION_FAILED',
+        message: err.message || 'Cleanup execution failed',
+        detail: err.detail,
+        table: err.table,
+        constraint: err.constraint,
+      },
+      timestamp: new Date().toISOString(),
+    });
   }
 });
 
@@ -57,8 +68,19 @@ router.post('/verify-session', async (req: Request, res: Response, next: NextFun
       data: result,
       timestamp: new Date().toISOString(),
     });
-  } catch (err) {
-    next(err);
+  } catch (err: any) {
+    console.error('[CLEANUP EXECUTE ERROR]:', err);
+    return res.status(err.statusCode || 500).json({
+      success: false,
+      error: {
+        code: err.errorCode || 'CLEANUP_EXECUTION_FAILED',
+        message: err.message || 'Cleanup execution failed',
+        detail: err.detail,
+        table: err.table,
+        constraint: err.constraint,
+      },
+      timestamp: new Date().toISOString(),
+    });
   }
 });
 
@@ -89,8 +111,19 @@ router.post('/execute', async (req: Request, res: Response, next: NextFunction) 
       data: result,
       timestamp: new Date().toISOString(),
     });
-  } catch (err) {
-    next(err);
+  } catch (err: any) {
+    console.error('[CLEANUP EXECUTE ERROR]:', err);
+    return res.status(err.statusCode || 500).json({
+      success: false,
+      error: {
+        code: err.errorCode || 'CLEANUP_EXECUTION_FAILED',
+        message: err.message || 'Cleanup execution failed',
+        detail: err.detail,
+        table: err.table,
+        constraint: err.constraint,
+      },
+      timestamp: new Date().toISOString(),
+    });
   }
 });
 

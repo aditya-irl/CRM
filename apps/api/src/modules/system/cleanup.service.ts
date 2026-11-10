@@ -546,17 +546,13 @@ export class CleanupService {
           END $$;
         `);
 
-        // Step 4b: Delete operational tables in reverse dependency order (TRUNCATE when unreferenced for instant performance, fallback to DELETE)
+        // Step 4b: Delete operational tables in reverse dependency order
         for (const tableName of OPERATIONAL_TABLES_DELETION_ORDER) {
           await client.query(`
             DO $$
             BEGIN
               IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '${tableName}') THEN
-                BEGIN
-                  EXECUTE 'TRUNCATE TABLE "' || '${tableName}' || '"';
-                EXCEPTION WHEN OTHERS THEN
-                  EXECUTE 'DELETE FROM "' || '${tableName}' || '"';
-                END;
+                EXECUTE 'DELETE FROM "' || '${tableName}' || '"';
               END IF;
             END $$;
           `);
@@ -565,22 +561,16 @@ export class CleanupService {
         // Step 4c: Clean idempotency keys from system_settings
         await client.query(`DELETE FROM system_settings WHERE key LIKE 'idempotency:%'`);
 
-        // Step 4d: Clear existing audit logs with trigger protection temporarily bypassed
+        // Step 4d: Clear existing audit logs (TRUNCATE bypasses row-level triggers without requiring superuser permissions)
         await client.query(`
           DO $$
           BEGIN
-            IF EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_protect_audit_logs') THEN
-              ALTER TABLE audit_logs DISABLE TRIGGER trg_protect_audit_logs;
-            END IF;
             IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'audit_logs') THEN
               BEGIN
                 TRUNCATE TABLE audit_logs;
               EXCEPTION WHEN OTHERS THEN
                 DELETE FROM audit_logs;
               END;
-            END IF;
-            IF EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_protect_audit_logs') THEN
-              ALTER TABLE audit_logs ENABLE TRIGGER trg_protect_audit_logs;
             END IF;
           END $$;
         `);
