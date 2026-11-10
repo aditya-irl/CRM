@@ -40,6 +40,7 @@ import {
 } from 'lucide-react';
 import { BrandLogo } from '../components/BrandLogo';
 import { DocumentViewerModal } from '../components/DocumentViewerModal';
+import { PortalFooter } from '../components/portal/PortalFooter';
 
 interface CustomerPortalViewProps {
   token: string | null;
@@ -1474,6 +1475,42 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
                   <span>
                     <strong>100% Safe & Verified:</strong> You pay directly via official bank UPI QR. After sending the payment screenshot, Super Admin verifies and updates your ledger immediately.
                   </span>
+                </div>
+
+                {/* Cashfree Compliance Policy Notice */}
+                <div
+                  className="portal-checkout-compliance-notice"
+                  data-testid="portal-checkout-compliance-notice"
+                  style={{
+                    fontSize: 11.5,
+                    color: 'var(--text-muted, #8c939c)',
+                    borderTop: '1px solid var(--border-subtle, #d6cfc4)',
+                    paddingTop: 8,
+                    marginTop: 8,
+                    lineHeight: 1.45,
+                    textAlign: 'center',
+                  }}
+                >
+                  By proceeding with this payment, you acknowledge our{' '}
+                  <a
+                    href="/customer-portal/terms"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-testid="checkout-notice-terms-link"
+                    style={{ color: 'var(--primary, #b8532f)', fontWeight: 600, textDecoration: 'underline' }}
+                  >
+                    Terms & Conditions
+                  </a>{' '}
+                  and{' '}
+                  <a
+                    href="/customer-portal/refunds"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-testid="checkout-notice-refunds-link"
+                    style={{ color: 'var(--primary, #b8532f)', fontWeight: 600, textDecoration: 'underline' }}
+                  >
+                    Refunds & Cancellations Policy
+                  </a>.
                 </div>
               </div>
             </div>
@@ -2920,6 +2957,9 @@ export const CustomerPortalView: React.FC<CustomerPortalViewProps> = ({ token, i
           </>
         );
       })()}
+
+      {/* ─── Global Whitelisting & Compliance Footer ─── */}
+      <PortalFooter token={token} />
       </main>
 
       {/* Contact Support Modal */}

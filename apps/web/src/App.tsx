@@ -32,6 +32,7 @@ const PaymentsView = lazyWithRetry(() => import('./views/PaymentsView').then((m)
 const ReportsView = lazyWithRetry(() => import('./views/ReportsView').then((m) => ({ default: m.ReportsView })));
 const AuditView = lazyWithRetry(() => import('./views/AuditView').then((m) => ({ default: m.AuditView })));
 const CustomerPortalView = lazyWithRetry(() => import('./views/CustomerPortalView').then((m) => ({ default: m.CustomerPortalView })));
+const CustomerPortalComplianceView = lazyWithRetry(() => import('./views/CustomerPortalComplianceView').then((m) => ({ default: m.CustomerPortalComplianceView })));
 const AgentDashboardView = lazyWithRetry(() => import('./views/AgentDashboardView').then((m) => ({ default: m.AgentDashboardView })));
 const AgentsView = lazyWithRetry(() => import('./views/AgentsView').then((m) => ({ default: m.AgentsView })));
 const DealerPayablesView = lazyWithRetry(() => import('./views/DealerPayablesView').then((m) => ({ default: m.DealerPayablesView })));
@@ -48,6 +49,42 @@ const getTabFromHash = (): NavTab | null => {
   return validTabs.includes(hash as NavTab) ? (hash as NavTab) : null;
 };
 
+export type CompliancePageTab = 'contact' | 'terms' | 'refunds' | 'privacy' | 'services';
+
+export const getCompliancePageFromLocation = (): CompliancePageTab | null => {
+  if (typeof window === 'undefined') return null;
+  const path = window.location.pathname.toLowerCase().replace(/\/+$/, '');
+  const search = new URLSearchParams(window.location.search);
+  const hash = window.location.hash.toLowerCase().replace(/^#\/?/, '');
+  const pageParam = search.get('page')?.toLowerCase();
+
+  // 1. Pathname matches: /customer-portal/:page or /portal/:page
+  if (path === '/customer-portal/contact' || path === '/portal/contact') return 'contact';
+  if (path === '/customer-portal/terms' || path === '/portal/terms') return 'terms';
+  if (path === '/customer-portal/refunds' || path === '/portal/refunds') return 'refunds';
+  if (path === '/customer-portal/privacy' || path === '/portal/privacy') return 'privacy';
+  if (
+    path === '/customer-portal/services' ||
+    path === '/portal/services' ||
+    path === '/customer-portal/pricing' ||
+    path === '/portal/pricing'
+  ) return 'services';
+
+  // 2. Query parameter matches (?page=contact, etc.)
+  if (pageParam === 'contact' || pageParam === 'terms' || pageParam === 'refunds' || pageParam === 'privacy' || pageParam === 'services' || pageParam === 'pricing') {
+    return pageParam === 'pricing' ? 'services' : (pageParam as CompliancePageTab);
+  }
+
+  // 3. Hash matches: #/terms, #terms, #/contact, etc.
+  if (hash === 'terms' || hash.includes('/terms')) return 'terms';
+  if (hash === 'contact' || hash.includes('/contact')) return 'contact';
+  if (hash === 'refunds' || hash.includes('/refunds')) return 'refunds';
+  if (hash === 'privacy' || hash.includes('/privacy')) return 'privacy';
+  if (hash === 'services' || hash === 'pricing' || hash.includes('/services') || hash.includes('/pricing')) return 'services';
+
+  return null;
+};
+
 const ViewFallback: React.FC = () => (
   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 320, color: 'var(--text-muted)' }}>
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
@@ -58,12 +95,41 @@ const ViewFallback: React.FC = () => (
 );
 
 export const App: React.FC = () => {
-  // Public Customer Payment Portal Routing Check
-  // Operates independently of admin authentication and never touches localStorage/sessionStorage
+  const [compliancePage, setCompliancePage] = useState<CompliancePageTab | null>(() => getCompliancePageFromLocation());
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setCompliancePage(getCompliancePageFromLocation());
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Public Customer Payment Portal & Compliance Routing Check
+  // Operates completely independently of admin authentication and never touches localStorage/sessionStorage
   const isPortalRoute =
     typeof window !== 'undefined' &&
-    (window.location.pathname.startsWith('/portal') ||
+    (Boolean(compliancePage) ||
+      window.location.pathname.startsWith('/portal') ||
+      window.location.pathname.startsWith('/customer-portal') ||
       Boolean(new URLSearchParams(window.location.search).get('token')));
+
+  if (compliancePage) {
+    return (
+      <ErrorBoundary fallbackTitle="Policy Page Interrupted">
+        <Suspense fallback={<ViewFallback />}>
+          <CustomerPortalComplianceView
+            initialPage={compliancePage}
+            onNavigateHome={() => {
+              const token = new URLSearchParams(window.location.search).get('token');
+              const dest = token ? `/portal?token=${encodeURIComponent(token)}` : '/portal';
+              window.location.href = dest;
+            }}
+          />
+        </Suspense>
+      </ErrorBoundary>
+    );
+  }
 
   if (isPortalRoute) {
     const portalToken = new URLSearchParams(window.location.search).get('token');
